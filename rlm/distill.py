@@ -280,6 +280,7 @@ def generate_traces(
     gpu_memory_utilization: float = 0.9,
     max_model_len: int | None = None,
     teacher_uses_rule_context: bool = True,
+    thinking: bool = True,
     log_path: Path | None = None,
 ) -> list[dict]:
     """
@@ -302,6 +303,10 @@ def generate_traces(
                             prompt with rules is ~800 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
+        thinking (bool): Qwen3 native thinking mode. ``False`` passes
+                            ``enable_thinking=False`` to the chat template, so the
+                            teacher reasons in our ``<think>…</think><answer>``
+                            format from the system prompt instead of its own block.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
 
     Returns:
@@ -355,7 +360,11 @@ def generate_traces(
         stage("tokenizing")
         texts = [
             tokenizer.apply_chat_template(
-                prompt, tokenize=False, add_generation_prompt=True
+                prompt,
+                tokenize=False,
+                add_generation_prompt=True,
+                # Templates without this switch simply ignore it.
+                enable_thinking=thinking,
             )
             for prompt in prompts
         ]
@@ -388,6 +397,7 @@ def generate_traces(
                         "n_tokens": completion["n_tokens"],
                         "hit_max_tokens": completion["hit_max"],
                         "teacher": teacher,
+                        "thinking": thinking,
                         "params": example.get("params"),
                         "branches": example.get("branches"),
                     }
@@ -457,6 +467,11 @@ def main() -> None:
         help="per-example metrics JSONL, overwritten at the start of each run",
     )
     parser.add_argument(
+        "--no-thinking",
+        action="store_true",
+        help="disable Qwen3 native thinking; the teacher follows our <think><answer> format",
+    )
+    parser.add_argument(
         "--no-teacher-rules",
         action="store_true",
         help="do not prepend row.rule_context to the teacher prompt",
@@ -479,6 +494,7 @@ def main() -> None:
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
         teacher_uses_rule_context=not args.no_teacher_rules,
+        thinking=not args.no_thinking,
         log_path=log_path,
     )
 
