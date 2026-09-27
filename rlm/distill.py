@@ -105,6 +105,9 @@ def _load_vllm(
         llm (LLM): vLLM engine ready to generate.
         tokenizer (PreTrainedTokenizerBase): Tokenizer of the teacher.
     """
+    # CUDA is already initialized in this process by the time vLLM starts its engine
+    # process, and a forked child cannot re-initialize it: start the child with spawn.
+    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
     from vllm import LLM
 
     llm = LLM(
