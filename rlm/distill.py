@@ -151,14 +151,21 @@ def generate_traces(
     rows: list[dict] = []
     kept = 0
     progress = tqdm(dataset, desc="distill", unit="example")
+
+    def stage(name: str) -> None:
+        progress.set_description(f"distill [{name:<10}]")
+
     for i, example in enumerate(progress):
         prompt = example["prompt"]
         if teacher_uses_rule_context and example.get("rule_context"):
+            stage("prepending")
             prompt = _prepend_rules(example)
+        stage("tokenizing")
         text = tokenizer.apply_chat_template(
             prompt, tokenize=False, add_generation_prompt=True
         )
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        stage("generating")
         start = time.perf_counter()
         with torch.no_grad():
             generated = model.generate(
@@ -176,6 +183,7 @@ def generate_traces(
         prompt_len = inputs["input_ids"].shape[1]
         pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
         n_verified = 0
+        stage("verifying")
         for j, seq in enumerate(generated):
             completion_ids = seq[prompt_len:]
             raw = tokenizer.decode(completion_ids, skip_special_tokens=True)
@@ -207,6 +215,7 @@ def generate_traces(
         )
 
         if log_path is not None:
+            stage("logging")
             _append_jsonl(
                 log_path,
                 {
