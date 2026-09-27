@@ -32,8 +32,10 @@ if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$UV_INSTALL_DIR" UV_NO_MODIFY_PATH=1 sh
 fi
 
-if [ -f "$WORK_DIR/dgm-arca/.env" ]; then
-    set -a; . "$WORK_DIR/dgm-arca/.env"; set +a
+# .env de la raíz del repositorio (HF_TOKEN...), esté donde esté clonado.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$REPO_DIR/.env" ]; then
+    set -a; . "$REPO_DIR/.env"; set +a
 fi
 
 echo "uv:        $(uv --version 2>/dev/null || echo 'no disponible')"
