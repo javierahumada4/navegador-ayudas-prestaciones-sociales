@@ -12,13 +12,18 @@
             --samples 4 --output rlm/data/sft_traces.jsonl
 
     Output: one JSON line per generated trace with 
-    ``question``, ``answer``, ``trace``, ``verified`` and ``teacher``
+    ``question``, ``answer``, ``trace``, ``verified`` and ``teacher``,
+    plus per-sample metrics (``predicted``, ``n_tokens``, ``hit_max_tokens``...).
+
+    Log: one JSON line per example in ``--log-path``, appended as the run goes so a
+    crashed session keeps what it did. Load with ``pd.read_json(path, lines=True)``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
@@ -71,6 +76,17 @@ def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]
     ).eval()
     return model, tokenizer
 
+def _append_jsonl(path: Path, record: dict) -> None:
+    """
+    Append one record to a JSON Lines file, flushing it to disk immediately.
+
+    Args:
+        path (Path): JSONL file.
+        record (dict): Record to write as one line.
+    """
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
 def _prepend_rules(
     example: dict, 
     ) -> list[dict]:
@@ -104,6 +120,7 @@ def generate_traces(
     verifier: Verifier,
     *,
     teacher_uses_rule_context: bool = True,
+    log_path: Path | None = None,
 ) -> list[dict]:
     """
     Generates traces using the teacher model.
@@ -117,6 +134,7 @@ def generate_traces(
         verifier (Verifier): Verifier to delete bad examples.
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
+        log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
 
     Returns:
         rows (list[dicts]): New dataset made of formated json traces.
@@ -126,7 +144,7 @@ def generate_traces(
     model, tokenizer = _load_model(teacher)
 
     rows: list[dict] = []
-    for example in dataset:
+    for i, example in enumerate(dataset):
         prompt = example["prompt"]
         if teacher_uses_rule_context and example.get("rule_context"):
             prompt = _prepend_rules(example)
@@ -134,6 +152,7 @@ def generate_traces(
             prompt, tokenize=False, add_generation_prompt=True
         )
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        start = time.perf_counter()
         with torch.no_grad():
             generated = model.generate(
                 **inputs,
@@ -145,21 +164,48 @@ def generate_traces(
                 pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
             )
 
+        gen_seconds = time.perf_counter() - start
+
         prompt_len = inputs["input_ids"].shape[1]
-        for seq in generated:
-            raw = tokenizer.decode(seq[prompt_len:], skip_special_tokens=True)
+        pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
+        n_verified = 0
+        for j, seq in enumerate(generated):
+            completion_ids = seq[prompt_len:]
+            raw = tokenizer.decode(completion_ids, skip_special_tokens=True)
             trace = _canonical_trace(raw)
             result = verifier.verify(trace, str(example["answer"]))
+            n_verified += result.is_correct
+            n_tokens = int((completion_ids != pad_id).sum())
             rows.append(
                 {
+                    "example_id": i,
+                    "sample_idx": j,
                     "question": example["prompt"][-1]["content"],
                     "answer": str(example["answer"]),
+                    "predicted": extract_answer(trace),
                     "trace": trace,
                     "verified": result.is_correct,
+                    "raw_valid_format": has_valid_format(raw),
+                    "n_tokens": n_tokens,
+                    "hit_max_tokens": n_tokens >= max_new_tokens,
                     "teacher": teacher,
                     "params": example.get("params"),
                     "branches": example.get("branches"),
                 }
+            )
+
+        if log_path is not None:
+            _append_jsonl(
+                log_path,
+                {
+                    "example_id": i,
+                    "template_id": example.get("template_id"),
+                    "branches": example.get("branches"),
+                    "n_samples": samples,
+                    "n_verified": n_verified,
+                    "prompt_tokens": prompt_len,
+                    "gen_seconds": round(gen_seconds, 2),
+                },
             )
     return rows
 
@@ -173,11 +219,20 @@ def main() -> None:
     parser.add_argument("--verifier", default="imv")
     parser.add_argument("--output", default="rlm/data/sft_traces.jsonl")
     parser.add_argument(
+        "--log-path",
+        default="rlm/data/logs/distill_metrics.jsonl",
+        help="per-example metrics JSONL, overwritten at the start of each run",
+    )
+    parser.add_argument(
         "--no-teacher-rules",
         action="store_true",
         help="do not prepend row.rule_context to the teacher prompt",
     )
     args = parser.parse_args()
+
+    log_path = Path(args.log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("", encoding="utf-8")
 
     dataset = load_domain_dataset(args.data)
     traces = generate_traces(
@@ -187,6 +242,7 @@ def main() -> None:
         args.max_new_tokens,
         build_verifier(args.verifier),
         teacher_uses_rule_context=not args.no_teacher_rules,
+        log_path=log_path,
     )
 
     out = Path(args.output)
@@ -197,7 +253,7 @@ def main() -> None:
     kept = sum(1 for t in traces if t["verified"])
     print(
         f"{kept}/{len(traces)} traces verified "
-        f"({100 * kept / max(len(traces), 1):.1f}%) -> {out}"
+        f"({100 * kept / max(len(traces), 1):.1f}%) -> {out} | log -> {log_path}"
     )
 
 
