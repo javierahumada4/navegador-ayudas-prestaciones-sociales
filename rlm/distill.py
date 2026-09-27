@@ -20,14 +20,14 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Iterable, Any
-
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from typing import TYPE_CHECKING, Any, Iterable
 
 from rlm.data import load_domain_dataset
 from rlm.rewards import extract_answer, has_valid_format
 from rlm.verifier import Verifier, build_verifier
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 
 def _canonical_trace(trace: str) -> str:
@@ -48,7 +48,7 @@ def _canonical_trace(trace: str) -> str:
     # Preserve the teacher's text as reasoning but force the canonical training format.
     return f"<think>{trace.strip()}</think><answer>{answer.strip()}</answer>"
 
-def _load_model(teacher: str) -> AutoModelForCausalLM: 
+def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     """
     Load the teacher model taking into account available resources.
 
@@ -56,18 +56,24 @@ def _load_model(teacher: str) -> AutoModelForCausalLM:
         teacher (str): Teacher model name.
 
     Returns:
-        model (AutoModelForCausalLM): Instance of the model ready to use.
+        model (PreTrainedModel): Instance of the model ready to use.
+        tokenizer (PreTrainedTokenizerBase): Tokenizer of the teacher.
     """
+    # Heavy imports here so the module (and its helpers) import without the train extra.
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     tokenizer = AutoTokenizer.from_pretrained(teacher)
     model = AutoModelForCausalLM.from_pretrained(
         teacher, dtype=dtype, device_map=device
     ).eval()
+    return model, tokenizer
 
 def _prepend_rules(
-    example, 
-    ) -> None:
+    example: dict, 
+    ) -> list[dict]:
     """
     Prepend the rule_context.
     Checks for the first user message with rule context and prepends it to the promp.
@@ -109,17 +115,21 @@ def generate_traces(
         max_new_tokens (int): Maximun number of tokens added to the answer through 
                             traces.
         verifier (Verifier): Verifier to delete bad examples.
-        teacher_uses_rule_context (bool): TODO.
+        teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
+                            to the teacher prompt only.
 
     Returns:
         rows (list[dicts]): New dataset made of formated json traces.
     """
-    model = _load_model(teacher)
+    import torch
+
+    model, tokenizer = _load_model(teacher)
 
     rows: list[dict] = []
     for example in dataset:
+        prompt = example["prompt"]
         if teacher_uses_rule_context and example.get("rule_context"):
-            _prepend_rules(example)
+            prompt = _prepend_rules(example)
         text = tokenizer.apply_chat_template(
             prompt, tokenize=False, add_generation_prompt=True
         )
