@@ -37,8 +37,11 @@ def group_advantages(rewards: torch.Tensor, eps: float = 1e-4, scale: bool = Tru
     Returns:
         Advantages with shape ``(G,)``. A positive advantage means "better than the group".
     """
-    # Tu turno.
-    raise NotImplementedError
+
+    adv = rewards - rewards.mean()
+    if scale:
+        return adv / (adv.std() + eps)
+    return adv
 
 
 def policy_ratio(logp_new: torch.Tensor, logp_old: torch.Tensor) -> torch.Tensor:
@@ -46,8 +49,8 @@ def policy_ratio(logp_new: torch.Tensor, logp_old: torch.Tensor) -> torch.Tensor
 
     Both inputs have shape ``(G, T)``. Return a tensor of the same shape.
     """
-    # Tu turno.
-    raise NotImplementedError
+
+    return torch.exp(logp_new - logp_old)
 
 
 def clipped_objective(
@@ -63,8 +66,8 @@ def clipped_objective(
     Returns:
         Per-token objective, shape ``(G, T)``, *before* masking and averaging.
     """
-    # Tu turno.
-    raise NotImplementedError
+    adv = advantages.unsqueeze(-1)
+    return torch.min(ratio * adv, torch.clip(ratio, 1-epsilon, 1+epsilon) * adv)
 
 
 def kl_penalty(logp_new: torch.Tensor, logp_ref: torch.Tensor) -> torch.Tensor:
@@ -72,9 +75,7 @@ def kl_penalty(logp_new: torch.Tensor, logp_ref: torch.Tensor) -> torch.Tensor:
 
     exp(logp_ref - logp_new) - (logp_ref - logp_new) - 1. Always >= 0. Shape ``(G, T)``.
     """
-    # Tu turno.
-    raise NotImplementedError
-
+    return torch.exp(logp_ref - logp_new) - (logp_ref - logp_new) -1
 
 def grpo_loss(
     logp_new: torch.Tensor,
@@ -93,5 +94,24 @@ def grpo_loss(
     ``mean_advantage``, ``clip_fraction`` (share of tokens where clipping was active) and
     ``kl`` for logging.
     """
-    # Tu turno.
-    raise NotImplementedError
+
+    adv = group_advantages(rewards)
+    ratio = policy_ratio(logp_new, logp_old)
+    clipped_o = clipped_objective(ratio, adv, epsilon)
+
+    if beta > 0 and logp_ref is not None:
+        kl_div = kl_penalty(logp_new, logp_ref) 
+        kl_mean = ((kl_div * mask).sum(dim=1) / mask.sum(dim=1)).mean()
+    else:
+        kl_div = torch.zeros_like(logp_new)
+        kl_mean = torch.tensor(0.0)
+    
+    stats = {
+        "mean_advantage": adv.mean().item(),
+        "kl": kl_mean.item(),
+        "clip_fraction": 1 - ((1-epsilon <= ratio) & (ratio <= 1+epsilon)).float().mean().item()
+    }
+    objective = clipped_o - beta * kl_div
+    objective = (objective * mask).sum(dim=1) / mask.sum(dim=1)
+    objective = objective.mean()
+    return -objective, stats
