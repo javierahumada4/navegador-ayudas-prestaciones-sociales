@@ -162,3 +162,25 @@ excepcional son procesos distintos y no deben inflar la tarea de razonamiento de
 - Ley 19/2021, de 20 de diciembre, por la que se establece el ingreso mínimo vital,
   texto consolidado actualizado en abril de 2026.
 - Seguridad Social, página oficial de Ingreso Mínimo Vital, cuantías 2026.
+
+## `rule_context` para distillation
+
+`generate_problems.py` construye `rule_context` automáticamente desde `rlm/rulesets/imv_2026.json`.
+No es una segunda copia hardcodeada de los umbrales.
+
+El contexto del profesor incluye explícitamente:
+
+- cuantías ordinarias de renta garantizada;
+- condición mínima de 10 €/mes para IMV;
+- discapacidad >= 65% y complemento del 22%;
+- todos los supuestos monoparentales usados por la Ley 19/2021;
+- tabla completa de límites de patrimonio neto por composición;
+- tabla completa del test de activos no societarios por composición;
+- desigualdad exacta de cada test (`<` para patrimonio, `<=` para activos);
+- límites CAPI del 300% de renta y 150% de patrimonio por composición;
+- importes CAPI por edad.
+
+Esto es deliberado: el profesor de distillation necesita los valores exactos para producir
+trazas correctas en problemas de borde (`income_fail`, `patrimony_fail`, `capi_only`, etc.).
+El estudiante de SFT/GRPO no necesita recibir esta hoja de reglas en inferencia salvo que
+se ejecute el generador con `--with-rules` para un experimento específico.

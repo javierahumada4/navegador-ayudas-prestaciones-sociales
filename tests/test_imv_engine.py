@@ -181,3 +181,41 @@ def test_ood_generator_is_capi_only_family():
 def test_generator_has_no_answer_leakage_in_sample():
     problems = IMVProblemGenerator().generate(100, "train", seed=7)
     assert sum(p.answer in p.question for p in problems) == 0
+
+
+def test_rule_context_contains_exact_thresholds_requested_for_distillation():
+    generator = IMVProblemGenerator()
+    context = generator.rule_context
+
+    # Exact IMV patrimony/assets thresholds, including strictness at the boundary.
+    assert "1 adulto: patrimonio neto < 26.409,60 €" in context
+    assert "activos no societarios <= 52.819,20 €" in context
+    assert "2 adultos + 1 menor: patrimonio neto < 47.537,28 €" in context
+    assert "activos no societarios <= 95.074,56 €" in context
+
+    # Disability threshold and amount are explicit.
+    assert "discapacidad reconocida >= 65%" in context
+    assert "+22% de la base de un adulto = 161,39 €/mes" in context
+
+    # Monoparental conditions are operational, not just named.
+    assert "guarda y custodia exclusiva" in context
+    assert "periodo ininterrumpido >= 12 meses" in context
+    assert "dependencia grado >= 3" in context
+    assert "incapacidad permanente absoluta o gran invalidez" in context
+    assert "víctima de violencia de género" in context
+
+    # Exact CAPI thresholds by composition.
+    assert "1 adulto + 1 menor: ingresos anuales < 34.332,48 €" in context
+    assert "patrimonio neto < 55.460,16 €" in context
+    assert "2 adultos + 2 menores: ingresos anuales < 50.178,24 €" in context
+    assert "patrimonio neto < 87.151,68 €" in context
+
+
+def test_rule_context_is_generated_from_ruleset_not_hardcoded():
+    from rlm.generate_problems import build_rule_context
+
+    future_rules = load_ruleset()
+    future_rules["amounts"]["disability_min_percent"] = 40
+    context = build_rule_context(future_rules)
+    assert "discapacidad reconocida >= 40%" in context
+    assert "discapacidad reconocida >= 65%" not in context
