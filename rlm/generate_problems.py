@@ -23,6 +23,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -36,21 +37,152 @@ from rlm.imv_engine import (
 
 APP_DATE = date(2026, 9, 26)
 
-RULES_TEXT = """Reglas IMV/CAPI 2026 para este ejercicio:
-- Renta garantizada: 733,60 €/mes para una persona; +30 % por miembro adicional,
-  con máximo del 220 % de la base.
-- Complemento monoparental: +22 % de la base cuando concurre el supuesto legal.
-- Discapacidad: +22 % de la base si algún miembro alcanza el umbral legal.
-- IMV: renta garantizada menos ingresos mensuales computables; la diferencia debe
-  ser de al menos 10 €/mes.
-- Patrimonio neto y activos no societarios tienen límites según la composición.
-- CAPI: puede existir aunque no haya IMV; exige menores y aplica límites de renta
-  (300 % del umbral ordinario), patrimonio (150 %) y activos.
-- CAPI mensual por menor: 115 € (<3 años), 80,50 € (3-5), 57,50 € (6-17),
-  usando la edad a 1 de enero.
-- Regla general de residencia continuada: 12 meses. Unidad de convivencia:
-  constituida al menos 6 meses, salvo excepciones legales.
-Calcula con céntimos y responde únicamente la cantidad mensual total IMV+CAPI."""
+def _D(value: Any) -> Decimal:
+    return Decimal(str(value))
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _eur_es(value: Decimal | str | float | int) -> str:
+    """Spanish display format, e.g. Decimal('26409.60') -> '26.409,60 €'."""
+    value = _money(_D(value))
+    raw = f"{value:,.2f}"
+    return raw.replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+
+
+def _annex_ii_multiplier_for_key(rules: dict[str, Any], key: str) -> Decimal:
+    return _D(rules["patrimony"]["annex_ii"][key])
+
+
+def build_rule_context(rules: dict[str, Any]) -> str:
+    """Build the teacher rule sheet from the same ruleset used by the oracle.
+
+    Keeping this generated rather than handwritten is intentional: the teacher
+    and the deterministic reference implementation must never disagree because a
+    threshold was updated in one place but not the other.
+    """
+    amounts = rules["amounts"]
+    patrimony = rules["patrimony"]
+    capi = rules["capi"]
+    mono = rules["monoparental"]
+
+    base_monthly = _D(amounts["single_adult_monthly_eur"])
+    base_annual = base_monthly * Decimal(12)
+    single_net = base_annual * _D(patrimony["single_adult_net_worth_multiplier_annual"])
+    single_assets = base_annual * _D(
+        patrimony["single_adult_non_corporate_assets_multiplier_annual"]
+    )
+
+    # Annex-II table. Each row is (human label, annex-II key).
+    compositions = [
+        ("1 adulto", "1,0"),
+        ("1 adulto + 1 menor", "1,1"),
+        ("1 adulto + 2 menores", "1,2"),
+        ("1 adulto + 3 menores", "1,3"),
+        ("1 adulto + 4 o más menores", "1,4+"),
+        ("2 adultos", "2,0"),
+        ("2 adultos + 1 menor", "2,1"),
+        ("2 adultos + 2 menores", "2,2"),
+        ("2 adultos + 3 o más menores", "2,3+"),
+        ("3 adultos", "3,0"),
+        ("3 adultos + 1 menor", "3,1"),
+        ("3 adultos + 2 o más menores", "3,2+"),
+        ("4 adultos", "4,0"),
+        ("4 adultos + 1 o más menores", "4,1+"),
+        ("otros", "other"),
+    ]
+
+    patrimony_lines = []
+    for label, key in compositions:
+        mult = _annex_ii_multiplier_for_key(rules, key)
+        net = _money(single_net * mult)
+        assets = _money(single_assets * mult)
+        patrimony_lines.append(
+            f"  - {label}: patrimonio neto < {_eur_es(net)}; "
+            f"activos no societarios <= {_eur_es(assets)}."
+        )
+
+    # CAPI uses 300% of Annex-I ordinary guaranteed income (without the 22%
+    # monoparental/disability supplements) and 150% of Annex-II net worth.
+    capi_compositions = [
+        ("1 adulto + 1 menor", 2, "1,1"),
+        ("1 adulto + 2 menores", 3, "1,2"),
+        ("1 adulto + 3 menores", 4, "1,3"),
+        ("1 adulto + 4 o más menores", 5, "1,4+"),
+        ("2 adultos + 1 menor", 3, "2,1"),
+        ("2 adultos + 2 menores", 4, "2,2"),
+        ("2 adultos + 3 o más menores", 5, "2,3+"),
+        ("3 adultos + 1 menor", 4, "3,1"),
+        ("3 adultos + 2 o más menores", 5, "3,2+"),
+        ("4 adultos + 1 o más menores", 5, "4,1+"),
+        ("otros con menores", 5, "other"),
+    ]
+    capi_lines = []
+    add_pct = _D(amounts["additional_member_pct"])
+    max_mult = _D(amounts["max_household_multiplier"])
+    for label, member_count, annex_key in capi_compositions:
+        annex_i = min(Decimal(1) + add_pct * Decimal(member_count - 1), max_mult)
+        income_limit = _money(
+            base_annual * annex_i * _D(capi["income_multiplier"])
+        )
+        net_mult = _annex_ii_multiplier_for_key(rules, annex_key)
+        capi_net = _money(
+            single_net * net_mult * _D(capi["net_worth_multiplier"])
+        )
+        capi_lines.append(
+            f"  - {label}: ingresos anuales < {_eur_es(income_limit)}; "
+            f"patrimonio neto < {_eur_es(capi_net)}."
+        )
+
+    disability_amount = _money(base_monthly * _D(amounts["disability_pct"]))
+    mono_amount = _money(base_monthly * _D(amounts["monoparental_pct"]))
+    disability_min = amounts["disability_min_percent"]
+    inst_months = mono["other_parent_institution_min_months"]
+    dep_grade = mono["dependency_min_grade"]
+
+    return f"""REGLAS EXACTAS IMV/CAPI 2026 PARA RESOLVER ESTOS PROBLEMAS
+
+1) RENTA GARANTIZADA E IMV
+- Base de 1 adulto: {_eur_es(base_monthly)}/mes.
+- Por cada miembro adicional: +{_D(amounts['additional_member_pct']) * 100:.0f}% de la base, hasta un máximo del {_D(amounts['max_household_multiplier']) * 100:.0f}% de la base.
+- Importes ordinarios: 1 miembro {_eur_es(base_monthly)}/mes; 2 miembros {_eur_es(base_monthly * Decimal('1.30'))}/mes; 3 miembros {_eur_es(base_monthly * Decimal('1.60'))}/mes; 4 miembros {_eur_es(base_monthly * Decimal('1.90'))}/mes; 5 o más {_eur_es(base_monthly * Decimal('2.20'))}/mes.
+- IMV mensual = renta garantizada final (incluidos complementos) - ingresos computables anuales/12.
+- Solo hay IMV si la diferencia es >= {_eur_es(amounts['minimum_imv_monthly_eur'])}/mes. La igualdad a 10 € sí cumple.
+
+2) DISCAPACIDAD
+- Si el beneficiario individual tiene discapacidad reconocida >= {disability_min}%, o si cualquier miembro de la unidad tiene discapacidad reconocida >= {disability_min}%, se añade una sola vez +{_D(amounts['disability_pct']) * 100:.0f}% de la base de un adulto = {_eur_es(disability_amount)}/mes.
+
+3) COMPLEMENTO MONOPARENTAL
+- Añade una sola vez +{_D(amounts['monoparental_pct']) * 100:.0f}% de la base de un adulto = {_eur_es(mono_amount)}/mes cuando concurra alguno de estos supuestos:
+  a) un solo adulto con uno o más descendientes hasta segundo grado menores, con guarda y custodia exclusiva;
+  b) un solo adulto con menores en acogimiento familiar permanente o guarda con fines de adopción, siendo el único acogedor/guardador;
+  c) el otro progenitor, guardador o acogedor está en prisión o centro hospitalario durante un periodo ininterrumpido >= {inst_months} meses;
+  d) conviven exclusivamente progenitores/abuelos/guardadores/acogedores y menores, y uno de los adultos tiene dependencia grado >= {dep_grade}, incapacidad permanente absoluta o gran invalidez;
+  e) unidad formada exclusivamente por una mujer víctima de violencia de género y sus descendientes hasta segundo grado menores bajo guarda/custodia, o menores en acogimiento permanente/guarda preadoptiva.
+
+4) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
+- Vivienda habitual excluida. El patrimonio neto debe ser ESTRICTAMENTE menor que el límite: igualdad => no elegible.
+- Los activos no societarios deben ser <= al límite: solo superar el límite => no elegible.
+""" + "\n".join(patrimony_lines) + f"""
+
+5) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
+- Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0.
+- Ingresos: ESTRICTAMENTE < 300% del umbral ordinario del Anexo I (sin sumar los complementos de monoparentalidad/discapacidad).
+- Patrimonio neto: ESTRICTAMENTE < 150% del límite del Anexo II.
+- Activos no societarios: se aplica el MISMO límite del test de activos anterior (<= límite).
+- Límites exactos de renta y patrimonio CAPI por composición:
+""" + "\n".join(capi_lines) + f"""
+- Cuantía CAPI por cada menor, según edad a 1 de enero: 115,00 €/mes si <3 años; 80,50 €/mes si 3-5 años; 57,50 €/mes si 6-17 años.
+
+6) OTROS REQUISITOS USADOS EN EL DATASET
+- Residencia legal y efectiva continuada general: >= {rules['requirements']['minimum_continuous_residence_months']} meses.
+- Unidad de convivencia: constituida en general >= {rules['requirements']['minimum_household_formation_months']} meses.
+- Ser administrador de derecho de una sociedad mercantil activa excluye tanto IMV como CAPI.
+
+Calcula siempre con céntimos. La respuesta final pedida en el dataset es TOTAL mensual = IMV + CAPI."""
+
 
 
 @dataclass
@@ -60,7 +192,7 @@ class Problem:
     params: dict[str, Any]
     template_id: int
     branches: dict[str, str] = field(default_factory=dict)
-    rule_context: str = RULES_TEXT
+    rule_context: str = ""
 
 
 class ProblemGenerator(ABC):
@@ -95,7 +227,7 @@ class ProblemGenerator(ABC):
             seen.add(fingerprint)
             answer, branches = self.solve(params)
             question, template_id = self.render(params, rng)
-            problems.append(Problem(question, answer, params, template_id, branches))
+            problems.append(Problem(question, answer, params, template_id, branches, self.rule_context))
         if len(problems) < n:
             raise RuntimeError(
                 f"only {len(problems)} unique problems after {attempts} attempts"
@@ -159,6 +291,7 @@ class IMVProblemGenerator(ProblemGenerator):
 
     def __init__(self) -> None:
         self.rules = load_ruleset()
+        self.rule_context = build_rule_context(self.rules)
 
     def _base_case(
         self, rng: random.Random, adults: int, minors: int, family: str
