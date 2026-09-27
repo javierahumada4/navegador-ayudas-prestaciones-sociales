@@ -25,6 +25,12 @@ train = [
     "datasets>=3.0",
     "accelerate>=1.5",
 ]
+# Teacher generation for rlm/distill.py (vLLM pins its own torch; see tool.uv.conflicts).
+distill = [
+    "vllm>=0.30,<0.31",
+    "datasets>=3.0",
+    "accelerate>=1.5",
+]
 rag = [
     "sentence-transformers>=5.0",
     "chromadb>=1.0",
@@ -58,10 +64,14 @@ packages = ["api", "rlm", "tool_use", "rag", "agent", "smoke"]
 
 [tool.uv]
 default-groups = ["dev"]
+# vLLM pins an exact torch version: resolve distill apart from train so train keeps its torch.
+conflicts = [
+    [{ extra = "train" }, { extra = "distill" }],
+]
 
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'", extra = "train" },
 ]
 
 [[tool.uv.index]]
