@@ -85,7 +85,7 @@ def _append_jsonl(path: Path, record: dict) -> None:
         record (dict): Record to write as one line.
     """
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 def _prepend_rules(
     example: dict, 
@@ -249,7 +249,7 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as handle:
         for row in traces:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
     kept = sum(1 for t in traces if t["verified"])
     print(
         f"{kept}/{len(traces)} traces verified "
