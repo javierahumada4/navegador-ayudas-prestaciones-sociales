@@ -282,6 +282,7 @@ def generate_traces(
     teacher_uses_rule_context: bool = True,
     thinking: bool = True,
     log_path: Path | None = None,
+    id_offset: int = 0,
 ) -> list[dict]:
     """
     Generates traces using the teacher model.
@@ -308,6 +309,8 @@ def generate_traces(
                             teacher reasons in our ``<think>…</think><answer>``
                             format from the system prompt instead of its own block.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
+        id_offset (int): Added to every ``example_id`` so ids stay the row
+                            number in the full file when ``dataset`` is a shard.
 
     Returns:
         rows (list[dicts]): New dataset made of formated json traces.
@@ -376,7 +379,7 @@ def generate_traces(
         stage("verifying")
         batch_verified: list[int] = []
         for b, example in enumerate(batch):
-            i = batch_start + b
+            i = id_offset + batch_start + b
             n_verified = 0
             for j in range(samples):
                 completion = completions[b * samples + j]
@@ -416,7 +419,7 @@ def generate_traces(
                 _append_jsonl(
                     log_path,
                     {
-                        "example_id": batch_start + b,
+                        "example_id": id_offset + batch_start + b,
                         "template_id": example.get("template_id"),
                         "branches": example.get("branches"),
                         "n_samples": samples,
@@ -467,6 +470,12 @@ def main() -> None:
         help="per-example metrics JSONL, overwritten at the start of each run",
     )
     parser.add_argument(
+        "--shard",
+        default=None,
+        help="i/n: only the i-th of n contiguous slices of --data (1-based), so "
+        "several sessions can split one run; outputs concatenate",
+    )
+    parser.add_argument(
         "--no-thinking",
         action="store_true",
         help="disable Qwen3 native thinking; the teacher follows our <think><answer> format",
@@ -483,6 +492,15 @@ def main() -> None:
     log_path.write_text("", encoding="utf-8")
 
     dataset = load_domain_dataset(args.data)
+    id_offset = 0
+    if args.shard:
+        index, count = (int(part) for part in args.shard.split("/"))
+        if not 1 <= index <= count:
+            raise ValueError(f"--shard {args.shard}: need 1 <= i <= n")
+        id_offset = (index - 1) * len(dataset) // count
+        end = index * len(dataset) // count
+        dataset = dataset.select(range(id_offset, end))
+        print(f"Shard {args.shard}: rows {id_offset}..{end - 1} of --data")
     traces = generate_traces(
         dataset,
         args.teacher,
@@ -496,6 +514,7 @@ def main() -> None:
         teacher_uses_rule_context=not args.no_teacher_rules,
         thinking=not args.no_thinking,
         log_path=log_path,
+        id_offset=id_offset,
     )
 
     out = Path(args.output)
