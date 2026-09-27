@@ -23,9 +23,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
+
+from dotenv import load_dotenv
 
 from rlm.data import load_domain_dataset
 from rlm.rewards import extract_answer, has_valid_format
@@ -220,6 +223,10 @@ def generate_traces(
 
 
 def main() -> None:
+    # HF_TOKEN (and friends) from the repo's .env; variables already set in the shell win.
+    load_dotenv(override=False)
+    print(f"HF_TOKEN: {'found' if os.environ.get('HF_TOKEN') else 'not set (public models only)'}")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
