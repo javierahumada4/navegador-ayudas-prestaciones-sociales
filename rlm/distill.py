@@ -27,7 +27,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import torch
@@ -35,7 +37,7 @@ from tqdm.auto import tqdm
 from dotenv import load_dotenv
 
 from rlm.data import load_domain_dataset
-from rlm.rewards import extract_answer, has_valid_format
+from rlm.rewards import extract_answer, has_valid_format, normalize_number
 from rlm.verifier import Verifier, build_verifier
 
 if TYPE_CHECKING:
@@ -47,24 +49,77 @@ if TYPE_CHECKING:
 # in memory at once, so 4 problems (16 sequences) is its ceiling on 16 GB.
 DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 4}
 
+# Teacher-only system prompt for Qwen3 thinking mode. The student's R1-Zero prompt
+# asks the model to write <think>/<answer> tags itself; a thinking model then opens
+# its native <think> AND writes ours, which duplicated tags. Here the reasoning stays
+# in the native block and the visible reply is only the answer tag.
+TEACHER_THINKING_SYSTEM_PROMPT = (
+    "Eres un experto en el Ingreso Mínimo Vital (IMV) y el Complemento de Ayuda para "
+    "la Infancia (CAPI) de España. Razona paso a paso en tu bloque de pensamiento, "
+    "aplicando exactamente las reglas que te dan. Cuando termines de pensar, tu "
+    "respuesta visible debe ser ÚNICAMENTE <answer>IMPORTE</answer>, con el total "
+    "mensual IMV+CAPI en euros, dos decimales y punto decimal, por ejemplo "
+    "<answer>431.26</answer>. No escribas etiquetas <think> tú mismo."
+)
 
-def _canonical_trace(trace: str) -> str:
+# Without native thinking the teacher follows the R1-Zero format, but may answer with
+# a bare number; starting its reply inside <think> makes it reason first.
+NO_THINKING_PREFILL = "<think>\n"
+
+_THINK_TAG = re.compile(r"</?think>")
+_ANSWER_TAG = re.compile(r"</?answer>")
+_ANSWER_BLOCK = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+
+
+def _structure_trace(raw: str) -> tuple[str | None, str]:
     """
-    Helper function to create a canonical trace.
-    
-    Args: 
-        trace (str): Original model trace.
+    Rebuild a teacher completion into the one canonical training format.
+
+    The reasoning is everything before the first ``</think>`` (the end of the
+    teacher's thinking) with any stray tags removed; the answer comes from the
+    ``<answer>`` blocks after it. The result is always exactly
+    ``<think>\\n{reasoning}\\n</think>\\n<answer>{amount}</answer>``, or ``None``.
+
+    Args:
+        raw (str): Teacher completion as decoded.
 
     Returns:
-        str: Correclly formated trace.
+        trace (str | None): Canonical trace, ``None`` if it cannot be built.
+        status (str): ``clean`` (already canonical up to whitespace), ``repaired``
+                            (duplicated tags or extra text removed), or why it
+                            was rejected: ``unclosed_think``, ``empty_reasoning``,
+                            ``no_answer``, ``ambiguous_answer``.
     """
-    if has_valid_format(trace):
-        return trace
-    answer = extract_answer(trace)
-    if answer is None:
-        return trace
-    # Preserve the teacher's text as reasoning but force the canonical training format.
-    return f"<think>{trace.strip()}</think><answer>{answer.strip()}</answer>"
+    if "</think>" not in raw:
+        return None, "unclosed_think"  # truncated, or never reasoned
+    head, tail = raw.split("</think>", 1)
+    reasoning = _ANSWER_TAG.sub("", _THINK_TAG.sub("", head)).strip()
+    if not reasoning:
+        return None, "empty_reasoning"
+
+    answers = _ANSWER_BLOCK.findall(tail)
+    if not answers:
+        return None, "no_answer"
+    amounts = {normalize_number(answer) for answer in answers}
+    if len(amounts) != 1 or None in amounts:
+        return None, "ambiguous_answer"  # several different amounts: no hedging
+    try:
+        amount = Decimal(amounts.pop()).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return None, "no_answer"
+
+    trace = f"<think>\n{reasoning}\n</think>\n<answer>{amount}</answer>"
+    assert has_valid_format(trace), trace[-200:]
+    leftover = _THINK_TAG.sub("", _ANSWER_BLOCK.sub("", tail)).strip()
+    clean = (
+        head.count("<think>") <= 1
+        and _ANSWER_TAG.search(head) is None
+        and len(answers) == 1
+        and "<think>" not in tail
+        and "</think>" not in tail
+        and not leftover
+    )
+    return trace, "clean" if clean else "repaired"
 
 def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     """
@@ -129,6 +184,32 @@ def _append_jsonl(path: Path, record: dict) -> None:
     """
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+def _teacher_prompt(
+    example: dict, use_rule_context: bool, thinking: bool
+) -> list[dict]:
+    """
+    Build the teacher's messages: the row's prompt, with the rules prepended and,
+    in thinking mode, the teacher-only system prompt.
+
+    Args:
+        example: Example taken from the dataset.
+        use_rule_context (bool): Prepend ``rule_context`` if the row has one.
+        thinking (bool): Qwen3 native thinking mode.
+
+    Returns:
+        prompt (List[dict]): Teacher messages; the row itself is not modified.
+    """
+    if use_rule_context and example.get("rule_context"):
+        prompt = _prepend_rules(example)
+    else:
+        prompt = [dict(message) for message in example["prompt"]]
+    if thinking:
+        for message in prompt:
+            if message.get("role") == "system":
+                message["content"] = TEACHER_THINKING_SYSTEM_PROMPT
+                break
+    return prompt
 
 def _prepend_rules(
     example: dict, 
@@ -304,10 +385,10 @@ def generate_traces(
                             prompt with the exact rule sheet is ~2200 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
-        thinking (bool): Qwen3 native thinking mode. ``False`` passes
-                            ``enable_thinking=False`` to the chat template, so the
-                            teacher reasons in our ``<think>…</think><answer>``
-                            format from the system prompt instead of its own block.
+        thinking (bool): Qwen3 native thinking mode, with the teacher-only
+                            system prompt. ``False`` passes ``enable_thinking=False``
+                            and prefills ``<think>``, so the teacher reasons in the
+                            R1-Zero format of the row's system prompt.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
         id_offset (int): Added to every ``example_id`` so ids stay the row
                             number in the full file when ``dataset`` is a shard.
@@ -355,9 +436,7 @@ def generate_traces(
 
         stage("prepending")
         prompts = [
-            _prepend_rules(example)
-            if teacher_uses_rule_context and example.get("rule_context")
-            else example["prompt"]
+            _teacher_prompt(example, teacher_uses_rule_context, thinking)
             for example in batch
         ]
         stage("tokenizing")
@@ -369,6 +448,7 @@ def generate_traces(
                 # Templates without this switch simply ignore it.
                 enable_thinking=thinking,
             )
+            + ("" if thinking else NO_THINKING_PREFILL)
             for prompt in prompts
         ]
         stage("generating")
@@ -383,20 +463,26 @@ def generate_traces(
             n_verified = 0
             for j in range(samples):
                 completion = completions[b * samples + j]
-                raw = completion["text"]
-                trace = _canonical_trace(raw)
-                result = verifier.verify(trace, str(example["answer"]))
-                n_verified += result.is_correct
+                # The prefill is part of the prompt, not of the completion.
+                raw = ("" if thinking else NO_THINKING_PREFILL) + completion["text"]
+                trace, format_status = _structure_trace(raw)
+                is_correct = (
+                    trace is not None
+                    and verifier.verify(trace, str(example["answer"])).is_correct
+                )
+                n_verified += is_correct
                 rows.append(
                     {
                         "example_id": i,
                         "sample_idx": j,
                         "question": example["prompt"][-1]["content"],
                         "answer": str(example["answer"]),
-                        "predicted": extract_answer(trace),
+                        "predicted": extract_answer(trace or raw),
                         "trace": trace,
-                        "verified": result.is_correct,
+                        "verified": is_correct,
+                        "format_status": format_status,
                         "raw_valid_format": has_valid_format(raw),
+                        "raw": raw,
                         "n_tokens": completion["n_tokens"],
                         "hit_max_tokens": completion["hit_max"],
                         "teacher": teacher,
