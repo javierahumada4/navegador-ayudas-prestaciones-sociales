@@ -140,11 +140,15 @@ def generate_traces(
         rows (list[dicts]): New dataset made of formated json traces.
     """
     import torch
+    from tqdm.auto import tqdm
 
+    print(f"Loading teacher {teacher} (first run downloads it)...", flush=True)
     model, tokenizer = _load_model(teacher)
 
     rows: list[dict] = []
-    for i, example in enumerate(dataset):
+    kept = 0
+    progress = tqdm(dataset, desc="distill", unit="example")
+    for i, example in enumerate(progress):
         prompt = example["prompt"]
         if teacher_uses_rule_context and example.get("rule_context"):
             prompt = _prepend_rules(example)
@@ -193,6 +197,11 @@ def generate_traces(
                     "branches": example.get("branches"),
                 }
             )
+
+        kept += n_verified
+        progress.set_postfix(
+            verified=f"{kept}/{len(rows)}", accept=f"{100 * kept / len(rows):.0f}%"
+        )
 
         if log_path is not None:
             _append_jsonl(
