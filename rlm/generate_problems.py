@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from rlm.imv_engine import (
+    age_on,
     economic_limits,
     evaluate_imv_case,
     expected_answer,
@@ -162,12 +163,19 @@ def build_rule_context(rules: dict[str, Any]) -> str:
   d) conviven exclusivamente progenitores/abuelos/guardadores/acogedores y menores, y uno de los adultos tiene dependencia grado >= {dep_grade}, incapacidad permanente absoluta o gran invalidez;
   e) unidad formada exclusivamente por una mujer víctima de violencia de género y sus descendientes hasta segundo grado menores bajo guarda/custodia, o menores en acogimiento permanente/guarda preadoptiva.
 
-4) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
+4) TOPE POR PENSIONES Y SUBSIDIO PARA MAYORES DE 52 AÑOS
+- Suma, para todos los miembros de la unidad, las pensiones contributivas o no contributivas de la Seguridad Social y, en su caso, el subsidio de desempleo para mayores de 52 años. Usa el importe mensual conjunto incluyendo la parte proporcional de pagas extraordinarias.
+- En los enunciados del dataset esta magnitud aparece como «Pensiones/subsidios sujetos al tope». Es un dato adicional al campo de «Ingresos computables anuales» y se usa para aplicar este tope específico.
+- Si pensiones/subsidios mensuales >= renta garantizada mensual aplicable: NO hay derecho al IMV por este motivo. La igualdad excluye.
+- Si 0 < pensiones/subsidios mensuales < renta garantizada y se cumplen los demás requisitos: primero calcula el IMV por renta = renta garantizada - ingresos computables anuales/12; después aplica IMV final = min(IMV por renta, renta garantizada - pensiones/subsidios mensuales).
+- Este tope limita o excluye el IMV. El CAPI se decide por sus propios requisitos y umbrales del apartado CAPI.
+
+5) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
 - Vivienda habitual excluida. El patrimonio neto debe ser ESTRICTAMENTE menor que el límite: igualdad => no elegible.
 - Los activos no societarios deben ser <= al límite: solo superar el límite => no elegible.
 """ + "\n".join(patrimony_lines) + f"""
 
-5) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
+6) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
 - Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0.
 - Ingresos: ESTRICTAMENTE < 300% del umbral ordinario del Anexo I (sin sumar los complementos de monoparentalidad/discapacidad).
 - Patrimonio neto: ESTRICTAMENTE < 150% del límite del Anexo II.
@@ -176,12 +184,27 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 """ + "\n".join(capi_lines) + f"""
 - Cuantía CAPI por cada menor, según edad a 1 de enero: 115,00 €/mes si <3 años; 80,50 €/mes si 3-5 años; 57,50 €/mes si 6-17 años.
 
-6) OTROS REQUISITOS USADOS EN EL DATASET
-- Residencia legal y efectiva continuada general: >= {rules['requirements']['minimum_continuous_residence_months']} meses.
+7) OTROS REQUISITOS USADOS EN EL DATASET
+- Residencia legal y efectiva continuada: CADA miembro de la unidad debe cumplir en general >= {rules['requirements']['minimum_continuous_residence_months']} meses. Comprueba la fecha individual de cada miembro; basta con que uno no cumpla para que falle este requisito.
+- Beneficiario individual: edad mínima general {rules['requirements']['individual_min_age']} años.
+- Si el beneficiario individual es menor de {rules['requirements']['independence_under_age']} años: debe haber vivido en domicilio distinto al de sus progenitores/tutores durante al menos los {rules['requirements']['independence_under_age_months']} meses inmediatamente anteriores y acreditar al menos {rules['requirements']['independence_under_age_ss_months']} meses de alta en Seguridad Social dentro de ese periodo.
+- Si el beneficiario individual tiene {rules['requirements']['independence_under_age']} años o más, el oracle de este dataset exige domicilio distinto al de progenitores/tutores durante al menos {rules['requirements']['independence_age_30_plus_months']} meses anteriores.
 - Unidad de convivencia: constituida en general >= {rules['requirements']['minimum_household_formation_months']} meses.
 - Ser administrador de derecho de una sociedad mercantil activa excluye tanto IMV como CAPI.
 
-Calcula siempre con céntimos. La respuesta final pedida en el dataset es TOTAL mensual = IMV + CAPI."""
+8) CONVENCIÓN EXACTA DE REDONDEO DEL ORACLE
+- Toda operación de redondeo monetario usa ROUND_HALF_UP a 2 decimales (céntimos). Ejemplo: 474,005 -> 474,01.
+- Renta garantizada ordinaria de la unidad: aplica el multiplicador por número de miembros y redondea a céntimos HALF_UP.
+- Complementos de monoparentalidad/discapacidad: se calculan como porcentaje de la base de un adulto; NO se redondea cada complemento por separado. Se suman a la renta garantizada ordinaria y entonces se redondea la renta garantizada final a céntimos HALF_UP.
+- Ingreso mensual para IMV: ingresos computables anuales / 12, SIN redondear antes de restarlo.
+- IMV por renta: renta garantizada final - ingreso mensual. Comprueba sobre ese valor sin redondear si la diferencia es >= 10,00 €.
+- Si hay pensiones/subsidios sujetos al tope, aplica el mínimo indicado en el apartado 4 antes del redondeo final del IMV.
+- IMV final: redondea a céntimos HALF_UP después de aplicar el tope de pensiones, si existe.
+- CAPI: suma las cuantías fijas correspondientes a todos los menores y redondea el total CAPI a céntimos HALF_UP.
+- TOTAL mensual pedido: suma el IMV final ya redondeado + el CAPI total ya redondeado y redondea de nuevo a céntimos HALF_UP.
+- Los límites monetarios calculados por el oracle (patrimonio, activos y umbrales CAPI) también se redondean a céntimos HALF_UP antes de compararlos con el caso.
+
+La respuesta final pedida en el dataset es TOTAL mensual = IMV + CAPI, con exactamente dos decimales."""
 
 
 
@@ -334,7 +357,12 @@ class IMVProblemGenerator(ProblemGenerator):
                     "person_b": pid,
                     "type": "parent_child",
                     "degree": 1,
-                    "custody": "shared" if adults > 1 else "none",
+                    # Non-monoparental synthetic cases always make the
+                    # custody fact explicit.  A one-adult household can still
+                    # have shared/non-exclusive custody with a parent who does
+                    # not live in the unit; this prevents the statement from
+                    # being ambiguous about the 22% monoparental complement.
+                    "custody": "shared",
                 }
             )
 
@@ -394,9 +422,8 @@ class IMVProblemGenerator(ProblemGenerator):
         else:
             adults = rng.randint(1, 3)
             minors = rng.randint(0, 3)
-            if adults == 1 and minors > 0 and family not in {"monoparental"}:
-                # Avoid accidental monoparental complement in ordinary families.
-                pass
+            # One-adult + minor cases outside the monoparental family remain
+            # non-monoparental because _base_case marks custody as shared.
 
         case = self._base_case(rng, adults, minors, family)
 
@@ -490,27 +517,49 @@ class IMVProblemGenerator(ProblemGenerator):
         result = evaluate_imv_case(params, self.rules)
         persons = {p["id"]: p for p in params["persons"]}
         unit = result["unit_member_ids"]
-        adults = [p for p in unit if (APP_DATE.year - int(persons[p]["date_of_birth"][:4])) >= 18]
-        minors = [p for p in unit if p not in adults]
+        app_date = date.fromisoformat(params["application_date"])
+        jan1 = date(app_date.year, 1, 1)
+
+        # Use exactly the same age calculation as the oracle.  For minors we
+        # expose both ages because CAPI uses age on 1 January while the
+        # beneficiary/minor tests use age on the application date.
+        adults = [pid for pid in unit if age_on(persons[pid]["date_of_birth"], app_date) >= 18]
+        minors = [pid for pid in unit if pid not in adults]
 
         person_lines = []
         for pid in unit:
             p = persons[pid]
-            age = APP_DATE.year - int(p["date_of_birth"][:4])
+            age_application = age_on(p["date_of_birth"], app_date)
             disability = (
                 f", discapacidad reconocida del {p['disability_percent']} %"
                 if p["disability_percent"]
                 else ""
             )
-            person_lines.append(f"{pid}: {age} años{disability}")
+            if pid in minors:
+                age_jan1 = age_on(p["date_of_birth"], jan1)
+                person_lines.append(
+                    f"{pid}: nacido el {p['date_of_birth']}, {age_application} años "
+                    f"a fecha de solicitud y {age_jan1} años a 1 de enero de "
+                    f"{app_date.year}{disability}"
+                )
+            else:
+                person_lines.append(
+                    f"{pid}: nacido el {p['date_of_birth']}, {age_application} años "
+                    f"a fecha de solicitud{disability}"
+                )
 
         relationship_bits = []
+        custody_labels = {
+            "shared": "compartida (no exclusiva)",
+            "exclusive": "exclusiva",
+            "none": "no indicada",
+        }
         for rel in params["relationships"]:
             if rel["type"] == "parent_child":
                 custody = rel.get("custody", "none")
                 relationship_bits.append(
-                    f"{rel['person_a']} y {rel['person_b']} tienen relación progenitor-hijo"
-                    + (f" con custodia {custody}" if custody != "none" else "")
+                    f"{rel['person_a']} y {rel['person_b']} tienen relación progenitor-hijo "
+                    f"con custodia {custody_labels.get(custody, custody)}"
                 )
             elif rel["type"] == "spouse":
                 relationship_bits.append(f"{rel['person_a']} y {rel['person_b']} son cónyuges")
@@ -520,10 +569,49 @@ class IMVProblemGenerator(ProblemGenerator):
                     f"{rel.get('degree', 1)}º grado"
                 )
 
+        # Residence is a per-member requirement in the oracle.  Never collapse
+        # it to one aggregate date, otherwise residence_fail can hide the very
+        # person that makes the case ineligible.
+        residence_bits = []
+        for pid in unit:
+            p = persons[pid]
+            legal_effective = (
+                p.get("legal_residence_in_spain", False)
+                and p.get("effective_residence_in_spain", False)
+            )
+            residence_bits.append(
+                f"{pid}: {'sí' if legal_effective else 'no'}, desde "
+                f"{p['continuous_legal_effective_residence_since']}"
+            )
+
+        # Independence facts are only relevant for an individual beneficiary,
+        # and every fact used by _individual_independence_ok must be observable
+        # in the natural-language problem.
+        independence_text = ""
+        if len(unit) == 1:
+            independent_since = params.get("applicant_history", {}).get(
+                "independent_from_parents_since"
+            )
+            periods = [
+                period
+                for period in params.get("social_security_registration_periods", [])
+                if period.get("person_id") == params["applicant_id"]
+            ]
+            if periods:
+                period_bits = []
+                for period in periods:
+                    end = period.get("to") or params["application_date"]
+                    period_bits.append(f"{period['from']} a {end}")
+                ss_text = "; ".join(period_bits)
+            else:
+                ss_text = "ninguno"
+            independence_text = (
+                "Independencia del solicitante: domicilio distinto al de sus "
+                f"progenitores/tutores desde {independent_since or 'fecha no acreditada'}. "
+                f"Periodos de alta en Seguridad Social: {ss_text}. "
+            )
+
         econ = params["economic"]
-        residence = min(
-            persons[pid]["continuous_legal_effective_residence_since"] for pid in unit
-        )
         benefits = sum(
             b.get("monthly_eur_with_extra_payments", 0)
             for pid in unit
@@ -531,12 +619,13 @@ class IMVProblemGenerator(ProblemGenerator):
         )
 
         facts = (
-            f"Solicitud a fecha {params['application_date']}. Solicitante: p1. "
+            f"Solicitud a fecha {params['application_date']}. Solicitante: {params['applicant_id']}. "
             f"Conviven {len(unit)} personas en el mismo domicilio desde "
             f"{params['domicile']['same_domicile_since']}. "
             f"Personas: {'; '.join(person_lines)}. "
             f"Relaciones: {'; '.join(relationship_bits) if relationship_bits else 'ninguna relevante'}. "
-            f"La residencia legal y efectiva más reciente de los miembros comenzó el {residence}. "
+            f"Residencia legal y efectiva continuada por miembro: {'; '.join(residence_bits)}. "
+            f"{independence_text}"
             f"Ingresos computables anuales de la unidad: "
             f"{_fmt_eur(econ['countable_income_annual_eur'])}. "
             f"Patrimonio neto sin vivienda habitual: {_fmt_eur(econ['net_worth_eur'])}. "

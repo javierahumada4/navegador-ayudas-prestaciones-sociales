@@ -104,8 +104,10 @@ uv run python -m rlm.train_grpo \
 Las recompensas son:
 
 1. `format_reward`: estructura `<think>...</think><answer>...</answer>`;
-2. `accuracy_reward`: importe correcto;
+2. `imv_accuracy_reward`: importe correcto tras cuantizar a céntimos con `ROUND_HALF_UP`, igual que el oracle y `IMVAmountVerifier`;
 3. `domain_reward`: `<answer>` contiene únicamente `123.45` con dos decimales.
+
+No usar `accuracy_reward` genérico para IMV si se quieren aceptar respuestas con más decimales que redondean correctamente (por ejemplo `474.005` frente a ground truth `474.01`). El reward genérico se mantiene para GSM8K/smoke tests.
 
 Pesos iniciales propuestos: `[1.0, 2.0, 0.5]`. Deben validarse experimentalmente y
 documentarse, no tratarse como hiperparámetros definitivos.
@@ -178,9 +180,41 @@ El contexto del profesor incluye explícitamente:
 - tabla completa del test de activos no societarios por composición;
 - desigualdad exacta de cada test (`<` para patrimonio, `<=` para activos);
 - límites CAPI del 300% de renta y 150% de patrimonio por composición;
-- importes CAPI por edad.
+- importes CAPI por edad;
+- tope por pensiones contributivas/no contributivas y subsidio para mayores de 52 años: igualdad con la renta garantizada excluye IMV y, por debajo, `IMV = min(IMV_por_renta, renta_garantizada - pensiones)`;
+- convención exacta de redondeo del oracle: `Decimal` + `ROUND_HALF_UP` a 2 decimales, indicando en qué pasos se redondea y en cuáles no.
 
 Esto es deliberado: el profesor de distillation necesita los valores exactos para producir
 trazas correctas en problemas de borde (`income_fail`, `patrimony_fail`, `capi_only`, etc.).
 El estudiante de SFT/GRPO no necesita recibir esta hoja de reglas en inferencia salvo que
 se ejecute el generador con `--with-rules` para un experimento específico.
+
+
+## Convención monetaria del oracle
+
+La convención forma parte del contrato de la tarea, no es un detalle de presentación:
+
+1. La renta garantizada ordinaria por número de miembros se redondea a céntimos con `ROUND_HALF_UP`.
+2. Los complementos de discapacidad/monoparentalidad se calculan sobre la base individual sin redondear cada complemento por separado; después se redondea la renta garantizada final.
+3. `ingresos_anuales / 12` no se redondea antes de calcular el IMV.
+4. El test de diferencia mínima de 10 € se hace sobre el IMV por renta antes del redondeo final.
+5. El tope de pensiones/subsidio se aplica antes de redondear el IMV final.
+6. El IMV final se redondea a céntimos `ROUND_HALF_UP`.
+7. Se suman las cuantías CAPI de los menores y se redondea el total CAPI.
+8. El total mensual suma IMV redondeado + CAPI redondeado y vuelve a cuantizar a céntimos.
+9. Los límites monetarios calculados por el oracle (patrimonio, activos y límites CAPI) se cuantizan a céntimos antes de comparar.
+
+`IMVAmountVerifier` e `imv_accuracy_reward` deben usar exactamente la misma cuantización. Así, por ejemplo, `474.005` se considera `474.01`, nunca `474.00`.
+
+## Contrato de observabilidad del enunciado
+
+El generador debe cumplir una regla estricta: **todo hecho que el oracle use para decidir la respuesta debe aparecer en `question`**.
+
+En particular:
+
+- Las edades se calculan con fecha completa. Para menores se muestran tanto la edad en la fecha de solicitud como la edad a 1 de enero del año de solicitud, que es la usada para el tramo CAPI.
+- La residencia legal y efectiva continuada se muestra por miembro, con su fecha individual de inicio.
+- En beneficiarios individuales se muestran la fecha desde la que vive en domicilio distinto al de progenitores/tutores y todos los periodos de alta en Seguridad Social usados por el test de independencia.
+- Toda relación progenitor-hijo generada especifica si la custodia es `exclusiva` o `compartida (no exclusiva)`. Así, una unidad con un solo adulto y menores no se confunde automáticamente con una unidad monoparental.
+
+Los tests de regresión y la auditoría del generador comprueban estas propiedades para train/test/OOD.
