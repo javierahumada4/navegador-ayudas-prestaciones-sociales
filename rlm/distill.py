@@ -299,8 +299,8 @@ def generate_traces(
                             ``DEFAULT_BATCH_SIZE[backend]``.
         gpu_memory_utilization (float): vLLM only, fraction of the GPU it may take.
         max_model_len (int | None): vLLM only, longest prompt + completion.
-                            ``None`` means ``max_new_tokens + 1536`` (the
-                            prompt with rules is ~800 tokens).
+                            ``None`` means ``max_new_tokens + 3072`` (the
+                            prompt with the exact rule sheet is ~2200 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
         thinking (bool): Qwen3 native thinking mode. ``False`` passes
@@ -318,7 +318,7 @@ def generate_traces(
 
     if backend == "vllm":
         llm, tokenizer = _load_vllm(
-            teacher, gpu_memory_utilization, max_model_len or max_new_tokens + 1536
+            teacher, gpu_memory_utilization, max_model_len or max_new_tokens + 3072
         )
 
         def generate(texts: list[str]) -> tuple[list[dict], list[int]]:
@@ -457,7 +457,7 @@ def main() -> None:
         "--max-model-len",
         type=int,
         default=None,
-        help="vllm: longest prompt + completion (default: max-new-tokens + 1536)",
+        help="vllm: longest prompt + completion (default: max-new-tokens + 3072)",
     )
     parser.add_argument("--verifier", default="imv")
     parser.add_argument("--output", default="rlm/data/sft_traces.jsonl")
