@@ -1,27 +1,17 @@
-"""Build a verifiable problem set programmatically. This is the pattern, with a worked example.
+"""Generate verifiable IMV/CAPI reasoning problems for phase 1.
 
-Nobody annotates hundreds of reasoning problems by hand. When the task of your domain is a
-calculation or a decision based on published rules, you write three functions and get
-thousands of problems in seconds:
+This replaces the shipping example from the ARCA template.  Ground truth comes
+from rlm.imv_engine, so the same deterministic implementation is used to label
+train/test data and to test the verifier.
 
-    sample_params(rng, split)  -> the data of one problem (weights, dates, amounts, doses…)
-    solve(params)              -> the correct answer, from a reference implementation
-    render(params, rng)        -> the statement in natural language, several templates
-
-The key point, and the reason this is not cheating: ``solve`` is at the same time the
-reference implementation and the **verifier**, so the ground truth cannot be wrong.
-
-The example below (parcel shipping cost) is deliberately *not* one of the suggested project
-domains: it is here so you can read a complete generator, run it, and then write your own.
-Copy the structure, throw away the rules.
-
+Recommended:
     uv run python -m rlm.generate_problems --n 800 --split train --out rlm/data/train.jsonl
-    uv run python -m rlm.generate_problems --n 200 --split test  --out rlm/data/test.jsonl
-    uv run python -m rlm.generate_problems --n 100 --split ood   --out rlm/data/test_ood.jsonl
+    uv run python -m rlm.generate_problems --n 200 --split test --out rlm/data/test.jsonl
+    uv run python -m rlm.generate_problems --n 100 --split ood --out rlm/data/test_ood.jsonl
 
-``train`` and ``test`` share a distribution; ``ood`` samples a weight range that never appears
-in training, which is what you need for the "SFT memorises, RL generalises" experiment.
-Answers are euros with two decimals, so verify with ``NumericVerifier(tolerance=0.01)``.
+The OOD split deliberately contains the "CAPI-only" family (no IMV because
+income is too high for IMV, but still below CAPI's broader thresholds).  That
+family is absent from train/test.
 """
 
 from __future__ import annotations
@@ -32,8 +22,35 @@ import random
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
+
+from rlm.imv_engine import (
+    economic_limits,
+    evaluate_imv_case,
+    expected_answer,
+    guaranteed_income_monthly,
+    load_ruleset,
+)
+
+APP_DATE = date(2026, 9, 26)
+
+RULES_TEXT = """Reglas IMV/CAPI 2026 para este ejercicio:
+- Renta garantizada: 733,60 €/mes para una persona; +30 % por miembro adicional,
+  con máximo del 220 % de la base.
+- Complemento monoparental: +22 % de la base cuando concurre el supuesto legal.
+- Discapacidad: +22 % de la base si algún miembro alcanza el umbral legal.
+- IMV: renta garantizada menos ingresos mensuales computables; la diferencia debe
+  ser de al menos 10 €/mes.
+- Patrimonio neto y activos no societarios tienen límites según la composición.
+- CAPI: puede existir aunque no haya IMV; exige menores y aplica límites de renta
+  (300 % del umbral ordinario), patrimonio (150 %) y activos.
+- CAPI mensual por menor: 115 € (<3 años), 80,50 € (3-5), 57,50 € (6-17),
+  usando la edad a 1 de enero.
+- Regla general de residencia continuada: 12 meses. Unidad de convivencia:
+  constituida al menos 6 meses, salvo excepciones legales.
+Calcula con céntimos y responde únicamente la cantidad mensual total IMV+CAPI."""
 
 
 @dataclass
@@ -43,35 +60,33 @@ class Problem:
     params: dict[str, Any]
     template_id: int
     branches: dict[str, str] = field(default_factory=dict)
+    rule_context: str = RULES_TEXT
 
 
 class ProblemGenerator(ABC):
-    """Subclass this for your domain. Three methods, and the base class does the rest."""
-
     name: str = "generator"
 
     @abstractmethod
     def sample_params(self, rng: random.Random, split: str) -> dict[str, Any]:
-        """One problem's data. ``split`` lets you hold a region out for the OOD set."""
+        ...
 
     @abstractmethod
     def solve(self, params: dict[str, Any]) -> tuple[str, dict[str, str]]:
-        """Reference implementation. Returns the answer and which branches were taken."""
+        ...
 
     @abstractmethod
     def render(self, params: dict[str, Any], rng: random.Random) -> tuple[str, int]:
-        """The statement in natural language. Returns the text and the template used."""
+        ...
 
     def key(self, params: dict[str, Any]) -> str:
-        """Deduplication key. Hash the *parameters*, never the text."""
-        return json.dumps(params, sort_keys=True, default=str)
+        return json.dumps(params, sort_keys=True, ensure_ascii=False)
 
     def generate(self, n: int, split: str, seed: int = 0) -> list[Problem]:
         rng = random.Random(f"{seed}-{split}")
         seen: set[str] = set()
         problems: list[Problem] = []
         attempts = 0
-        while len(problems) < n and attempts < 200 * n:
+        while len(problems) < n and attempts < 300 * n:
             attempts += 1
             params = self.sample_params(rng, split)
             fingerprint = self.key(params)
@@ -83,163 +98,341 @@ class ProblemGenerator(ABC):
             problems.append(Problem(question, answer, params, template_id, branches))
         if len(problems) < n:
             raise RuntimeError(
-                f"only {len(problems)} unique problems after {attempts} attempts: "
-                "your parameter space is too small, widen sample_params"
+                f"only {len(problems)} unique problems after {attempts} attempts"
             )
         return problems
 
 
-# --------------------------------------------------------------------------- worked example
+def _date_for_age(age: int, rng: random.Random) -> str:
+    # Always before application date birthday ambiguity: sample month/day safely.
+    year = APP_DATE.year - age - rng.choice([0, 1])
+    month = rng.randint(1, 12)
+    day = rng.randint(1, 28)
+    # Adjust until exact age is the requested one.
+    candidate = date(year, month, day)
+    actual = APP_DATE.year - candidate.year - (
+        (APP_DATE.month, APP_DATE.day) < (candidate.month, candidate.day)
+    )
+    if actual < age:
+        candidate = date(candidate.year - 1, month, day)
+    elif actual > age:
+        candidate = date(candidate.year + 1, month, day)
+    return candidate.isoformat()
 
-WEIGHT_TIERS = ((2.0, 4.50, 0.00), (10.0, 4.50, 0.80), (30.0, 10.90, 0.55), (1e9, 21.90, 0.35))
-DISTANCE_BANDS = ((100, 0.00), (500, 3.00), (10**9, 6.50))
-TIER_DISCOUNT = {"none": 0.00, "silver": 0.05, "gold": 0.12}
-REMOTE_SURCHARGE = 0.25
-EXPRESS_MULTIPLIER = 1.6
-INSURANCE_RATE = 0.012
-INSURANCE_MIN = 1.50
-FREE_BASE_THRESHOLD = 60.0
 
-TIER_LABEL = {
-    "none": "sin programa de fidelidad",
-    "silver": "categoría plata",
-    "gold": "categoría oro",
-}
+def _person(
+    pid: str,
+    age: int,
+    rng: random.Random,
+    *,
+    disability: int = 0,
+    residence_since: str = "2018-01-01",
+) -> dict[str, Any]:
+    return {
+        "id": pid,
+        "date_of_birth": _date_for_age(age, rng),
+        "emancipated": False,
+        "legal_residence_in_spain": True,
+        "effective_residence_in_spain": True,
+        "continuous_legal_effective_residence_since": residence_since,
+        "gender_violence_victim": False,
+        "trafficking_victim": False,
+        "homeless": False,
+        "parents_or_guardians_deceased": False,
+        "disability_percent": disability,
+        "dependency_grade": 0,
+        "permanent_disability_degree": "none",
+        "active_company_director": False,
+        "residential_service": "none",
+        "benefits": [],
+    }
 
 
-class ShippingCostGenerator(ProblemGenerator):
-    """Parcel shipping cost: weight tiers, distance bands, surcharges, discount and insurance.
+def _fmt_eur(value: float) -> str:
+    if abs(float(value)) < 0.005:
+        return "0 €"
+    return f"{float(value):.2f} €"
 
-    Enough branching that the model cannot get it right with a single multiplication, and the
-    rules are arbitrary but fixed, so it has to read the statement instead of recalling facts.
-    """
 
-    name = "shipping_cost"
+class IMVProblemGenerator(ProblemGenerator):
+    name = "imv_2026"
 
-    @staticmethod
-    def weight_charge(weight: float) -> tuple[float, str]:
-        """Base charge for the weight, and the name of the tier that applied."""
-        previous = 0.0
-        for index, (limit, fixed, per_kg) in enumerate(WEIGHT_TIERS):
-            if weight <= limit:
-                return fixed + per_kg * max(weight - previous, 0.0), f"tier_{index}"
-            previous = limit
-        raise ValueError(f"no tier for weight {weight}")
+    def __init__(self) -> None:
+        self.rules = load_ruleset()
 
-    @staticmethod
-    def distance_charge(distance_km: int) -> float:
-        """Flat fee for the distance band."""
-        for limit, fee in DISTANCE_BANDS:
-            if distance_km <= limit:
-                return fee
-        raise ValueError(f"no band for distance {distance_km}")
+    def _base_case(
+        self, rng: random.Random, adults: int, minors: int, family: str
+    ) -> dict[str, Any]:
+        persons: list[dict[str, Any]] = []
+        relationships: list[dict[str, Any]] = []
+
+        applicant_age = rng.randint(24, 55)
+        if family == "individual":
+            applicant_age = rng.choice([24, 27, 31, 42, 58])
+
+        persons.append(_person("p1", applicant_age, rng))
+        next_id = 2
+
+        # Other adults.
+        for i in range(adults - 1):
+            pid = f"p{next_id}"
+            next_id += 1
+            persons.append(_person(pid, rng.randint(24, 65), rng))
+            relationships.append(
+                {
+                    "person_a": "p1",
+                    "person_b": pid,
+                    "type": "spouse" if i == 0 else "consanguinity",
+                    "degree": None if i == 0 else rng.choice([1, 2]),
+                }
+            )
+
+        # Minors.
+        minor_ids = []
+        for _ in range(minors):
+            pid = f"p{next_id}"
+            next_id += 1
+            age = rng.choice([1, 2, 4, 5, 7, 10, 14, 17])
+            persons.append(_person(pid, age, rng))
+            minor_ids.append(pid)
+            relationships.append(
+                {
+                    "person_a": "p1",
+                    "person_b": pid,
+                    "type": "parent_child",
+                    "degree": 1,
+                    "custody": "shared" if adults > 1 else "none",
+                }
+            )
+
+        case = {
+            "application_date": APP_DATE.isoformat(),
+            "applicant_id": "p1",
+            "persons": persons,
+            "domicile": {
+                "co_resident_ids": [p["id"] for p in persons],
+                "same_domicile_since": "2023-01-01",
+                "caregiver_family_only": True,
+            },
+            "relationships": relationships,
+            "applicant_history": {
+                "independent_from_parents_since": "2022-01-01",
+            },
+            "social_security_registration_periods": [
+                {
+                    "person_id": "p1",
+                    "from": "2023-01-01",
+                    "to": None,
+                }
+            ],
+            "economic": {
+                "countable_income_annual_eur": 0.0,
+                "net_worth_eur": 0.0,
+                "non_corporate_assets_eur": 0.0,
+            },
+            "_family": family,
+        }
+        return case
 
     def sample_params(self, rng: random.Random, split: str) -> dict[str, Any]:
         if split == "ood":
-            # The heavy tier (>30 kg) never appears in train or test.
-            weight = round(rng.uniform(30.1, 120.0), 1)
+            family = "capi_only"
         else:
-            weight = round(rng.uniform(0.1, 29.9), 1)
-        distance = rng.choice([rng.randint(5, 99), rng.randint(100, 499), rng.randint(500, 1800)])
-        return {
-            "weight_kg": weight,
-            "distance_km": distance,
-            "remote": rng.random() < 0.3,
-            "express": rng.random() < 0.35,
-            "customer_tier": rng.choices(["none", "silver", "gold"], weights=[5, 3, 2])[0],
-            "declared_value": rng.choice([0.0, 0.0, round(rng.uniform(50, 900), 2)]),
-            "order_value": round(rng.uniform(10, 140), 2),
-        }
+            family = rng.choices(
+                [
+                    "ordinary",
+                    "individual",
+                    "monoparental",
+                    "disability",
+                    "income_fail",
+                    "residence_fail",
+                    "patrimony_fail",
+                    "director_fail",
+                ],
+                weights=[20, 13, 14, 10, 12, 8, 12, 6],
+            )[0]
+
+        if family == "individual":
+            adults, minors = 1, 0
+        elif family == "monoparental":
+            adults, minors = 1, rng.randint(1, 3)
+        elif family == "capi_only":
+            adults, minors = rng.choice([(1, 1), (1, 2), (2, 1), (2, 2)])
+        else:
+            adults = rng.randint(1, 3)
+            minors = rng.randint(0, 3)
+            if adults == 1 and minors > 0 and family not in {"monoparental"}:
+                # Avoid accidental monoparental complement in ordinary families.
+                pass
+
+        case = self._base_case(rng, adults, minors, family)
+
+        if family == "monoparental":
+            for rel in case["relationships"]:
+                if rel["type"] == "parent_child":
+                    rel["custody"] = "exclusive"
+
+        if family == "disability":
+            chosen = rng.choice(case["persons"])
+            chosen["disability_percent"] = rng.choice([65, 70, 80])
+
+        if family == "residence_fail":
+            chosen = rng.choice(case["persons"])
+            chosen["continuous_legal_effective_residence_since"] = rng.choice(
+                ["2026-01-15", "2026-03-01", "2026-06-01"]
+            )
+
+        if family == "director_fail":
+            rng.choice(case["persons"])["active_company_director"] = True
+
+        # Sample economics relative to the actual guaranteed amount and limits.
+        unit = [p["id"] for p in case["persons"]]
+        guaranteed = guaranteed_income_monthly(case, unit, self.rules)
+        limits = economic_limits(case, self.rules)
+
+        if family == "income_fail":
+            # Difference is below the statutory minimum 10 €/month.
+            monthly_income = max(0.0, float(guaranteed) - rng.uniform(0.0, 9.5))
+        elif family == "capi_only":
+            # Above ordinary IMV threshold, but below the CAPI 300% ceiling.
+            monthly_income = float(guaranteed) + rng.uniform(50.0, 300.0)
+            capi_monthly_limit = float(limits["capi_income"]) / 12
+            monthly_income = min(monthly_income, capi_monthly_limit - 50.0)
+        else:
+            # Usually eligible by income; some other branch may still exclude.
+            gap = rng.uniform(40.0, min(650.0, float(guaranteed)))
+            monthly_income = max(0.0, float(guaranteed) - gap)
+
+        case["economic"]["countable_income_annual_eur"] = round(monthly_income * 12, 2)
+
+        if family == "patrimony_fail":
+            if rng.random() < 0.5:
+                case["economic"]["net_worth_eur"] = float(limits["net_worth"])
+            else:
+                case["economic"]["non_corporate_assets_eur"] = round(
+                    float(limits["assets"]) + rng.uniform(100, 5000), 2
+                )
+        else:
+            case["economic"]["net_worth_eur"] = round(
+                rng.uniform(0, max(1.0, float(limits["net_worth"]) * 0.45)), 2
+            )
+            case["economic"]["non_corporate_assets_eur"] = round(
+                rng.uniform(0, max(1.0, float(limits["assets"]) * 0.45)), 2
+            )
+
+        # Occasionally exercise pension cap without making it a held-out family.
+        if split != "ood" and family == "ordinary" and rng.random() < 0.15:
+            case["persons"][0]["benefits"] = [
+                {
+                    "type": "pension",
+                    "monthly_eur_with_extra_payments": round(
+                        rng.uniform(150.0, float(guaranteed) * 0.6), 2
+                    ),
+                }
+            ]
+
+        return case
 
     def solve(self, params: dict[str, Any]) -> tuple[str, dict[str, str]]:
-        base, weight_tier = self.weight_charge(params["weight_kg"])
-        distance_fee = self.distance_charge(params["distance_km"])
-
-        free_base = params["order_value"] >= FREE_BASE_THRESHOLD and not params["express"]
-        core = (0.0 if free_base else base) + distance_fee
-        if params["remote"]:
-            core *= 1 + REMOTE_SURCHARGE
-        if params["express"]:
-            core *= EXPRESS_MULTIPLIER
-        core *= 1 - TIER_DISCOUNT[params["customer_tier"]]
-
-        insurance = 0.0
-        if params["declared_value"] > 0:
-            insurance = max(INSURANCE_MIN, INSURANCE_RATE * params["declared_value"])
-
-        total = round(core + insurance, 2)
+        result = evaluate_imv_case(params, self.rules)
         branches = {
-            "weight_tier": weight_tier,
-            "distance_band": f"{distance_fee:.2f}",
-            "remote": str(params["remote"]),
-            "express": str(params["express"]),
-            "customer_tier": params["customer_tier"],
-            "insured": str(params["declared_value"] > 0),
-            "free_base": str(free_base),
+            "family": params["_family"],
+            "status": result["status"],
+            "imv_eligible": str(result["imv_eligible"]),
+            "capi_eligible": str(result["capi_eligible"]),
+            "has_disability_complement": str(
+                any(
+                    p["disability_percent"]
+                    >= int(self.rules["amounts"]["disability_min_percent"])
+                    for p in params["persons"]
+                )
+            ),
+            "monoparental": str(
+                params["_family"] == "monoparental"
+            ),
         }
-        return f"{total:.2f}", branches
+        return expected_answer(params, self.rules), branches
 
     def render(self, params: dict[str, Any], rng: random.Random) -> tuple[str, int]:
-        insurance_text = (
-            f" El cliente declara un valor asegurado de {params['declared_value']:.2f} €."
-            if params["declared_value"] > 0
-            else " El envío no lleva seguro."
+        result = evaluate_imv_case(params, self.rules)
+        persons = {p["id"]: p for p in params["persons"]}
+        unit = result["unit_member_ids"]
+        adults = [p for p in unit if (APP_DATE.year - int(persons[p]["date_of_birth"][:4])) >= 18]
+        minors = [p for p in unit if p not in adults]
+
+        person_lines = []
+        for pid in unit:
+            p = persons[pid]
+            age = APP_DATE.year - int(p["date_of_birth"][:4])
+            disability = (
+                f", discapacidad reconocida del {p['disability_percent']} %"
+                if p["disability_percent"]
+                else ""
+            )
+            person_lines.append(f"{pid}: {age} años{disability}")
+
+        relationship_bits = []
+        for rel in params["relationships"]:
+            if rel["type"] == "parent_child":
+                custody = rel.get("custody", "none")
+                relationship_bits.append(
+                    f"{rel['person_a']} y {rel['person_b']} tienen relación progenitor-hijo"
+                    + (f" con custodia {custody}" if custody != "none" else "")
+                )
+            elif rel["type"] == "spouse":
+                relationship_bits.append(f"{rel['person_a']} y {rel['person_b']} son cónyuges")
+            elif rel["type"] == "consanguinity":
+                relationship_bits.append(
+                    f"{rel['person_a']} y {rel['person_b']} tienen parentesco de "
+                    f"{rel.get('degree', 1)}º grado"
+                )
+
+        econ = params["economic"]
+        residence = min(
+            persons[pid]["continuous_legal_effective_residence_since"] for pid in unit
         )
-        speed = "envío urgente" if params["express"] else "envío estándar"
-        zone = "zona remota" if params["remote"] else "zona estándar"
-        tier = TIER_LABEL[params["customer_tier"]]
-        weight = params["weight_kg"]
-        distance = params["distance_km"]
-        order = f"{params['order_value']:.2f}"
+        benefits = sum(
+            b.get("monthly_eur_with_extra_payments", 0)
+            for pid in unit
+            for b in persons[pid].get("benefits", [])
+        )
+
+        facts = (
+            f"Solicitud a fecha {params['application_date']}. Solicitante: p1. "
+            f"Conviven {len(unit)} personas en el mismo domicilio desde "
+            f"{params['domicile']['same_domicile_since']}. "
+            f"Personas: {'; '.join(person_lines)}. "
+            f"Relaciones: {'; '.join(relationship_bits) if relationship_bits else 'ninguna relevante'}. "
+            f"La residencia legal y efectiva más reciente de los miembros comenzó el {residence}. "
+            f"Ingresos computables anuales de la unidad: "
+            f"{_fmt_eur(econ['countable_income_annual_eur'])}. "
+            f"Patrimonio neto sin vivienda habitual: {_fmt_eur(econ['net_worth_eur'])}. "
+            f"Activos no societarios sin vivienda habitual: "
+            f"{_fmt_eur(econ['non_corporate_assets_eur'])}. "
+            f"{'Hay un administrador de una sociedad mercantil activa. ' if any(p['active_company_director'] for p in params['persons']) else ''}"
+            f"{f'Pensiones/subsidios sujetos al tope: {_fmt_eur(benefits)}/mes. ' if benefits else ''}"
+        )
+
         templates = [
-            (
-                f"Calcula el coste total de envío de un paquete de {weight} kg que viaja "
-                f"{distance} km hasta una {zone}. Es un {speed} y el cliente está {tier}. "
-                f"El importe del pedido es de {order} €.{insurance_text} "
-                f"Da el resultado en euros con dos decimales."
-            ),
-            (
-                f"Un pedido de {order} € se envía a una {zone} situada a {distance} km. "
-                f"El paquete pesa {weight} kg y se contrata un {speed}. El cliente está "
-                f"{tier}.{insurance_text} ¿Cuánto cuesta el envío en euros?"
-            ),
-            (
-                f"Cliente {tier}. Pedido: {order} €. Paquete: {weight} kg. "
-                f"Destino: {zone}, a {distance} km. Modalidad: {speed}.{insurance_text} "
-                f"Indica el coste del envío con dos decimales."
-            ),
-            (
-                f"Necesito saber qué cobramos por enviar {weight} kg a {distance} km "
-                f"({zone}) con {speed}. El cliente está {tier} y su pedido asciende a "
-                f"{order} €.{insurance_text} Responde en euros, con dos decimales."
-            ),
-            (
-                f"Un {speed} de {weight} kg recorre {distance} km hasta una {zone}."
-                f"{insurance_text} El pedido vale {order} € y el cliente está {tier}. "
-                f"Calcula el coste total del envío en euros, con dos decimales."
-            ),
+            facts
+            + "Determina primero si hay derecho al IMV y/o al CAPI y calcula el total mensual a percibir. "
+            "Responde solo con el importe total en euros, con dos decimales.",
+            "Caso para resolver sobre IMV 2026. "
+            + facts
+            + "¿Cuál sería la suma mensual de IMV y CAPI? Da únicamente el número con dos decimales.",
+            facts
+            + "Aplica las reglas del IMV y del complemento de ayuda para la infancia. "
+            "Si no corresponde ninguna de las dos prestaciones, indica cero euros. "
+            "Indica el total mensual con dos decimales.",
+            "Analiza esta solicitud de IMV/CAPI: "
+            + facts
+            + "Calcula el importe mensual final (IMV + CAPI) y contesta únicamente con la cifra.",
         ]
-        template_id = rng.randrange(len(templates))
-        return templates[template_id], template_id
-
-
-RULES_TEXT = """Tarifa de envío (reglas fijas de la empresa):
-- Cargo base por peso: hasta 2 kg, 4,50 €. De 2 a 10 kg, 4,50 € más 0,80 € por kg que pase de
-  2. De 10 a 30 kg, 10,90 € más 0,55 € por kg que pase de 10. Más de 30 kg, 21,90 € más
-  0,35 € por kg que pase de 30.
-- Cargo por distancia: hasta 100 km, 0 €. De 100 a 500 km, 3,00 €. Más de 500 km, 6,50 €.
-- Si el importe del pedido llega a 60 € y el envío NO es urgente, el cargo base por peso se
-  elimina; el cargo por distancia se mantiene.
-- Zona remota: recargo del 25 % sobre la suma de base y distancia.
-- Envío urgente: multiplica por 1,6 el resultado anterior.
-- Descuento de fidelidad sobre el resultado anterior: plata 5 %, oro 12 %.
-- Seguro (solo si hay valor declarado): 1,2 % del valor declarado, con un mínimo de 1,50 €.
-  El seguro se suma al final y no recibe descuento.
-- Redondea solo el total final a dos decimales."""
+        idx = rng.randrange(len(templates))
+        return templates[idx], idx
 
 
 def describe(problems: list[Problem]) -> dict[str, Any]:
-    """Branch coverage and leakage check: the two numbers I will ask you about."""
     counters: dict[str, Counter] = {}
     for problem in problems:
         for branch, value in problem.branches.items():
@@ -254,37 +447,34 @@ def describe(problems: list[Problem]) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--n", type=int, default=800, help="how many unique problems")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--n", type=int, default=800)
     parser.add_argument("--split", choices=["train", "test", "ood"], default="train")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default="rlm/data/train.jsonl")
     parser.add_argument(
         "--with-rules",
         action="store_true",
-        help="prepend the rule sheet to every statement (easier task: nothing to memorise)",
+        help="prepend the IMV 2026 rule sheet to the student question",
     )
     args = parser.parse_args()
 
-    generator = ShippingCostGenerator()
+    generator = IMVProblemGenerator()
     problems = generator.generate(args.n, args.split, args.seed)
-
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as handle:
         for problem in problems:
             row = asdict(problem)
             if args.with_rules:
-                row["question"] = f"{RULES_TEXT}\n\n{row['question']}"
+                row["question"] = f"{problem.rule_context}\n\n{problem.question}"
             row["split"] = args.split
-            row["label_source"] = "generator"
+            row["label_source"] = "imv_reference_engine"
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     print(json.dumps(describe(problems), indent=2, ensure_ascii=False))
     print(f"\n{len(problems)} problemas -> {out}")
-    print("Ejemplo:\n" + problems[0].question + f"\nRespuesta: {problems[0].answer}")
+    print(f"Ejemplo:\n{problems[0].question}\nRespuesta: {problems[0].answer}")
 
 
 if __name__ == "__main__":

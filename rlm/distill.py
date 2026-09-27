@@ -1,20 +1,4 @@
-"""Phase 1, step 1b: generate reasoning traces with a teacher model and keep the verified ones.
-
-This is what Sky-T1, OpenThoughts and DeepSeek's cold start have in common: a strong
-model writes solutions with visible reasoning, a verifier throws away the wrong ones,
-and what survives becomes SFT data. Here the teacher is any model that can think in the
-``<think>…</think><answer>…</answer>`` format (Qwen3 in thinking mode works well; a
-DeepSeek-R1 distilled model too).
-
-Run::
-
-    uv run python -m rlm.distill --data rlm/data/train.jsonl --teacher Qwen/Qwen3-4B \
-        --samples 4 --output rlm/data/sft_traces.jsonl
-
-Output: one JSON line per generated trace with ``question``, ``answer``, ``trace``,
-``verified`` and ``teacher``. Report in EXPERIMENTS.md the acceptance rate: it is your
-first measurement of how hard your domain is.
-"""
+"""Generate verified IMV reasoning traces for cold-start SFT."""
 
 from __future__ import annotations
 
@@ -23,42 +7,107 @@ import json
 from pathlib import Path
 
 from rlm.data import load_domain_dataset
-from rlm.verifier import NumericVerifier, Verifier
+from rlm.rewards import extract_answer, has_valid_format
+from rlm.verifier import Verifier, build_verifier
+
+
+def _canonical_trace(trace: str) -> str:
+    if has_valid_format(trace):
+        return trace
+    answer = extract_answer(trace)
+    if answer is None:
+        return trace
+    # Preserve the teacher's text as reasoning but force the canonical training format.
+    return f"<think>{trace.strip()}</think><answer>{answer.strip()}</answer>"
 
 
 def generate_traces(
-    dataset, teacher: str, samples: int, max_new_tokens: int, verifier: Verifier
+    dataset,
+    teacher: str,
+    samples: int,
+    max_new_tokens: int,
+    verifier: Verifier,
+    *,
+    teacher_uses_rule_context: bool = True,
 ) -> list[dict]:
-    """Tu turno: for each problem, sample ``samples`` completions from the teacher and verify them.
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    Suggested steps:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    tokenizer = AutoTokenizer.from_pretrained(teacher)
+    model = AutoModelForCausalLM.from_pretrained(
+        teacher, dtype=dtype, device_map=device
+    ).eval()
 
-    1. Load tokenizer and model (bf16 on GPU). Batch the prompts: generation dominates the cost.
-    2. For each problem, ``generate`` with ``num_return_sequences=samples``, ``do_sample=True``.
-    3. Decode, run ``verifier.verify(trace, answer)``, and store every trace with its verdict.
-    4. Optional but recommended: if the teacher omits the ``<answer>`` tag but ends with
-       ``\\boxed{...}``, rewrite the trace into the canonical format before saving.
+    rows: list[dict] = []
+    for example in dataset:
+        prompt = [dict(m) for m in example["prompt"]]
+        if teacher_uses_rule_context and example.get("rule_context"):
+            for message in prompt:
+                if message.get("role") == "user":
+                    message["content"] = (
+                        f"{example['rule_context']}\n\n{message['content']}"
+                    )
+                    break
 
-    Watch out for traces that are correct by luck with nonsense reasoning: a second pass
-    with an LLM judge, or a minimum-length filter, is a cheap way to catch some of them.
-    """
-    raise NotImplementedError
+        text = tokenizer.apply_chat_template(
+            prompt, tokenize=False, add_generation_prompt=True
+        )
+        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            generated = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.95,
+                num_return_sequences=samples,
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            )
+
+        prompt_len = inputs["input_ids"].shape[1]
+        for seq in generated:
+            raw = tokenizer.decode(seq[prompt_len:], skip_special_tokens=True)
+            trace = _canonical_trace(raw)
+            result = verifier.verify(trace, str(example["answer"]))
+            rows.append(
+                {
+                    "question": example["prompt"][-1]["content"],
+                    "answer": str(example["answer"]),
+                    "trace": trace,
+                    "verified": result.is_correct,
+                    "teacher": teacher,
+                    "params": example.get("params"),
+                    "branches": example.get("branches"),
+                }
+            )
+    return rows
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--data", required=True, help="domain JSONL with question / answer")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", required=True)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
-    parser.add_argument("--samples", type=int, default=4, help="traces per problem")
+    parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument("--verifier", default="imv")
     parser.add_argument("--output", default="rlm/data/sft_traces.jsonl")
+    parser.add_argument(
+        "--no-teacher-rules",
+        action="store_true",
+        help="do not prepend row.rule_context to the teacher prompt",
+    )
     args = parser.parse_args()
 
     dataset = load_domain_dataset(args.data)
     traces = generate_traces(
-        dataset, args.teacher, args.samples, args.max_new_tokens, NumericVerifier()
+        dataset,
+        args.teacher,
+        args.samples,
+        args.max_new_tokens,
+        build_verifier(args.verifier),
+        teacher_uses_rule_context=not args.no_teacher_rules,
     )
 
     out = Path(args.output)
@@ -68,7 +117,8 @@ def main() -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     kept = sum(1 for t in traces if t["verified"])
     print(
-        f"{kept}/{len(traces)} traces verified ({100 * kept / max(len(traces), 1):.1f}%) -> {out}"
+        f"{kept}/{len(traces)} traces verified "
+        f"({100 * kept / max(len(traces), 1):.1f}%) -> {out}"
     )
 
 

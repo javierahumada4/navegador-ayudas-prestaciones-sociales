@@ -1,1 +1,1 @@
-"""Phase 1: reasoning model (SFT + GRPO). See rlm/README.md."""
+"""Phase 1: IMV/CAPI reasoning model (SFT + GRPO)."""

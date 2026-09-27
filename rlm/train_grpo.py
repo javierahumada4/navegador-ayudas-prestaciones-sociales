@@ -1,49 +1,29 @@
-"""Phase 1, step 3: reinforcement learning with verifiable rewards using GRPO.
-
-Starting point: the SFT adapter from ``train_sft.py`` (or the base model, if you want to
-reproduce the R1-Zero experiment and see what happens without cold start). Output: your
-final reasoning model, ``rlm/weights/final_rlm_lora``.
-
-Run::
-
-    uv run python -m rlm.train_grpo --data rlm/data/train.jsonl --init-adapter rlm/weights/sft_lora
-
-The smoke test (``smoke/smoke_grpo.py``) is the minimal version of this script on GSM8K.
-Here you add what makes it *yours*:
-
-1. Your domain dataset (``rlm/data.py::load_domain_dataset``) and your verifier.
-2. A third, domain-specific reward (``domain_reward`` below). Think about what a good
-   answer looks like for your user beyond being correct: language, units, length,
-   citing a source, respecting a schema. Justify it in EXPERIMENTS.md and, if you use
-   ``reward_weights``, justify those too.
-3. The hyper-parameters. Group size, completion length, learning rate and KL
-   coefficient all change what the model learns. Change one thing at a time and log it.
-"""
+"""Phase 1 GRPO training for the IMV/CAPI reasoning task."""
 
 from __future__ import annotations
 
 import argparse
+import re
 from collections.abc import Sequence
 
 from rlm.data import load_domain_dataset, load_gsm8k
-from rlm.rewards import _completion_text, accuracy_reward, format_reward
+from rlm.rewards import _completion_text, accuracy_reward, extract_answer, format_reward
+
+IMV_FINAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
 
 
 def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
-    """Tu turno: a reward that captures what "good" means in your domain.
+    """Reward the user-facing IMV answer contract.
 
-    Same signature as the other rewards: one float per completion, dataset columns arrive
-    in ``kwargs``. Keep it deterministic and cheap. Examples from class and beyond:
-
-    * language consistency: fraction of words in the answer's language (DeepSeek-R1);
-    * length shaping: penalise thinking that exceeds a budget, or reward concise answers;
-    * a units check for physical quantities; a schema check for structured answers;
-    * a code-execution reward: run the unit tests of the problem (only in a sandbox!).
-
-    Until you implement it, it returns 0.0 everywhere so the script still runs.
+    Accuracy already checks the amount. This third reward teaches the model to
+    return a clean amount with exactly two decimals in the <answer> block, which
+    is the output expected by the navigator and makes verification unambiguous.
     """
-    texts = [_completion_text(c) for c in completions]
-    return [0.0 for _ in texts]
+    rewards: list[float] = []
+    for completion in completions:
+        answer = extract_answer(_completion_text(completion))
+        rewards.append(1.0 if answer and IMV_FINAL_ANSWER.fullmatch(answer.strip()) else 0.0)
+    return rewards
 
 
 def train(args: argparse.Namespace) -> None:
@@ -78,12 +58,11 @@ def train(args: argparse.Namespace) -> None:
         seed=args.seed,
         log_completions=True,
         num_completions_to_print=2,
+        reward_weights=[1.0, 2.0, 0.5],
         model_init_kwargs={"dtype": torch.bfloat16 if device == "cuda" else torch.float32},
-        # Tu turno: reward_weights=[1.0, 2.0, 0.5] lets you weight format / accuracy / domain.
     )
 
     if args.init_adapter:
-        # Continue training the SFT adapter: load base + adapter as a trainable PeftModel.
         from peft import PeftModel
         from transformers import AutoModelForCausalLM
 
@@ -114,12 +93,10 @@ def train(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--data", default="gsm8k", help="'gsm8k' or path to your domain JSONL")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", default="rlm/data/train.jsonl")
     parser.add_argument("--model", default="Qwen/Qwen3-0.6B")
-    parser.add_argument("--init-adapter", default=None, help="SFT adapter to start from")
+    parser.add_argument("--init-adapter", default=None)
     parser.add_argument("--output", default="rlm/weights/final_rlm_lora")
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--num-generations", type=int, default=8)
@@ -127,15 +104,11 @@ def main() -> None:
     parser.add_argument("--max-completion-length", type=int, default=768)
     parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--beta", type=float, default=0.0, help="KL coefficient (0 disables it)")
+    parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--n-examples", type=int, default=None)
     parser.add_argument("--save-steps", type=int, default=50)
-    parser.add_argument(
-        "--resume-from-checkpoint",
-        default=None,
-        help="path to a checkpoint-XXX folder to continue an interrupted run (24h sessions!)",
-    )
+    parser.add_argument("--resume-from-checkpoint", default=None)
     parser.add_argument("--seed", type=int, default=0)
     train(parser.parse_args())
 
