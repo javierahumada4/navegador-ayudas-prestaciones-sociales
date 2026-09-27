@@ -13,6 +13,12 @@ Scope:
 The ruleset contains every threshold/amount that can change over time.  Input
 fields store facts (dates, ages, percentages, amounts), not conclusions such as
 "disability_65_or_more".
+
+Monetary rounding is part of the oracle contract: every explicit money() call
+uses Decimal.quantize(0.01, ROUND_HALF_UP). In particular, monthly income is not
+rounded before the IMV subtraction; the final IMV is rounded after the pension
+cap, CAPI is rounded after summing age-band amounts, and the final total is
+rounded after adding the already-rounded IMV and CAPI components.
 """
 
 from __future__ import annotations

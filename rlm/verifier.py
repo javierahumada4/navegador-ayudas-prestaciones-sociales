@@ -1,18 +1,13 @@
-"""Deterministic verifiers for phase-1 RLVR.
-
-The IMV verifier is deliberately strict about the *value* and tolerant about
-presentation (decimal comma/dot, optional euro symbol).  Ground truth comes from
-rlm.imv_engine via the generated JSONL files.
-"""
+"""Deterministic answer verifiers for phase 1."""
 
 from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
-from rlm.rewards import extract_answer, normalize_number
+from rlm.rewards import extract_answer, imv_numbers_match, parse_number_decimal
 
 
 @dataclass(frozen=True)
@@ -38,20 +33,30 @@ class Verifier(ABC):
 
 
 class NumericVerifier(Verifier):
+    """Generic numeric comparison. This is intentionally not IMV-specific."""
+
     name = "numeric"
 
     def __init__(self, tolerance: float = 0.0):
-        self.tolerance = tolerance
+        self.tolerance = Decimal(str(tolerance))
 
     def is_correct(self, predicted: str | None, expected: str) -> bool:
-        if predicted is None:
-            return False
-        p, e = normalize_number(predicted), normalize_number(expected)
+        p = parse_number_decimal(predicted)
+        e = parse_number_decimal(expected)
         if p is None or e is None:
             return False
-        if self.tolerance == 0.0:
+        if self.tolerance == 0:
             return p == e
-        return abs(float(p) - float(e)) <= self.tolerance
+        return abs(p - e) <= self.tolerance
+
+
+class IMVAmountVerifier(Verifier):
+    """IMV/CAPI verifier using the oracle's ROUND_HALF_UP-to-cents convention."""
+
+    name = "imv"
+
+    def is_correct(self, predicted: str | None, expected: str) -> bool:
+        return imv_numbers_match(predicted, expected)
 
 
 class ExactMatchVerifier(Verifier):
@@ -62,30 +67,9 @@ class ExactMatchVerifier(Verifier):
         return re.sub(r"\s+", " ", text).strip().lower()
 
     def is_correct(self, predicted: str | None, expected: str) -> bool:
-        return predicted is not None and self._normalize(predicted) == self._normalize(expected)
-
-
-class IMVAmountVerifier(Verifier):
-    """Compare the final monthly IMV+CAPI amount to the cent."""
-
-    name = "imv"
-
-    @staticmethod
-    def _amount(text: str | None) -> Decimal | None:
-        if text is None:
-            return None
-        normalized = normalize_number(text)
-        if normalized is None:
-            return None
-        try:
-            return Decimal(normalized).quantize(Decimal("0.01"))
-        except InvalidOperation:
-            return None
-
-    def is_correct(self, predicted: str | None, expected: str) -> bool:
-        p = self._amount(predicted)
-        e = self._amount(expected)
-        return p is not None and e is not None and p == e
+        if predicted is None:
+            return False
+        return self._normalize(predicted) == self._normalize(expected)
 
 
 VERIFIER_FACTORIES: dict[str, type[Verifier]] = {
@@ -100,5 +84,5 @@ def build_verifier(name: str) -> Verifier:
         return VERIFIER_FACTORIES[name]()
     except KeyError as exc:
         raise ValueError(
-            f"Unknown verifier {name!r}; choose one of {sorted(VERIFIER_FACTORIES)}"
+            f"unknown verifier {name!r}; choose one of {sorted(VERIFIER_FACTORIES)}"
         ) from exc

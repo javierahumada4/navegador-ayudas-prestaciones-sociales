@@ -162,12 +162,19 @@ def build_rule_context(rules: dict[str, Any]) -> str:
   d) conviven exclusivamente progenitores/abuelos/guardadores/acogedores y menores, y uno de los adultos tiene dependencia grado >= {dep_grade}, incapacidad permanente absoluta o gran invalidez;
   e) unidad formada exclusivamente por una mujer víctima de violencia de género y sus descendientes hasta segundo grado menores bajo guarda/custodia, o menores en acogimiento permanente/guarda preadoptiva.
 
-4) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
+4) TOPE POR PENSIONES Y SUBSIDIO PARA MAYORES DE 52 AÑOS
+- Suma, para todos los miembros de la unidad, las pensiones contributivas o no contributivas de la Seguridad Social y, en su caso, el subsidio de desempleo para mayores de 52 años. Usa el importe mensual conjunto incluyendo la parte proporcional de pagas extraordinarias.
+- En los enunciados del dataset esta magnitud aparece como «Pensiones/subsidios sujetos al tope». Es un dato adicional al campo de «Ingresos computables anuales» y se usa para aplicar este tope específico.
+- Si pensiones/subsidios mensuales >= renta garantizada mensual aplicable: NO hay derecho al IMV por este motivo. La igualdad excluye.
+- Si 0 < pensiones/subsidios mensuales < renta garantizada y se cumplen los demás requisitos: primero calcula el IMV por renta = renta garantizada - ingresos computables anuales/12; después aplica IMV final = min(IMV por renta, renta garantizada - pensiones/subsidios mensuales).
+- Este tope limita o excluye el IMV. El CAPI se decide por sus propios requisitos y umbrales del apartado CAPI.
+
+5) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
 - Vivienda habitual excluida. El patrimonio neto debe ser ESTRICTAMENTE menor que el límite: igualdad => no elegible.
 - Los activos no societarios deben ser <= al límite: solo superar el límite => no elegible.
 """ + "\n".join(patrimony_lines) + f"""
 
-5) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
+6) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
 - Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0.
 - Ingresos: ESTRICTAMENTE < 300% del umbral ordinario del Anexo I (sin sumar los complementos de monoparentalidad/discapacidad).
 - Patrimonio neto: ESTRICTAMENTE < 150% del límite del Anexo II.
@@ -176,12 +183,24 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 """ + "\n".join(capi_lines) + f"""
 - Cuantía CAPI por cada menor, según edad a 1 de enero: 115,00 €/mes si <3 años; 80,50 €/mes si 3-5 años; 57,50 €/mes si 6-17 años.
 
-6) OTROS REQUISITOS USADOS EN EL DATASET
+7) OTROS REQUISITOS USADOS EN EL DATASET
 - Residencia legal y efectiva continuada general: >= {rules['requirements']['minimum_continuous_residence_months']} meses.
 - Unidad de convivencia: constituida en general >= {rules['requirements']['minimum_household_formation_months']} meses.
 - Ser administrador de derecho de una sociedad mercantil activa excluye tanto IMV como CAPI.
 
-Calcula siempre con céntimos. La respuesta final pedida en el dataset es TOTAL mensual = IMV + CAPI."""
+8) CONVENCIÓN EXACTA DE REDONDEO DEL ORACLE
+- Toda operación de redondeo monetario usa ROUND_HALF_UP a 2 decimales (céntimos). Ejemplo: 474,005 -> 474,01.
+- Renta garantizada ordinaria de la unidad: aplica el multiplicador por número de miembros y redondea a céntimos HALF_UP.
+- Complementos de monoparentalidad/discapacidad: se calculan como porcentaje de la base de un adulto; NO se redondea cada complemento por separado. Se suman a la renta garantizada ordinaria y entonces se redondea la renta garantizada final a céntimos HALF_UP.
+- Ingreso mensual para IMV: ingresos computables anuales / 12, SIN redondear antes de restarlo.
+- IMV por renta: renta garantizada final - ingreso mensual. Comprueba sobre ese valor sin redondear si la diferencia es >= 10,00 €.
+- Si hay pensiones/subsidios sujetos al tope, aplica el mínimo indicado en el apartado 4 antes del redondeo final del IMV.
+- IMV final: redondea a céntimos HALF_UP después de aplicar el tope de pensiones, si existe.
+- CAPI: suma las cuantías fijas correspondientes a todos los menores y redondea el total CAPI a céntimos HALF_UP.
+- TOTAL mensual pedido: suma el IMV final ya redondeado + el CAPI total ya redondeado y redondea de nuevo a céntimos HALF_UP.
+- Los límites monetarios calculados por el oracle (patrimonio, activos y umbrales CAPI) también se redondean a céntimos HALF_UP antes de compararlos con el caso.
+
+La respuesta final pedida en el dataset es TOTAL mensual = IMV + CAPI, con exactamente dos decimales."""
 
 
 
