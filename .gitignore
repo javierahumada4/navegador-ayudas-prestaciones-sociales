@@ -40,3 +40,6 @@ reports/*.csv
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Local
+.local
