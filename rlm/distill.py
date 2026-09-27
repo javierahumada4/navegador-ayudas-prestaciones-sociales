@@ -8,8 +8,11 @@
 
     Run::
 
-        uv run python -m rlm.distill --data rlm/data/train.jsonl --teacher Qwen/Qwen3-4B \
-            --samples 4 --output rlm/data/sft_traces.jsonl
+        uv run --extra distill python -m rlm.distill --data rlm/data/train.jsonl \
+            --teacher Qwen/Qwen3-4B --samples 4 --output rlm/data/sft_traces.jsonl
+
+    Backends: ``vllm`` (default, CUDA graphs + paged KV cache, much faster) or ``hf``
+    (plain ``transformers.generate``, kept as a fallback).
 
     Output: one JSON line per generated trace with 
     ``question``, ``answer``, ``trace``, ``verified`` and ``teacher``,
@@ -37,6 +40,12 @@ from rlm.verifier import Verifier, build_verifier
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel, PreTrainedTokenizerBase
+    from vllm import LLM
+
+# Problems per generate call when --batch-size is not given. vLLM schedules the
+# sequences itself, so it takes big batches; HF keeps every sequence's KV cache
+# in memory at once, so 4 problems (16 sequences) is its ceiling on 16 GB.
+DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 4}
 
 
 def _canonical_trace(trace: str) -> str:
@@ -80,6 +89,33 @@ def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]
     ).eval()
     return model, tokenizer
 
+def _load_vllm(
+    teacher: str, gpu_memory_utilization: float, max_model_len: int
+) -> tuple[LLM, PreTrainedTokenizerBase]:
+    """
+    Load the teacher as a vLLM engine.
+
+    Args:
+        teacher (str): Teacher model name.
+        gpu_memory_utilization (float): Fraction of the GPU vLLM may take
+                            (weights + KV cache). The MIG slice is the whole GPU.
+        max_model_len (int): Longest prompt + completion vLLM must fit.
+
+    Returns:
+        llm (LLM): vLLM engine ready to generate.
+        tokenizer (PreTrainedTokenizerBase): Tokenizer of the teacher.
+    """
+    from vllm import LLM
+
+    llm = LLM(
+        model=teacher,
+        dtype="bfloat16",
+        gpu_memory_utilization=gpu_memory_utilization,
+        max_model_len=max_model_len,
+        seed=0,
+    )
+    return llm, llm.get_tokenizer()
+
 def _append_jsonl(path: Path, record: dict) -> None:
     """
     Append one record to a JSON Lines file, flushing it to disk immediately.
@@ -115,13 +151,13 @@ def _prepend_rules(
             break
     return prompt
 
-def _generate_completions(
+def _generate_hf(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     texts: list[str],
     samples: int,
     max_new_tokens: int,
-) -> tuple[list[torch.Tensor], list[int]]:
+) -> tuple[list[dict], list[int]]:
     """
     Generate ``samples`` completions for each text in one ``generate`` call.
 
@@ -136,8 +172,9 @@ def _generate_completions(
         max_new_tokens (int): Generation budget per completion.
 
     Returns:
-        completions (list[Tensor]): Completion token ids, ``samples`` consecutive
-                            entries per text, in the order of ``texts``.
+        completions (list[dict]): ``text``, ``n_tokens`` and ``hit_max`` per
+                            completion, ``samples`` consecutive entries per text,
+                            in the order of ``texts``.
         prompt_lens (list[int]): Prompt length in tokens (without padding) per text.
     """
     inputs = tokenizer(texts, return_tensors="pt", padding=True).to(model.device)
@@ -165,10 +202,10 @@ def _generate_completions(
         torch.cuda.empty_cache()
         half = len(texts) // 2
         print(f"OOM with {len(texts)} prompts, retrying as {half} + {len(texts) - half}")
-        first, first_lens = _generate_completions(
+        first, first_lens = _generate_hf(
             model, tokenizer, texts[:half], samples, max_new_tokens
         )
-        second, second_lens = _generate_completions(
+        second, second_lens = _generate_hf(
             model, tokenizer, texts[half:], samples, max_new_tokens
         )
         return first + second, first_lens + second_lens
@@ -176,7 +213,57 @@ def _generate_completions(
     # Left padding: every prompt ends at the same column, completions start after it.
     padded_len = inputs["input_ids"].shape[1]
     prompt_lens = inputs["attention_mask"].sum(dim=1).tolist()
-    return list(generated[:, padded_len:]), prompt_lens
+    completions = []
+    for completion_ids in generated[:, padded_len:]:
+        n_tokens = int((completion_ids != tokenizer.pad_token_id).sum())
+        completions.append(
+            {
+                "text": tokenizer.decode(completion_ids, skip_special_tokens=True),
+                "n_tokens": n_tokens,
+                "hit_max": n_tokens >= max_new_tokens,
+            }
+        )
+    return completions, prompt_lens
+
+def _generate_vllm(
+    llm: LLM,
+    texts: list[str],
+    samples: int,
+    max_new_tokens: int,
+) -> tuple[list[dict], list[int]]:
+    """
+    Generate ``samples`` completions for each text with vLLM.
+
+    Same sampling as the HF backend (temperature 0.7, top-p 0.95) and same output
+    layout, so the rest of the pipeline does not know which backend ran.
+
+    Args:
+        llm (LLM): vLLM engine.
+        texts (list[str]): Chat-formatted prompts.
+        samples (int): Completions per prompt.
+        max_new_tokens (int): Generation budget per completion.
+
+    Returns:
+        completions (list[dict]): ``text``, ``n_tokens`` and ``hit_max`` per
+                            completion, ``samples`` consecutive entries per text.
+        prompt_lens (list[int]): Prompt length in tokens per text.
+    """
+    from vllm import SamplingParams
+
+    params = SamplingParams(
+        n=samples, temperature=0.7, top_p=0.95, max_tokens=max_new_tokens
+    )
+    outputs = llm.generate(texts, params, use_tqdm=False)
+    completions = [
+        {
+            "text": completion.text,
+            "n_tokens": len(completion.token_ids),
+            "hit_max": completion.finish_reason == "length",
+        }
+        for output in outputs
+        for completion in output.outputs
+    ]
+    return completions, [len(output.prompt_token_ids) for output in outputs]
 
 def generate_traces(
     dataset: Any,
@@ -185,7 +272,10 @@ def generate_traces(
     max_new_tokens: int,
     verifier: Verifier,
     *,
-    batch_size: int = 1,
+    backend: str = "vllm",
+    batch_size: int | None = None,
+    gpu_memory_utilization: float = 0.9,
+    max_model_len: int | None = None,
     teacher_uses_rule_context: bool = True,
     log_path: Path | None = None,
 ) -> list[dict]:
@@ -199,9 +289,14 @@ def generate_traces(
         max_new_tokens (int): Maximun number of tokens added to the answer through 
                             traces.
         verifier (Verifier): Verifier to delete bad examples.
-        batch_size (int): Problems per ``generate`` call; each one yields
-                            ``samples`` sequences, so the GPU decodes
-                            ``batch_size * samples`` sequences at once.
+        backend (str): ``"vllm"`` or ``"hf"``.
+        batch_size (int | None): Problems per ``generate`` call, each yielding
+                            ``samples`` sequences. ``None`` uses
+                            ``DEFAULT_BATCH_SIZE[backend]``.
+        gpu_memory_utilization (float): vLLM only, fraction of the GPU it may take.
+        max_model_len (int | None): vLLM only, longest prompt + completion.
+                            ``None`` means ``max_new_tokens + 1536`` (the
+                            prompt with rules is ~800 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
@@ -210,11 +305,29 @@ def generate_traces(
         rows (list[dicts]): New dataset made of formated json traces.
     """
 
-    model, tokenizer = _load_model(teacher)
-    # Batched generation needs left padding so every completion starts at the same column.
-    tokenizer.padding_side = "left"
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    if batch_size is None:
+        batch_size = DEFAULT_BATCH_SIZE[backend]
+
+    if backend == "vllm":
+        llm, tokenizer = _load_vllm(
+            teacher, gpu_memory_utilization, max_model_len or max_new_tokens + 1536
+        )
+
+        def generate(texts: list[str]) -> tuple[list[dict], list[int]]:
+            return _generate_vllm(llm, texts, samples, max_new_tokens)
+
+    elif backend == "hf":
+        model, tokenizer = _load_model(teacher)
+        # Batched generation needs left padding so every completion starts at the same column.
+        tokenizer.padding_side = "left"
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        def generate(texts: list[str]) -> tuple[list[dict], list[int]]:
+            return _generate_hf(model, tokenizer, texts, samples, max_new_tokens)
+
+    else:
+        raise ValueError(f"Unknown backend {backend!r}: use 'vllm' or 'hf'.")
 
     rows: list[dict] = []
     kept = 0
@@ -245,9 +358,7 @@ def generate_traces(
         ]
         stage("generating")
         start = time.perf_counter()
-        completions, prompt_lens = _generate_completions(
-            model, tokenizer, texts, samples, max_new_tokens
-        )
+        completions, prompt_lens = generate(texts)
         gen_seconds = time.perf_counter() - start
 
         stage("verifying")
@@ -256,12 +367,11 @@ def generate_traces(
             i = batch_start + b
             n_verified = 0
             for j in range(samples):
-                completion_ids = completions[b * samples + j]
-                raw = tokenizer.decode(completion_ids, skip_special_tokens=True)
+                completion = completions[b * samples + j]
+                raw = completion["text"]
                 trace = _canonical_trace(raw)
                 result = verifier.verify(trace, str(example["answer"]))
                 n_verified += result.is_correct
-                n_tokens = int((completion_ids != tokenizer.pad_token_id).sum())
                 rows.append(
                     {
                         "example_id": i,
@@ -272,8 +382,8 @@ def generate_traces(
                         "trace": trace,
                         "verified": result.is_correct,
                         "raw_valid_format": has_valid_format(raw),
-                        "n_tokens": n_tokens,
-                        "hit_max_tokens": n_tokens >= max_new_tokens,
+                        "n_tokens": completion["n_tokens"],
+                        "hit_max_tokens": completion["hit_max"],
                         "teacher": teacher,
                         "params": example.get("params"),
                         "branches": example.get("branches"),
@@ -317,11 +427,24 @@ def main() -> None:
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument("--backend", choices=["vllm", "hf"], default="vllm")
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=1,
-        help="problems per generate call (x --samples sequences on the GPU at once)",
+        default=None,
+        help="problems per generate call (default: 64 for vllm, 4 for hf)",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9,
+        help="vllm: fraction of the GPU (MIG slice) for weights + KV cache",
+    )
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=None,
+        help="vllm: longest prompt + completion (default: max-new-tokens + 1536)",
     )
     parser.add_argument("--verifier", default="imv")
     parser.add_argument("--output", default="rlm/data/sft_traces.jsonl")
@@ -348,7 +471,10 @@ def main() -> None:
         args.samples,
         args.max_new_tokens,
         build_verifier(args.verifier),
+        backend=args.backend,
         batch_size=args.batch_size,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=args.max_model_len,
         teacher_uses_rule_context=not args.no_teacher_rules,
         log_path=log_path,
     )
