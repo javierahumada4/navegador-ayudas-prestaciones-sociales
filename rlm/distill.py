@@ -1,10 +1,29 @@
-"""Generate verified IMV reasoning traces for cold-start SFT."""
+"""Generate verified IMV reasoning traces for cold-start SFT.
+
+    Inspired in distilation methods like Sky-T1, OpenThoughts and DeepSeek's cold start.
+    We take a strong model that writes solutions with visible reasoning, a verifier throws away the wrong ones,
+    and what survives becomes SFT data. 
+    Here the teacher is any model that can think in the
+    ``<think>…</think><answer>…</answer>`` format 
+
+    Run::
+
+        uv run python -m rlm.distill --data rlm/data/train.jsonl --teacher Qwen/Qwen3-4B \
+            --samples 4 --output rlm/data/sft_traces.jsonl
+
+    Output: one JSON line per generated trace with 
+    ``question``, ``answer``, ``trace``, ``verified`` and ``teacher``
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
+from typing import Iterable, Any
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from rlm.data import load_domain_dataset
 from rlm.rewards import extract_answer, has_valid_format
@@ -12,6 +31,15 @@ from rlm.verifier import Verifier, build_verifier
 
 
 def _canonical_trace(trace: str) -> str:
+    """
+    Helper function to create a canonical trace.
+    
+    Args: 
+        trace (str): Original model trace.
+
+    Returns:
+        str: Correclly formated trace.
+    """
     if has_valid_format(trace):
         return trace
     answer = extract_answer(trace)
@@ -20,19 +48,16 @@ def _canonical_trace(trace: str) -> str:
     # Preserve the teacher's text as reasoning but force the canonical training format.
     return f"<think>{trace.strip()}</think><answer>{answer.strip()}</answer>"
 
+def _load_model(teacher: str) -> AutoModelForCausalLM: 
+    """
+    Load the teacher model taking into account available resources.
 
-def generate_traces(
-    dataset,
-    teacher: str,
-    samples: int,
-    max_new_tokens: int,
-    verifier: Verifier,
-    *,
-    teacher_uses_rule_context: bool = True,
-) -> list[dict]:
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    Args: 
+        teacher (str): Teacher model name.
 
+    Returns:
+        model (AutoModelForCausalLM): Instance of the model ready to use.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     tokenizer = AutoTokenizer.from_pretrained(teacher)
@@ -40,17 +65,61 @@ def generate_traces(
         teacher, dtype=dtype, device_map=device
     ).eval()
 
+def _prepend_rules(
+    example, 
+    ) -> None:
+    """
+    Prepend the rule_context.
+    Checks for the first user message with rule context and prepends it to the promp.
+
+    Only 1 message of each prompt is prepended with the rules.
+
+    Args:
+        example: Example taken from the dataset.
+    
+    Returns:
+        prompt (List[dict]): List of prompts with the rules prepended if asked.
+    """
+
+    prompt = [dict(message) for message in example["prompt"]]
+    for message in prompt:
+        if message.get("role") == "user":
+            message["content"] = (
+                f"{example['rule_context']}\n\n{message['content']}"
+            )
+            break
+    return prompt
+
+def generate_traces(
+    dataset: Iterable[Any],
+    teacher: str,
+    samples: int,
+    max_new_tokens: int,
+    verifier: Verifier,
+    *,
+    teacher_uses_rule_context: bool = True,
+) -> list[dict]:
+    """
+    Generates traces using the teacher model.
+
+    Args:
+        dataset (Iterable): Question dataset.
+        teacher (str): Teacher model name.
+        samples (int): Number of samples generated per example.
+        max_new_tokens (int): Maximun number of tokens added to the answer through 
+                            traces.
+        verifier (Verifier): Verifier to delete bad examples.
+        teacher_uses_rule_context (bool): TODO.
+
+    Returns:
+        rows (list[dicts]): New dataset made of formated json traces.
+    """
+    model = _load_model(teacher)
+
     rows: list[dict] = []
     for example in dataset:
-        prompt = [dict(m) for m in example["prompt"]]
         if teacher_uses_rule_context and example.get("rule_context"):
-            for message in prompt:
-                if message.get("role") == "user":
-                    message["content"] = (
-                        f"{example['rule_context']}\n\n{message['content']}"
-                    )
-                    break
-
+            _prepend_rules(example)
         text = tokenizer.apply_chat_template(
             prompt, tokenize=False, add_generation_prompt=True
         )
