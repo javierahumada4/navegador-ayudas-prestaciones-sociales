@@ -205,3 +205,16 @@ La convención forma parte del contrato de la tarea, no es un detalle de present
 9. Los límites monetarios calculados por el oracle (patrimonio, activos y límites CAPI) se cuantizan a céntimos antes de comparar.
 
 `IMVAmountVerifier` e `imv_accuracy_reward` deben usar exactamente la misma cuantización. Así, por ejemplo, `474.005` se considera `474.01`, nunca `474.00`.
+
+## Contrato de observabilidad del enunciado
+
+El generador debe cumplir una regla estricta: **todo hecho que el oracle use para decidir la respuesta debe aparecer en `question`**.
+
+En particular:
+
+- Las edades se calculan con fecha completa. Para menores se muestran tanto la edad en la fecha de solicitud como la edad a 1 de enero del año de solicitud, que es la usada para el tramo CAPI.
+- La residencia legal y efectiva continuada se muestra por miembro, con su fecha individual de inicio.
+- En beneficiarios individuales se muestran la fecha desde la que vive en domicilio distinto al de progenitores/tutores y todos los periodos de alta en Seguridad Social usados por el test de independencia.
+- Toda relación progenitor-hijo generada especifica si la custodia es `exclusiva` o `compartida (no exclusiva)`. Así, una unidad con un solo adulto y menores no se confunde automáticamente con una unidad monoparental.
+
+Los tests de regresión y la auditoría del generador comprueban estas propiedades para train/test/OOD.
