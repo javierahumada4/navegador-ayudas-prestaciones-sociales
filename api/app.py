@@ -130,7 +130,7 @@ def agent(request: AgentRequest):
 
 def main() -> None:
     """Entry point for ``uv run arca-api``."""
-    uvicorn.run("api.app:app", host="0.0.0.0", port=int(env("ARCA_API_PORT", "8000")))
+    uvicorn.run("api.app:app", host="0.0.0.0", port=int(env("ARCA_API_PORT", "8888")))
 
 
 if __name__ == "__main__":
