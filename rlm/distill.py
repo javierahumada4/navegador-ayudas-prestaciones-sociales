@@ -27,7 +27,8 @@ import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
-
+import torch
+from tqdm.auto import tqdm
 from dotenv import load_dotenv
 
 from rlm.data import load_domain_dataset
@@ -105,7 +106,6 @@ def _prepend_rules(
     Returns:
         prompt (List[dict]): List of prompts with the rules prepended if asked.
     """
-
     prompt = [dict(message) for message in example["prompt"]]
     for message in prompt:
         if message.get("role") == "user":
@@ -142,10 +142,7 @@ def generate_traces(
     Returns:
         rows (list[dicts]): New dataset made of formated json traces.
     """
-    import torch
-    from tqdm.auto import tqdm
 
-    print(f"Loading teacher {teacher} (first run downloads it)...", flush=True)
     model, tokenizer = _load_model(teacher)
 
     rows: list[dict] = []
@@ -156,10 +153,11 @@ def generate_traces(
         progress.set_description(f"distill [{name:<10}]")
 
     for i, example in enumerate(progress):
-        prompt = example["prompt"]
         if teacher_uses_rule_context and example.get("rule_context"):
             stage("prepending")
             prompt = _prepend_rules(example)
+        else:
+            prompt = example["prompt"]
         stage("tokenizing")
         text = tokenizer.apply_chat_template(
             prompt, tokenize=False, add_generation_prompt=True
@@ -234,7 +232,6 @@ def generate_traces(
 def main() -> None:
     # HF_TOKEN (and friends) from the repo's .env; variables already set in the shell win.
     load_dotenv(override=False)
-    print(f"HF_TOKEN: {'found' if os.environ.get('HF_TOKEN') else 'not set (public models only)'}")
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True)
