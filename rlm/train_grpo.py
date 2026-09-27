@@ -1,4 +1,9 @@
-"""Phase 1 GRPO training for the IMV/CAPI reasoning task."""
+"""Phase 1, step 3: GRPO for IMV/CAPI reasoning.
+
+For IMV datasets the accuracy reward must use the same monetary semantics as the
+oracle and verifier: Decimal + ROUND_HALF_UP to cents. GSM8K keeps the generic
+exact numeric reward.
+"""
 
 from __future__ import annotations
 
@@ -7,23 +12,24 @@ import re
 from collections.abc import Sequence
 
 from rlm.data import load_domain_dataset, load_gsm8k
-from rlm.rewards import _completion_text, accuracy_reward, extract_answer, format_reward
+from rlm.rewards import (
+    _completion_text,
+    accuracy_reward,
+    extract_answer,
+    format_reward,
+    imv_accuracy_reward,
+)
 
-IMV_FINAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
+_TWO_DECIMAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
 
 
 def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
-    """Reward the user-facing IMV answer contract.
-
-    Accuracy already checks the amount. This third reward teaches the model to
-    return a clean amount with exactly two decimals in the <answer> block, which
-    is the output expected by the navigator and makes verification unambiguous.
-    """
-    rewards: list[float] = []
+    """Reward the clean machine-readable IMV answer contract: exactly `123.45`."""
+    scores: list[float] = []
     for completion in completions:
         answer = extract_answer(_completion_text(completion))
-        rewards.append(1.0 if answer and IMV_FINAL_ANSWER.fullmatch(answer.strip()) else 0.0)
-    return rewards
+        scores.append(1.0 if answer and _TWO_DECIMAL_ANSWER.fullmatch(answer.strip()) else 0.0)
+    return scores
 
 
 def train(args: argparse.Namespace) -> None:
@@ -31,12 +37,19 @@ def train(args: argparse.Namespace) -> None:
     from peft import LoraConfig
     from trl import GRPOConfig, GRPOTrainer
 
-    if args.data == "gsm8k":
+    is_gsm8k = args.data == "gsm8k"
+    if is_gsm8k:
         dataset = load_gsm8k("train", n_examples=args.n_examples, seed=args.seed)
+        reward_funcs = [format_reward, accuracy_reward]
+        reward_weights = [1.0, 2.0]
     else:
         dataset = load_domain_dataset(args.data)
-    print(f"{len(dataset)} training problems")
+        # Critical: do not use generic accuracy_reward here. IMV money is rounded
+        # HALF_UP to cents by the oracle and verifier.
+        reward_funcs = [format_reward, imv_accuracy_reward, domain_reward]
+        reward_weights = [1.0, 2.0, 0.5]
 
+    print(f"{len(dataset)} training problems")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     config = GRPOConfig(
         output_dir=args.output,
@@ -58,8 +71,8 @@ def train(args: argparse.Namespace) -> None:
         seed=args.seed,
         log_completions=True,
         num_completions_to_print=2,
-        reward_weights=[1.0, 2.0, 0.5],
         model_init_kwargs={"dtype": torch.bfloat16 if device == "cuda" else torch.float32},
+        reward_weights=reward_weights,
     )
 
     if args.init_adapter:
@@ -82,7 +95,7 @@ def train(args: argparse.Namespace) -> None:
 
     trainer = GRPOTrainer(
         model=model,
-        reward_funcs=[format_reward, accuracy_reward, domain_reward],
+        reward_funcs=reward_funcs,
         args=config,
         train_dataset=dataset,
         peft_config=peft_config,
@@ -94,7 +107,7 @@ def train(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", default="rlm/data/train.jsonl")
+    parser.add_argument("--data", default="gsm8k", help="'gsm8k' or path to domain JSONL")
     parser.add_argument("--model", default="Qwen/Qwen3-0.6B")
     parser.add_argument("--init-adapter", default=None)
     parser.add_argument("--output", default="rlm/weights/final_rlm_lora")
