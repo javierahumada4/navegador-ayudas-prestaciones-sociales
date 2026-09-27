@@ -26,7 +26,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 import torch
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
@@ -115,13 +115,77 @@ def _prepend_rules(
             break
     return prompt
 
+def _generate_completions(
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
+    texts: list[str],
+    samples: int,
+    max_new_tokens: int,
+) -> tuple[list[torch.Tensor], list[int]]:
+    """
+    Generate ``samples`` completions for each text in one ``generate`` call.
+
+    If the batch does not fit in GPU memory it is split in half and retried,
+    so a too large ``--batch-size`` slows the run down instead of killing it.
+
+    Args:
+        model (PreTrainedModel): Teacher model.
+        tokenizer (PreTrainedTokenizerBase): Teacher tokenizer, left padded.
+        texts (list[str]): Chat-formatted prompts.
+        samples (int): Completions per prompt.
+        max_new_tokens (int): Generation budget per completion.
+
+    Returns:
+        completions (list[Tensor]): Completion token ids, ``samples`` consecutive
+                            entries per text, in the order of ``texts``.
+        prompt_lens (list[int]): Prompt length in tokens (without padding) per text.
+    """
+    inputs = tokenizer(texts, return_tensors="pt", padding=True).to(model.device)
+    try:
+        with torch.no_grad():
+            generated = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.95,
+                num_return_sequences=samples,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+    except torch.cuda.OutOfMemoryError:
+        if len(texts) == 1:
+            raise
+        oom = True
+    else:
+        oom = False
+
+    if oom:
+        # Retry outside the except block so the failed attempt's tensors can be freed.
+        del inputs
+        torch.cuda.empty_cache()
+        half = len(texts) // 2
+        print(f"OOM with {len(texts)} prompts, retrying as {half} + {len(texts) - half}")
+        first, first_lens = _generate_completions(
+            model, tokenizer, texts[:half], samples, max_new_tokens
+        )
+        second, second_lens = _generate_completions(
+            model, tokenizer, texts[half:], samples, max_new_tokens
+        )
+        return first + second, first_lens + second_lens
+
+    # Left padding: every prompt ends at the same column, completions start after it.
+    padded_len = inputs["input_ids"].shape[1]
+    prompt_lens = inputs["attention_mask"].sum(dim=1).tolist()
+    return list(generated[:, padded_len:]), prompt_lens
+
 def generate_traces(
-    dataset: Iterable[Any],
+    dataset: Any,
     teacher: str,
     samples: int,
     max_new_tokens: int,
     verifier: Verifier,
     *,
+    batch_size: int = 1,
     teacher_uses_rule_context: bool = True,
     log_path: Path | None = None,
 ) -> list[dict]:
@@ -129,12 +193,15 @@ def generate_traces(
     Generates traces using the teacher model.
 
     Args:
-        dataset (Iterable): Question dataset.
+        dataset (Dataset): Indexable question dataset.
         teacher (str): Teacher model name.
         samples (int): Number of samples generated per example.
         max_new_tokens (int): Maximun number of tokens added to the answer through 
                             traces.
         verifier (Verifier): Verifier to delete bad examples.
+        batch_size (int): Problems per ``generate`` call; each one yields
+                            ``samples`` sequences, so the GPU decodes
+                            ``batch_size * samples`` sequences at once.
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
@@ -144,88 +211,100 @@ def generate_traces(
     """
 
     model, tokenizer = _load_model(teacher)
+    # Batched generation needs left padding so every completion starts at the same column.
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     rows: list[dict] = []
     kept = 0
-    progress = tqdm(dataset, desc="distill", unit="example")
+    progress = tqdm(total=len(dataset), desc="distill", unit="example")
 
     def stage(name: str) -> None:
         progress.set_description(f"distill [{name:<10}]")
 
-    for i, example in enumerate(progress):
-        if teacher_uses_rule_context and example.get("rule_context"):
-            stage("prepending")
-            prompt = _prepend_rules(example)
-        else:
-            prompt = example["prompt"]
+    for batch_start in range(0, len(dataset), batch_size):
+        batch = [
+            dataset[k]
+            for k in range(batch_start, min(batch_start + batch_size, len(dataset)))
+        ]
+
+        stage("prepending")
+        prompts = [
+            _prepend_rules(example)
+            if teacher_uses_rule_context and example.get("rule_context")
+            else example["prompt"]
+            for example in batch
+        ]
         stage("tokenizing")
-        text = tokenizer.apply_chat_template(
-            prompt, tokenize=False, add_generation_prompt=True
-        )
-        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        texts = [
+            tokenizer.apply_chat_template(
+                prompt, tokenize=False, add_generation_prompt=True
+            )
+            for prompt in prompts
+        ]
         stage("generating")
         start = time.perf_counter()
-        with torch.no_grad():
-            generated = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.95,
-                num_return_sequences=samples,
-                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-            )
-
+        completions, prompt_lens = _generate_completions(
+            model, tokenizer, texts, samples, max_new_tokens
+        )
         gen_seconds = time.perf_counter() - start
 
-        prompt_len = inputs["input_ids"].shape[1]
-        pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
-        n_verified = 0
         stage("verifying")
-        for j, seq in enumerate(generated):
-            completion_ids = seq[prompt_len:]
-            raw = tokenizer.decode(completion_ids, skip_special_tokens=True)
-            trace = _canonical_trace(raw)
-            result = verifier.verify(trace, str(example["answer"]))
-            n_verified += result.is_correct
-            n_tokens = int((completion_ids != pad_id).sum())
-            rows.append(
-                {
-                    "example_id": i,
-                    "sample_idx": j,
-                    "question": example["prompt"][-1]["content"],
-                    "answer": str(example["answer"]),
-                    "predicted": extract_answer(trace),
-                    "trace": trace,
-                    "verified": result.is_correct,
-                    "raw_valid_format": has_valid_format(raw),
-                    "n_tokens": n_tokens,
-                    "hit_max_tokens": n_tokens >= max_new_tokens,
-                    "teacher": teacher,
-                    "params": example.get("params"),
-                    "branches": example.get("branches"),
-                }
-            )
+        batch_verified: list[int] = []
+        for b, example in enumerate(batch):
+            i = batch_start + b
+            n_verified = 0
+            for j in range(samples):
+                completion_ids = completions[b * samples + j]
+                raw = tokenizer.decode(completion_ids, skip_special_tokens=True)
+                trace = _canonical_trace(raw)
+                result = verifier.verify(trace, str(example["answer"]))
+                n_verified += result.is_correct
+                n_tokens = int((completion_ids != tokenizer.pad_token_id).sum())
+                rows.append(
+                    {
+                        "example_id": i,
+                        "sample_idx": j,
+                        "question": example["prompt"][-1]["content"],
+                        "answer": str(example["answer"]),
+                        "predicted": extract_answer(trace),
+                        "trace": trace,
+                        "verified": result.is_correct,
+                        "raw_valid_format": has_valid_format(raw),
+                        "n_tokens": n_tokens,
+                        "hit_max_tokens": n_tokens >= max_new_tokens,
+                        "teacher": teacher,
+                        "params": example.get("params"),
+                        "branches": example.get("branches"),
+                    }
+                )
+            batch_verified.append(n_verified)
 
-        kept += n_verified
+        kept += sum(batch_verified)
+        progress.update(len(batch))
         progress.set_postfix(
             verified=f"{kept}/{len(rows)}", accept=f"{100 * kept / len(rows):.0f}%"
         )
 
         if log_path is not None:
             stage("logging")
-            _append_jsonl(
-                log_path,
-                {
-                    "example_id": i,
-                    "template_id": example.get("template_id"),
-                    "branches": example.get("branches"),
-                    "n_samples": samples,
-                    "n_verified": n_verified,
-                    "prompt_tokens": prompt_len,
-                    "gen_seconds": round(gen_seconds, 2),
-                },
-            )
+            for b, example in enumerate(batch):
+                _append_jsonl(
+                    log_path,
+                    {
+                        "example_id": batch_start + b,
+                        "template_id": example.get("template_id"),
+                        "branches": example.get("branches"),
+                        "n_samples": samples,
+                        "n_verified": batch_verified[b],
+                        "prompt_tokens": prompt_lens[b],
+                        "batch_size": len(batch),
+                        # Whole batch time spread evenly: comparable across batch sizes.
+                        "gen_seconds": round(gen_seconds / len(batch), 2),
+                    },
+                )
+    progress.close()
     return rows
 
 
@@ -238,6 +317,12 @@ def main() -> None:
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="problems per generate call (x --samples sequences on the GPU at once)",
+    )
     parser.add_argument("--verifier", default="imv")
     parser.add_argument("--output", default="rlm/data/sft_traces.jsonl")
     parser.add_argument(
@@ -263,6 +348,7 @@ def main() -> None:
         args.samples,
         args.max_new_tokens,
         build_verifier(args.verifier),
+        batch_size=args.batch_size,
         teacher_uses_rule_context=not args.no_teacher_rules,
         log_path=log_path,
     )
