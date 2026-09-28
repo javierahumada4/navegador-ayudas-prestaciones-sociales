@@ -89,13 +89,19 @@ def train(args: argparse.Namespace) -> None:
     reward_weights = list(reward_weights) + [0.0] * len(monitors)
 
     print(f"{len(dataset)} training problems")
+    # The loss forward materialises (batch, completion length, vocab) logits: with 150k vocab
+    # and ~3k-token completions that is ~1.7 GiB per sequence in fp32. Generate the whole
+    # group at once but run the loss on micro-batches, accumulating gradients over them.
+    if (args.num_generations * args.grad_accum) % args.micro_batch_size:
+        raise ValueError("--micro-batch-size must divide --num-generations x --grad-accum")
+    accumulation = args.num_generations * args.grad_accum // args.micro_batch_size
     device = "cuda" if torch.cuda.is_available() else "cpu"
     config = GRPOConfig(
         output_dir=args.output,
         max_steps=args.steps,
         learning_rate=args.learning_rate,
-        per_device_train_batch_size=args.num_generations,
-        gradient_accumulation_steps=args.grad_accum,
+        per_device_train_batch_size=args.micro_batch_size,
+        gradient_accumulation_steps=accumulation,
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
         temperature=args.temperature,
@@ -153,7 +159,15 @@ def main() -> None:
     parser.add_argument("--output", default="rlm/weights/final_rlm_lora")
     parser.add_argument("--steps", type=int, default=300)
     parser.add_argument("--num-generations", type=int, default=8)
-    parser.add_argument("--grad-accum", type=int, default=1)
+    parser.add_argument(
+        "--grad-accum", type=int, default=1, help="prompts (groups) per optimizer step"
+    )
+    parser.add_argument(
+        "--micro-batch-size",
+        type=int,
+        default=1,
+        help="completions per loss forward; lower it if the loss step runs out of memory",
+    )
     parser.add_argument("--max-completion-length", type=int, default=768)
     parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--temperature", type=float, default=1.0)
