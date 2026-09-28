@@ -8,8 +8,10 @@ exact numeric reward.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from collections.abc import Sequence
+from pathlib import Path
 
 from rlm.data import load_domain_dataset, load_gsm8k
 from rlm.rewards import (
@@ -18,6 +20,7 @@ from rlm.rewards import (
     extract_answer,
     format_reward,
     imv_accuracy_reward,
+    parse_imv_decimal,
 )
 
 _TWO_DECIMAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
@@ -32,6 +35,28 @@ def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[fl
     return scores
 
 
+def zero_answer_rate(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
+    """Monitor, not a reward: 1.0 when the model answers 0.
+
+    About 30 % of the IMV problems have 0.00 as answer, so always answering zero is a
+    cheap way to collect accuracy reward. It is registered with weight 0, so it never
+    changes the advantages; TRL still logs its mean as ``rewards/zero_answer_rate/mean``.
+    """
+    rates: list[float] = []
+    for completion in completions:
+        value = parse_imv_decimal(extract_answer(_completion_text(completion)))
+        rates.append(1.0 if value is not None and value == 0 else 0.0)
+    return rates
+
+
+def save_log_history(trainer, output_dir: str) -> Path:
+    """Dump the per-step metrics (rewards, lengths, KL, clipping) for the training curves."""
+    path = Path(output_dir) / "log_history.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(trainer.state.log_history, indent=2), encoding="utf-8")
+    return path
+
+
 def train(args: argparse.Namespace) -> None:
     import torch
     from peft import LoraConfig
@@ -41,13 +66,27 @@ def train(args: argparse.Namespace) -> None:
     if is_gsm8k:
         dataset = load_gsm8k("train", n_examples=args.n_examples, seed=args.seed)
         reward_funcs = [format_reward, accuracy_reward]
-        reward_weights = [1.0, 2.0]
+        default_weights = [1.0, 2.0]
+        monitors = []
     else:
         dataset = load_domain_dataset(args.data)
         # Critical: do not use generic accuracy_reward here. IMV money is rounded
         # HALF_UP to cents by the oracle and verifier.
         reward_funcs = [format_reward, imv_accuracy_reward, domain_reward]
-        reward_weights = [1.0, 2.0, 0.5]
+        default_weights = [1.0, 2.0, 0.5]
+        monitors = [zero_answer_rate]
+
+    reward_weights = args.reward_weights or default_weights
+    if len(reward_weights) != len(reward_funcs):
+        names = ", ".join(f.__name__ for f in reward_funcs)
+        raise ValueError(f"--reward-weights needs {len(reward_funcs)} values ({names})")
+    print(
+        "reward weights: "
+        + ", ".join(f"{f.__name__}={w}" for f, w in zip(reward_funcs, reward_weights, strict=True))
+    )
+    # Monitors go last with weight 0: logged by TRL, ignored by the loss.
+    reward_funcs = reward_funcs + monitors
+    reward_weights = list(reward_weights) + [0.0] * len(monitors)
 
     print(f"{len(dataset)} training problems")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -61,7 +100,7 @@ def train(args: argparse.Namespace) -> None:
         max_completion_length=args.max_completion_length,
         temperature=args.temperature,
         beta=args.beta,
-        epsilon=0.2,
+        epsilon=args.epsilon,
         bf16=device == "cuda",
         gradient_checkpointing=device == "cuda",
         logging_steps=1,
@@ -103,6 +142,7 @@ def train(args: argparse.Namespace) -> None:
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(args.output)
     print(f"final adapter saved to {args.output}")
+    print(f"training log -> {save_log_history(trainer, args.output)}")
 
 
 def main() -> None:
@@ -118,6 +158,15 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
+    parser.add_argument("--epsilon", type=float, default=0.2, help="PPO/GRPO clipping range")
+    parser.add_argument(
+        "--reward-weights",
+        type=float,
+        nargs="+",
+        default=None,
+        help="one weight per reward, in order: format accuracy [domain]; "
+        "default 1.0 2.0 0.5 (GSM8K: 1.0 2.0)",
+    )
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--n-examples", type=int, default=None)
     parser.add_argument("--save-steps", type=int, default=50)
