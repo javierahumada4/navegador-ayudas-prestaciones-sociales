@@ -67,7 +67,7 @@ def clipped_objective(
         Per-token objective, shape ``(G, T)``, *before* masking and averaging.
     """
     adv = advantages.unsqueeze(-1)
-    return torch.min(ratio * adv, torch.clip(ratio, 1-epsilon, 1+epsilon) * adv)
+    return torch.min(ratio * adv, torch.clip(ratio, 1 - epsilon, 1 + epsilon) * adv)
 
 
 def kl_penalty(logp_new: torch.Tensor, logp_ref: torch.Tensor) -> torch.Tensor:
@@ -75,7 +75,8 @@ def kl_penalty(logp_new: torch.Tensor, logp_ref: torch.Tensor) -> torch.Tensor:
 
     exp(logp_ref - logp_new) - (logp_ref - logp_new) - 1. Always >= 0. Shape ``(G, T)``.
     """
-    return torch.exp(logp_ref - logp_new) - (logp_ref - logp_new) -1
+    return torch.exp(logp_ref - logp_new) - (logp_ref - logp_new) - 1
+
 
 def grpo_loss(
     logp_new: torch.Tensor,
@@ -100,16 +101,21 @@ def grpo_loss(
     clipped_o = clipped_objective(ratio, adv, epsilon)
 
     if beta > 0 and logp_ref is not None:
-        kl_div = kl_penalty(logp_new, logp_ref) 
+        kl_div = kl_penalty(logp_new, logp_ref)
         kl_mean = ((kl_div * mask).sum(dim=1) / mask.sum(dim=1)).mean()
     else:
         kl_div = torch.zeros_like(logp_new)
         kl_mean = torch.tensor(0.0)
-    
+
+    # Clipping is only active when min() picks the clipped branch: the ratio left the
+    # trust region in the direction the advantage pushes it.
+    adv_col = adv.unsqueeze(-1)
+    clipped = ((ratio > 1 + epsilon) & (adv_col > 0)) | ((ratio < 1 - epsilon) & (adv_col < 0))
+
     stats = {
         "mean_advantage": adv.mean().item(),
         "kl": kl_mean.item(),
-        "clip_fraction": 1 - ((1-epsilon <= ratio) & (ratio <= 1+epsilon)).float().mean().item()
+        "clip_fraction": ((clipped.float() * mask).sum() / mask.sum()).item(),
     }
     objective = clipped_o - beta * kl_div
     objective = (objective * mask).sum(dim=1) / mask.sum(dim=1)
