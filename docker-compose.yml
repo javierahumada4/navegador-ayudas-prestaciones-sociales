@@ -5,10 +5,11 @@
 #   docker compose run --rm check-gpu       ¿ve el contenedor la GPU?
 #   docker compose run --rm smoke           entrenamiento GRPO de prueba (10-15 min)
 #   docker compose up api                   API en http://localhost:8000/docs
+#   docker compose up api ngrok             API + túnel público (URL en http://localhost:4040)
 #   docker compose run --rm train           shell interactiva con GPU para entrenar
 #
 # Variables (todas opcionales, ver .env.example): CUDA_VISIBLE_DEVICES, HF_CACHE_DIR,
-# ARCA_API_PORT, HF_TOKEN.
+# ARCA_API_PORT, HF_TOKEN, ARCA_RLM_*, ARCA_TEAM, ARCA_DOMAIN, NGROK_AUTHTOKEN, NGROK_ARGS.
 
 x-arca: &arca
   build: .
@@ -23,6 +24,11 @@ x-arca: &arca
   environment:
     - HF_HOME=/data/hf_cache
     - HF_TOKEN=${HF_TOKEN:-}
+    - ARCA_RLM_ADAPTER=${ARCA_RLM_ADAPTER:-}
+    - ARCA_RLM_BASE_MODEL=${ARCA_RLM_BASE_MODEL:-}
+    - ARCA_RLM_VERIFIER=${ARCA_RLM_VERIFIER:-imv}
+    - ARCA_TEAM=${ARCA_TEAM:-}
+    - ARCA_DOMAIN=${ARCA_DOMAIN:-}
     - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
     - TOKENIZERS_PARALLELISM=false
   shm_size: "8gb"
@@ -40,6 +46,18 @@ services:
     command: arca-api
     ports:
       - "${ARCA_API_PORT:-8000}:8000"
+
+  # Túnel público hacia la API para la corrección. Necesita NGROK_AUTHTOKEN en .env;
+  # NGROK_ARGS="--url=<vuestro-dominio>.ngrok-free.app" fija la URL (dominio estático gratis).
+  ngrok:
+    image: ngrok/ngrok:3
+    command: http api:8000 ${NGROK_ARGS:-}
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - api
 
   check-gpu:
     <<: *arca
