@@ -35,6 +35,25 @@ def _base_model_from_adapter(adapter: str) -> str:
     return "Qwen/Qwen3-0.6B"
 
 
+def _resolve_adapter(adapter: str) -> str:
+    """
+    Return a local adapter folder, downloading it from the Hub when given a repo id.
+
+    Args:
+        adapter (str): Local folder, or Hugging Face repo id such as ``JES0406/imv-sft-lora``.
+
+    Returns:
+        str: Path to a local folder that holds ``adapter_config.json``.
+    """
+    if Path(adapter).exists():
+        return adapter
+    if adapter.count("/") == 1 and not adapter.startswith((".", "/")):
+        from huggingface_hub import snapshot_download
+
+        return snapshot_download(adapter, allow_patterns=["adapter_*", "*.json", "*.txt"])
+    raise FileNotFoundError(f"ARCA_RLM_ADAPTER points to a missing folder: {adapter}")
+
+
 @dataclass
 class ReasoningModel:
     base_model: str
@@ -48,8 +67,7 @@ class ReasoningModel:
             raise NotImplementedError(
                 "Phase 1 is not wired yet: set ARCA_RLM_ADAPTER to the trained LoRA adapter."
             )
-        if not Path(adapter).exists():
-            raise FileNotFoundError(f"ARCA_RLM_ADAPTER points to a missing folder: {adapter}")
+        adapter = _resolve_adapter(adapter)
         base_model = os.environ.get("ARCA_RLM_BASE_MODEL") or _base_model_from_adapter(adapter)
         return cls(
             base_model=base_model,
