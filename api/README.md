@@ -47,5 +47,14 @@ de la DGX no hay Docker ni puertos públicos. Para la corrección la expondréis
 probad vosotros mismos los cuatro endpoints desde `/docs` y comprobad que `/health` los
 marca como `ready`.
 
+Dos formas de exponerla (ambas leen `NGROK_AUTHTOKEN` de `.env`):
+
+- Con Docker: `docker compose up api ngrok`. La URL pública sale en http://localhost:4040.
+- En la DGX (sin Docker; ngrok solo necesita conexión saliente):
+  `source smoke/dgx_env.sh && bash smoke/serve_ngrok.sh`.
+
+`ARCA_RLM_ADAPTER` acepta una carpeta local o un repo de Hugging Face
+(`JES0406/imv-sft-lora`), que se descarga al arrancar.
+
 Los tests de `tests/test_api.py` comprueban que la API arranca con todo pendiente y que la
 validación de entrada funciona. Añadid tests con vuestras implementaciones cuando las tengáis.
