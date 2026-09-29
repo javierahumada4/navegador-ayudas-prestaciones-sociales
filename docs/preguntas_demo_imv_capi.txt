@@ -1,0 +1,96 @@
+PREGUNTAS DE DEMO IMV/CAPI — FASE 1
+====================================
+
+1. CASO ORDINARIO: 2 ADULTOS + 1 MENOR
+--------------------------------------
+
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1988-05-10, 38 años a fecha de solicitud; p2: nacido el 1986-02-20, 40 años a fecha de solicitud; p3: nacido el 2010-06-01, 16 años a fecha de solicitud y 15 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 9600.00 €. Patrimonio neto sin vivienda habitual: 5000.00 €. Activos no societarios sin vivienda habitual: 8000.00 €. Determina primero si hay derecho al IMV y/o al CAPI y calcula el total mensual a percibir. Responde solo con el importe total en euros, con dos decimales.
+
+Respuesta esperada: 431.26
+
+
+2. DISCAPACIDAD >= 65 %
+------------------------
+
+Caso para resolver sobre IMV 2026. Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1988-05-10, 38 años a fecha de solicitud; p2: nacido el 1986-02-20, 40 años a fecha de solicitud, discapacidad reconocida del 65 %; p3: nacido el 2012-04-10, 14 años a fecha de solicitud y 13 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 12000.00 €. Patrimonio neto sin vivienda habitual: 6000.00 €. Activos no societarios sin vivienda habitual: 9000.00 €. ¿Cuál sería la suma mensual de IMV y CAPI? Da únicamente el número con dos decimales.
+
+Respuesta esperada: 392.65
+
+
+3. MONOPARENTAL CON DOS MENORES
+-------------------------------
+
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1990-04-12, 36 años a fecha de solicitud; p2: nacido el 2023-08-15, 3 años a fecha de solicitud y 2 años a 1 de enero de 2026; p3: nacido el 2016-05-20, 10 años a fecha de solicitud y 9 años a 1 de enero de 2026. Relaciones: p1 y p2 tienen relación progenitor-hijo con custodia exclusiva; p1 y p3 tienen relación progenitor-hijo con custodia exclusiva. Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 7200.00 €. Patrimonio neto sin vivienda habitual: 4000.00 €. Activos no societarios sin vivienda habitual: 6000.00 €. Aplica las reglas del IMV y del complemento de ayuda para la infancia. Si no corresponde ninguna de las dos prestaciones, indica cero euros. Indica el total mensual con dos decimales.
+
+Respuesta esperada: 907.65
+
+
+4. FALLO POR INGRESOS: DIFERENCIA INFERIOR A 10 €
+---------------------------------------------------
+
+Analiza esta solicitud de IMV/CAPI: Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 2 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1991-01-10, 35 años a fecha de solicitud; p2: nacido el 1993-11-20, 32 años a fecha de solicitud. Relaciones: p1 y p2 son cónyuges. Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 11330.16 €. Patrimonio neto sin vivienda habitual: 5000.00 €. Activos no societarios sin vivienda habitual: 7000.00 €. Calcula el importe mensual final (IMV + CAPI) y contesta únicamente con la cifra.
+
+Respuesta esperada: 0.00
+
+
+5. FALLO POR RESIDENCIA DE UN MIEMBRO
+-------------------------------------
+
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1985-05-10, 41 años a fecha de solicitud; p2: nacido el 1987-02-15, 39 años a fecha de solicitud; p3: nacido el 2017-03-01, 9 años a fecha de solicitud y 8 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2026-03-01. Ingresos computables anuales de la unidad: 8400.00 €. Patrimonio neto sin vivienda habitual: 3000.00 €. Activos no societarios sin vivienda habitual: 5000.00 €. Determina primero si hay derecho al IMV y/o al CAPI y calcula el total mensual a percibir. Responde solo con el importe total en euros, con dos decimales.
+
+Respuesta esperada: 0.00
+
+
+6. BENEFICIARIO INDIVIDUAL + PATRIMONIO EXACTAMENTE EN EL LÍMITE
+-----------------------------------------------------------------
+
+Caso para resolver sobre IMV 2026. Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 1 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1995-05-10, 31 años a fecha de solicitud. Relaciones: ninguna relevante. Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01. Independencia del solicitante: domicilio distinto al de sus progenitores/tutores desde 2022-01-01. Periodos de alta en Seguridad Social: 2023-01-01 a 2026-09-26. Ingresos computables anuales de la unidad: 0 €. Patrimonio neto sin vivienda habitual: 26409.60 €. Activos no societarios sin vivienda habitual: 5000.00 €. ¿Cuál sería la suma mensual de IMV y CAPI? Da únicamente el número con dos decimales.
+
+Respuesta esperada: 0.00
+
+
+7. ADMINISTRADOR DE SOCIEDAD MERCANTIL ACTIVA
+----------------------------------------------
+
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1989-06-10, 37 años a fecha de solicitud; p2: nacido el 1988-03-20, 38 años a fecha de solicitud; p3: nacido el 2021-08-10, 5 años a fecha de solicitud y 4 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 9000.00 €. Patrimonio neto sin vivienda habitual: 5000.00 €. Activos no societarios sin vivienda habitual: 7000.00 €. Hay un administrador de una sociedad mercantil activa. Aplica las reglas del IMV y del complemento de ayuda para la infancia. Si no corresponde ninguna de las dos prestaciones, indica cero euros. Indica el total mensual con dos decimales.
+
+Respuesta esperada: 0.00
+
+
+8. TOPE POR PENSIÓN
+-------------------
+
+Analiza esta solicitud de IMV/CAPI: Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1988-05-10, 38 años a fecha de solicitud; p2: nacido el 1986-02-20, 40 años a fecha de solicitud; p3: nacido el 2012-04-10, 14 años a fecha de solicitud y 13 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 9600.00 €. Patrimonio neto sin vivienda habitual: 5000.00 €. Activos no societarios sin vivienda habitual: 8000.00 €. Pensiones/subsidios sujetos al tope: 1000.00 €/mes. Calcula el importe mensual final (IMV + CAPI) y contesta únicamente con la cifra.
+
+Respuesta esperada: 231.26
+
+
+9. CAPI SIN IMV
+---------------
+
+Caso para resolver sobre IMV 2026. Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 2 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1991-04-10, 35 años a fecha de solicitud; p2: nacido el 2021-07-15, 5 años a fecha de solicitud y 4 años a 1 de enero de 2026. Relaciones: p1 y p2 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 15000.00 €. Patrimonio neto sin vivienda habitual: 5000.00 €. Activos no societarios sin vivienda habitual: 7000.00 €. ¿Cuál sería la suma mensual de IMV y CAPI? Da únicamente el número con dos decimales.
+
+Respuesta esperada: 80.50
+
+
+10. CASO DE BORDE: ACTIVOS EXACTAMENTE EN EL MÁXIMO PERMITIDO
+-------------------------------------------------------------
+
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 4 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1987-05-10, 39 años a fecha de solicitud; p2: nacido el 1989-02-15, 37 años a fecha de solicitud; p3: nacido el 2024-03-10, 2 años a fecha de solicitud y 1 años a 1 de enero de 2026; p4: nacido el 2020-11-01, 5 años a fecha de solicitud y 5 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva); p1 y p4 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: sí, desde 2018-01-01; p2: sí, desde 2018-01-01; p3: sí, desde 2018-01-01; p4: sí, desde 2018-01-01. Ingresos computables anuales de la unidad: 12000.00 €. Patrimonio neto sin vivienda habitual: 10000.00 €. Activos no societarios sin vivienda habitual: 116202.24 €. Determina primero si hay derecho al IMV y/o al CAPI y calcula el total mensual a percibir. Responde solo con el importe total en euros, con dos decimales.
+
+Respuesta esperada: 589.34
+
+
+RESUMEN DE RESPUESTAS
+=====================
+
+1  -> 431.26
+2  -> 392.65
+3  -> 907.65
+4  -> 0.00
+5  -> 0.00
+6  -> 0.00
+7  -> 0.00
+8  -> 231.26
+9  -> 80.50
+10 -> 589.34
