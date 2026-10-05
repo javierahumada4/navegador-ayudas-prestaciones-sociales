@@ -50,7 +50,11 @@ def _resolve_adapter(adapter: str) -> str:
     if adapter.count("/") == 1 and not adapter.startswith((".", "/")):
         from huggingface_hub import snapshot_download
 
-        return snapshot_download(adapter, allow_patterns=["adapter_*", "*.json", "*.txt"])
+        return snapshot_download(
+            adapter,
+            allow_patterns=["adapter_*", "*.json", "*.txt"],
+            ignore_patterns=["checkpoint-*/*"],
+        )
     raise FileNotFoundError(f"ARCA_RLM_ADAPTER points to a missing folder: {adapter}")
 
 
