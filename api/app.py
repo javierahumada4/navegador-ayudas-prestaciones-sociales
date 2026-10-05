@@ -18,6 +18,7 @@ import logging
 import time
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
@@ -33,6 +34,9 @@ from api.schemas import (
     ToolsRequest,
     ToolsResponse,
 )
+
+# .env (ARCA_RLM_ADAPTER, HF_TOKEN, ...) also when launched with plain uvicorn; real env wins.
+load_dotenv(override=False)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("arca.api")
