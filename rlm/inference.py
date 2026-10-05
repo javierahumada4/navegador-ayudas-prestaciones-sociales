@@ -114,8 +114,47 @@ class ReasoningModel:
             kwargs.update({"temperature": temperature, "top_p": 0.95})
         with torch.no_grad():
             out = self.model.generate(**inputs, **kwargs)
-        new_tokens = out[0, inputs["input_ids"].shape[1]:]
+        new_tokens = out[0, inputs["input_ids"].shape[1] :]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True), int(new_tokens.numel())
+
+    def generate_batch(
+        self,
+        questions: list[str],
+        max_new_tokens: int = 1024,
+        *,
+        do_sample: bool = True,
+        temperature: float = 0.6,
+    ) -> list[tuple[str, int]]:
+        """Batched ``generate``: same prompt and decoding, one (raw, n_tokens) per question."""
+        import torch
+
+        texts = [
+            self.tokenizer.apply_chat_template(
+                build_prompt(q), tokenize=False, add_generation_prompt=True
+            )
+            for q in questions
+        ]
+        pad_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        # Decoder-only models must be left-padded so every prompt ends where generation starts.
+        padding_side = self.tokenizer.padding_side
+        self.tokenizer.padding_side = "left"
+        try:
+            inputs = self.tokenizer(texts, return_tensors="pt", padding=True).to(self.model.device)
+        finally:
+            self.tokenizer.padding_side = padding_side
+        kwargs = {"max_new_tokens": max_new_tokens, "do_sample": do_sample, "pad_token_id": pad_id}
+        if do_sample:
+            kwargs.update({"temperature": temperature, "top_p": 0.95})
+        with torch.no_grad():
+            out = self.model.generate(**inputs, **kwargs)
+        new_tokens = out[:, inputs["input_ids"].shape[1] :]
+        return [
+            (
+                self.tokenizer.decode(row, skip_special_tokens=True),
+                int((row != pad_id).sum()),
+            )
+            for row in new_tokens
+        ]
 
     def answer(
         self, question: str, expected_answer: str | None = None, max_new_tokens: int = 1024
@@ -139,7 +178,8 @@ class ReasoningModel:
             verifier=verdict,
             tokens_generated=n_tokens,
             model=f"{self.base_model}+{Path(self.adapter_path).name}"
-            if self.adapter_path else self.base_model,
+            if self.adapter_path
+            else self.base_model,
         )
 
 
