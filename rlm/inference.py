@@ -40,21 +40,30 @@ def _resolve_adapter(adapter: str) -> str:
     Return a local adapter folder, downloading it from the Hub when given a repo id.
 
     Args:
-        adapter (str): Local folder, or Hugging Face repo id such as ``JES0406/imv-sft-lora``.
+        adapter (str): Local folder, or Hugging Face repo id with an optional subfolder,
+            such as ``JES0406/imv-sft-lora`` or ``JES0406/imv-sft-lora/grpo``.
 
     Returns:
         str: Path to a local folder that holds ``adapter_config.json``.
     """
     if Path(adapter).exists():
         return adapter
-    if adapter.count("/") == 1 and not adapter.startswith((".", "/")):
+    parts = adapter.split("/")
+    # A missing path whose first segment is a local folder (e.g. rlm/weights/...) is a typo,
+    # not a Hub repo.
+    if len(parts) >= 2 and not adapter.startswith((".", "/")) and not Path(parts[0]).exists():
         from huggingface_hub import snapshot_download
 
-        return snapshot_download(
-            adapter,
-            allow_patterns=["adapter_*", "*.json", "*.txt"],
-            ignore_patterns=["checkpoint-*/*"],
+        repo_id, subfolder = "/".join(parts[:2]), "/".join(parts[2:])
+        prefix = f"{subfolder}/" if subfolder else ""
+        local = snapshot_download(
+            repo_id,
+            allow_patterns=[f"{prefix}adapter_*"],
         )
+        path = Path(local) / subfolder
+        if not (path / "adapter_config.json").exists():
+            raise FileNotFoundError(f"no adapter_config.json in {adapter} on the Hub")
+        return str(path)
     raise FileNotFoundError(f"ARCA_RLM_ADAPTER points to a missing folder: {adapter}")
 
 
