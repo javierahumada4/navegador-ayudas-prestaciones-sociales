@@ -56,6 +56,9 @@ class ReasoningResponse(BaseModel):
     has_valid_format: bool
     verifier: VerifierVerdict | None = None
     tokens_generated: int = 0
+    truncated: bool = Field(
+        default=False, description="Generation hit max_new_tokens before finishing."
+    )
     model: str = ""
 
 

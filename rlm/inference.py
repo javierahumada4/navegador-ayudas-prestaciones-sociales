@@ -21,6 +21,10 @@ def split_thinking(raw: str) -> tuple[str, str]:
     match = THINK_PATTERN.search(raw)
     thinking = match.group("think").strip() if match else ""
     answer = extract_answer(raw)
+    if match is None and "<think>" in raw:
+        # Cut before </think> (max_new_tokens): all of it is reasoning, never the answer.
+        thinking = raw.split("<think>", 1)[1].strip()
+        return thinking, answer or ""
     if answer is None:
         answer = raw.split("</think>")[-1].strip() if match else raw.strip()
     return thinking, answer
@@ -190,6 +194,7 @@ class ReasoningModel:
             has_valid_format=has_valid_format(raw),
             verifier=verdict,
             tokens_generated=n_tokens,
+            truncated=n_tokens >= max_new_tokens,
             model=f"{self.base_model}+{Path(self.adapter_path).name}"
             if self.adapter_path
             else self.base_model,
