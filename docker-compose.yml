@@ -1,4 +1,4 @@
-# ARCA · servicios para desplegar en cualquier máquina con Docker (con o sin GPU NVIDIA).
+# ARCA · API en Docker con o sin GPU NVIDIA; entrenamientos requieren GPU.
 # Dentro de las sesiones de la DGX no hay Docker: allí se usa uv directamente (docs/dgx.md).
 #
 #   docker compose build                    construye la imagen (tarda la primera vez)
@@ -32,13 +32,16 @@ x-arca: &arca
     - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
     - TOKENIZERS_PARALLELISM=false
   shm_size: "8gb"
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+
+# Only explicit GPU services reserve an NVIDIA device. The default API works
+# on CPU-only Docker hosts; inference may be slower without CUDA.
+x-gpu: &gpu
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
 
 services:
   api:
@@ -61,14 +64,17 @@ services:
 
   check-gpu:
     <<: *arca
+    deploy: *gpu
     command: arca-check-gpu
 
   smoke:
     <<: *arca
+    deploy: *gpu
     command: arca-smoke
 
   train:
     <<: *arca
+    deploy: *gpu
     command: bash
     stdin_open: true
     tty: true

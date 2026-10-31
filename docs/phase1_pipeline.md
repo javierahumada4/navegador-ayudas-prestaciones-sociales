@@ -68,12 +68,30 @@ son correctas. Si ninguna traza es aceptada, **SFT no se ejecuta**.
 La validación compara cada ejemplo con `rlm/imv_engine.py` y el
 fichero de reglas para 2026.
 
-Para reanudar a partir de una fase sin reescribir las anteriores:
+Para iniciar una etapa que todavía no se haya ejecutado, sin repetir las
+anteriores:
 
 ```bash
 python -m rlm.pipeline --run-dir runs/phase1-2026-01 \
   --from-stage sft --through-stage evaluate
 ```
+
+Para recuperar una destilación interrumpida (se escriben batches a disco)
+o el último checkpoint de SFT/GRPO dentro de una etapa:
+
+```bash
+python -m rlm.pipeline --run-dir runs/phase1-2026-01 \
+  --from-stage distill --through-stage evaluate --resume
+
+python -m rlm.pipeline --run-dir runs/phase1-2026-01 \
+  --from-stage grpo --through-stage evaluate --resume
+```
+
+`--resume` requiere que existan las trazas parciales o un checkpoint completo
+`checkpoint-N/trainer_state.json` en el run. La destilación comprueba que
+el prefijo de muestras guardado coincide con el mismo dataset, profesor y
+configuración. Para recuperarse de una sesión de 24 horas, guarda el run
+fuera del directorio temporal o copia los adaptadores/checkpoints al terminar.
 
 Las salidas ya existentes se protegen. Para regenerar una etapa expresamente,
 `--force` reemplaza sus salidas; para un run nuevo es preferible cambiar
@@ -109,5 +127,5 @@ Tras el run, completar `EXPERIMENTS.md` con métricas observadas,
 comparación pass@1, ablación y cinco fallos interpretados, evitando inventar
 resultados. Para desplegar `/reasoning`, configurar `ARCA_RLM_ADAPTER` con
 `weights/grpo_lora` o subir ese adaptador a Hugging Face; comprobar
-`/health` y una petición real antes de exponer ngrok. Docker Compose sigue
-requiriendo runtime NVIDIA.
+`/health` y una petición real antes de exponer ngrok. Docker Compose levanta la API sin reservar GPU;
+los servicios `smoke`, `train` y `check-gpu` sí requieren runtime NVIDIA.

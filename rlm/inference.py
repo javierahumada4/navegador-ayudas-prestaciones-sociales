@@ -53,9 +53,14 @@ def _resolve_adapter(adapter: str) -> str:
     if Path(adapter).exists():
         return adapter
     parts = adapter.split("/")
-    # A missing path whose first segment is a local folder (e.g. rlm/weights/...) is a typo,
-    # not a Hub repo.
-    if len(parts) >= 2 and not adapter.startswith((".", "/")) and not Path(parts[0]).exists():
+    # Never interpret a missing local run/weights folder as a Hugging Face repo.
+    local_prefixes = {"runs", "rlm", "weights", "outputs", "checkpoints"}
+    looks_local = (
+        adapter.startswith((".", "/", "~"))
+        or parts[0] in local_prefixes
+        or Path(parts[0]).exists()
+    )
+    if len(parts) >= 2 and not looks_local:
         from huggingface_hub import snapshot_download
 
         repo_id, subfolder = "/".join(parts[:2]), "/".join(parts[2:])

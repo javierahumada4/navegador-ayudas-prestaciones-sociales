@@ -34,5 +34,9 @@ ejecuciones inexistentes.
 | Validación /health y /reasoning | Despliegue final | Pendiente |
 
 Los datos históricos de `traces2` no se mezclan con las generaciones del
-nuevo run. Anotar la fecha, GPU/VRAM, SHA, duración, hiperparámetros,
+nuevo run. En esta rama se han dejado fuera de Git los antiguos
+`rlm/data/{train,test}.jsonl`, `rlm/test_ood/test.jsonl` y
+`reports/phase1_eval.json`; permanecen en las ramas/commits anteriores.
+La destilación guarda cada batch y el entrenamiento puede reanudar desde
+checkpoints. La ejecución GPU integral sigue pendiente. Anotar la fecha, GPU/VRAM, SHA, duración, hiperparámetros,
 aceptación, ablation y resultados de cada ejecución real.

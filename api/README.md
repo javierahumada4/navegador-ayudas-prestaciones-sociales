@@ -53,8 +53,11 @@ Dos formas de exponerla (ambas leen `NGROK_AUTHTOKEN` de `.env`):
 - En la DGX (sin Docker; ngrok solo necesita conexión saliente):
   `source smoke/dgx_env.sh && bash smoke/serve_ngrok.sh`.
 
-`ARCA_RLM_ADAPTER` acepta una carpeta local o un repo de Hugging Face
-(`JES0406/imv-sft-lora`), que se descarga al arrancar.
+`ARCA_RLM_ADAPTER` acepta la carpeta local del adaptador GRPO final
+(por ejemplo `runs/phase1-rebuild/weights/grpo_lora`) o un repositorio
+de Hugging Face publicado después del entrenamiento, que se descarga al arrancar.
+Deja la variable vacía mientras no exista un adaptador final verificado.
+La API por defecto no exige runtime NVIDIA; en CPU la inferencia puede ser lenta.
 
 Los tests de `tests/test_api.py` comprueban que la API arranca con todo pendiente y que la
 validación de entrada funciona. Añadid tests con vuestras implementaciones cuando las tengáis.
