@@ -675,7 +675,7 @@ def main() -> None:
     else:
         out.write_text("", encoding="utf-8")
 
-    traces = generate_traces(
+    generate_traces(
         dataset,
         args.teacher,
         args.samples,

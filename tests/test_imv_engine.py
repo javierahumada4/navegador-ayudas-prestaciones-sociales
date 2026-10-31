@@ -1,5 +1,3 @@
-from copy import deepcopy
-
 from rlm.generate_problems import IMVProblemGenerator
 from rlm.imv_engine import evaluate_imv_case, expected_answer, load_ruleset
 

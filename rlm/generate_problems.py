@@ -173,7 +173,7 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 5) PATRIMONIO Y TEST DE ACTIVOS PARA IMV
 - Vivienda habitual excluida. El patrimonio neto debe ser ESTRICTAMENTE menor que el límite: igualdad => no elegible.
 - Los activos no societarios deben ser <= al límite: solo superar el límite => no elegible.
-""" + "\n".join(patrimony_lines) + f"""
+""" + "\n".join(patrimony_lines) + """
 
 6) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
 - Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0.

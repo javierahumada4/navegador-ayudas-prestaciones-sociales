@@ -234,7 +234,6 @@ def guaranteed_income_monthly(
     case: dict[str, Any], unit: list[str], rules: dict[str, Any]
 ) -> Decimal:
     persons = {p["id"]: p for p in case["persons"]}
-    app_date = parse_date(case["application_date"])
     base = D(rules["amounts"]["single_adult_monthly_eur"])
     amount = _base_guaranteed_monthly(rules, len(unit))
 
