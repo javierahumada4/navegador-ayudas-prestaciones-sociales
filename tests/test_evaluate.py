@@ -1,7 +1,11 @@
 """Checks for the evaluation helpers that do not need a model."""
 
 import json
+from dataclasses import asdict
 from pathlib import Path
+
+import pytest
+from rlm.generate_problems import IMVProblemGenerator
 
 from rlm.evaluate import (
     diagnose_failure,
@@ -14,8 +18,21 @@ from rlm.evaluate import (
 from rlm.imv_engine import evaluate_imv_case
 from rlm.verifier import build_verifier
 
-TEST_DATA = Path(__file__).resolve().parents[1] / "rlm" / "data" / "test.jsonl"
+TEST_DATA: Path
 VERIFIER = build_verifier("imv")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def generate_evaluation_fixture(tmp_path_factory):
+    """Exercise evaluation with fresh oracle-backed cases, not committed JSONL."""
+    global TEST_DATA
+    TEST_DATA = tmp_path_factory.mktemp("imv-eval") / "test.jsonl"
+    problems = IMVProblemGenerator().generate(200, "test", seed=42)
+    with TEST_DATA.open("w", encoding="utf-8") as handle:
+        for problem in problems:
+            row = asdict(problem)
+            row["split"] = "test"
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def answer(amount: str) -> str:

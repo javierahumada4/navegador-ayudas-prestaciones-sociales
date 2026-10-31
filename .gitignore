@@ -43,3 +43,8 @@ Thumbs.db
 
 # Local
 .local
+# Phase-1 generated datasets and old reports; the pipeline writes to runs/.
+rlm/data/*.jsonl
+rlm/test_ood/*.jsonl
+reports/*.json
+reports/*.md

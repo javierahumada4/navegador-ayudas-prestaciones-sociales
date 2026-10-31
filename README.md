@@ -82,19 +82,17 @@ plantilla del informe y la del cuaderno de experimentos.
 
 ## Empezar
 
-Este repositorio es una plantilla. Pulsad **Use this template** en GitHub para crear vuestro
-propio repositorio con una copia limpia (mejor que un fork: será vuestro, sin historial
-ajeno, y es el que enseñaréis como portfolio). Después clonad el vuestro. Si no tenéis cuenta
-de GitHub, o no sabéis cómo hacer `push` desde la DGX, está explicado paso a paso en
-[`docs/github.md`](docs/github.md).
+Este es el repositorio del equipo, derivado de la plantilla docente ARCA.
+La guía de acceso a GitHub y la DGX está en [`docs/github.md`](docs/github.md).
 
 Necesitáis Python 3.11 y [`uv`](https://docs.astral.sh/uv/). Con eso:
 
 ```bash
-git clone https://github.com/kendrickcetina/dgm-arca.git
-cd dgm-arca
+git clone https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales.git
+cd navegador-ayudas-prestaciones-sociales
+git switch fix/rlm-reproducible-pipeline
 uv sync --extra train --extra rag --extra agent   # o `make setup`
-uv run pytest                                     # todo verde antes de tocar nada
+uv run --extra train pytest                       # batería completa con extras de fase 1
 uv run arca-check-gpu                             # ¿ve torch la GPU?
 uv run arca-smoke                                 # entrenamiento GRPO de prueba (GPU)
 uv run arca-api                                   # API en http://localhost:8000/docs

@@ -1,38 +1,22 @@
-# Datos de la fase 1
+# Datos IMV/CAPI de fase 1
 
-Aquí van vuestros problemas. Formato JSONL, una línea por problema, con al menos:
+El generador y oracle producen problemas sintéticos 2026 con `question`,
+`answer`, `params`, `branches` y `split`. No requieren anotación humana.
+El modelo profesor produce trazas de razonamiento que se aceptan solo después
+de verificarlas contra el oracle. SFT utiliza exclusivamente `verified=true`.
 
-```json
-{"question": "Un depósito pierde 18 litros y queda a la mitad...", "answer": "120"}
-```
-
-Podéis añadir los campos que necesite vuestro verificador (tests, tolerancia, esquema...):
-llegan a las funciones de recompensa como argumentos con nombre.
-
-Ficheros que esperamos ver:
-
-- `train.jsonl`: problemas para SFT y GRPO.
-- `test.jsonl`: problemas que el modelo no ha visto nunca, para `rlm/evaluate.py`.
-- `test_ood.jsonl`: problemas de una familia que no aparece en `train`, para el experimento de
-  generalización.
-- `sft_traces.jsonl`: trazas del profesor ya verificadas, generadas con `rlm/distill.py`.
-
-## ¿De dónde salen estos problemas?
-
-**No se escriben a mano.** Hay seis estrategias, explicadas con tamaños y ejemplos en
-[`docs/datasets.md`](../../docs/datasets.md). La más habitual será un generador programático,
-donde la implementación de referencia es a la vez el verificador. Tenéis uno completo y
-ejecutable en [`rlm/generate_problems.py`](../generate_problems.py):
+Genera los tres conjuntos y comprueba sus etiquetas y separación:
 
 ```bash
-uv run python -m rlm.generate_problems --n 800 --split train --out rlm/data/train.jsonl
-uv run python -m rlm.generate_problems --n 200 --split test  --out rlm/data/test.jsonl
-uv run python -m rlm.generate_problems --n 100 --split ood   --out rlm/test_ood/test.jsonl
+python -m rlm.pipeline --through-stage generate --run-dir runs/phase1-rebuild
 ```
 
-Recordad que las **trazas de razonamiento** tampoco se escriben a mano: las genera un modelo
-profesor y las filtra vuestro verificador (`rlm/distill.py`). Lo que tenéis que conseguir son
-los pares (enunciado, respuesta correcta).
+Rutas bajo ese directorio: `data/train.jsonl` (800),
+`data/test.jsonl` (200) y `data/test_ood.jsonl` (100, familia CAPI-only).
+La destilación escribirá `data/sft_traces.jsonl` con muestras aceptadas y
+rechazadas. Todos estos artefactos son regenerables y se excluyen de Git.
 
-Los ficheros grandes no se suben al repositorio: dejad el script que los regenera. Si vuestros
-problemas vienen de un generador, con el script y la semilla basta.
+Para generar un split manualmente:
+`python -m rlm.generate_problems --n 800 --split train --seed 42 --out ruta.jsonl`.
+
+Guía integral: [docs/phase1_pipeline.md](../../docs/phase1_pipeline.md).

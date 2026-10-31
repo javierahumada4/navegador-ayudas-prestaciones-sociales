@@ -44,97 +44,60 @@ Así SFT y GRPO entrenan exactamente la misma tarea que corrige el verificador.
 `train_sft.py` no necesita lógica específica del IMV: ya consume correctamente
 `question + trace` verificados.
 
-## Generar datos
+## Flujo reproducible del dominio
 
-Desde la raíz del repositorio:
-
-```bash
-uv run python -m rlm.generate_problems --n 800 --split train --out rlm/data/train.jsonl
-uv run python -m rlm.generate_problems --n 200 --split test --out rlm/data/test.jsonl
-uv run python -m rlm.generate_problems --n 100 --split ood --out rlm/data/test_ood.jsonl
-```
-
-`train` y `test` comparten distribución. `test_ood` reserva una familia completa:
-**CAPI-only** (sin derecho a IMV por renta, pero con derecho al CAPI). De ese modo existe
-un experimento OOD claro para comparar base/SFT/GRPO.
-
-El generador imprime:
-- cobertura por familia y rama;
-- número de plantillas;
-- número de fugas de respuesta en el enunciado (debe ser 0).
-
-## Destilación
-
-El JSONL incluye `rule_context`. Por defecto `distill.py` lo añade solo al prompt del
-modelo profesor. Esto es deliberado:
-
-1. el profesor recibe las reglas exactas de 2026 y produce trazas fiables;
-2. el alumno recibe el enunciado normal, no una chuleta con la respuesta;
-3. SFT destila las reglas y el procedimiento de cálculo;
-4. GRPO mejora la aplicación de las reglas mediante recompensa verificable.
+El generador utiliza `imv_engine.py` como oracle para train/test y para
+el OOD de casos CAPI-only. El programa principal escribe y valida los JSONL
+en un directorio aislado, sin reutilizar datasets históricos:
 
 ```bash
-uv run python -m rlm.distill \
-  --data rlm/data/train.jsonl \
-  --teacher Qwen/Qwen3-4B \
-  --samples 4 \
-  --verifier imv \
-  --output rlm/data/sft_traces.jsonl
+python -m rlm.pipeline --dry-run
+python -m rlm.pipeline --through-stage generate --run-dir runs/phase1-rebuild
 ```
 
-## SFT
+El generador muestra cobertura por familia, plantillas y fugas de respuesta.
+El validador verifica de nuevo el importe calculado por el oracle y rechaza
+parámetros o preguntas duplicados entre conjuntos.
 
-Se mantiene el script de la plantilla:
+## Destilación, SFT, GRPO y evaluación
+
+`distill.py` envía `rule_context` solo al profesor, no al estudiante.
+Las trazas aceptadas se usan en SFT LoRA; GRPO continúa desde el adaptador SFT
+usando las respuestas del conjunto train. Los extras de vLLM (`distill`)
+y TRL (`train`) utilizan entornos `uv` separados.
 
 ```bash
-uv run python -m rlm.train_sft \
-  --data rlm/data/sft_traces.jsonl \
-  --output rlm/weights/sft_lora
+# Ensayo GPU pequeño de las cinco etapas
+python -m rlm.pipeline --smoke --run-dir runs/phase1-smoke
+
+# Generación, destilación, SFT, GRPO, evaluación y curvas
+python -m rlm.pipeline --run-dir runs/phase1-rebuild
 ```
 
-## GRPO
+Se generan `runs/phase1-rebuild/weights/sft_lora`,
+`runs/phase1-rebuild/weights/grpo_lora`, los informes
+`reports/eval_test.json` y `reports/eval_ood.json`, y las curvas de GRPO.
+Los pasos de ejecución, checkpoints y recuperación se explican en
+[docs/phase1_pipeline.md](../docs/phase1_pipeline.md).
 
-```bash
-uv run python -m rlm.train_grpo \
-  --data rlm/data/train.jsonl \
-  --init-adapter rlm/weights/sft_lora \
-  --output rlm/weights/final_rlm_lora
-```
+Las recompensas de GRPO son `format_reward`, `imv_accuracy_reward`
+y `domain_reward`: estructura `<think>/<answer>`, importe monetario con
+`ROUND_HALF_UP` y número limpio con dos decimales. Sus pesos iniciales son
+`[1.0, 2.0, 0.5]`: se deben medir y justificar. `zero_answer_rate`
+es un monitor con peso cero para detectar sesgo hacia `0.00`.
 
-Las recompensas son:
+## API del dominio
 
-1. `format_reward`: estructura `<think>...</think><answer>...</answer>`;
-2. `imv_accuracy_reward`: importe correcto tras cuantizar a céntimos con `ROUND_HALF_UP`, igual que el oracle y `IMVAmountVerifier`;
-3. `domain_reward`: `<answer>` contiene únicamente `123.45` con dos decimales.
-
-No usar `accuracy_reward` genérico para IMV si se quieren aceptar respuestas con más decimales que redondean correctamente (por ejemplo `474.005` frente a ground truth `474.01`). El reward genérico se mantiene para GSM8K/smoke tests.
-
-Pesos iniciales propuestos: `[1.0, 2.0, 0.5]`. Deben validarse experimentalmente y
-documentarse, no tratarse como hiperparámetros definitivos.
-
-## Evaluación
-
-```bash
-uv run python -m rlm.evaluate \
-  --data rlm/data/test.jsonl \
-  --adapters base=none sft=rlm/weights/sft_lora grpo=rlm/weights/final_rlm_lora
-
-uv run python -m rlm.evaluate \
-  --data rlm/data/test_ood.jsonl \
-  --adapters base=none sft=rlm/weights/sft_lora grpo=rlm/weights/final_rlm_lora
-```
-
-## API
-
-Cuando exista el adaptador:
+Tras obtener el LoRA final:
 
 ```env
-ARCA_RLM_ADAPTER=rlm/weights/final_rlm_lora
+ARCA_RLM_ADAPTER=runs/phase1-rebuild/weights/grpo_lora
 ARCA_RLM_VERIFIER=imv
 ```
 
-El contrato de `/reasoning` no se modifica; el repositorio de plantilla exige mantener
-`api/schemas.py`.
+También se puede publicar el adaptador en Hugging Face y configurar su repo.
+`/reasoning` mantiene el contrato de `api/schemas.py`. La validación de
+inferencia requiere un adaptador entrenado y una petición real a la API.
 
 ## Frontera de normalización
 
