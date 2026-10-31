@@ -216,3 +216,8 @@ Cuando terminéis tendréis un sistema completo. Tratadlo como lo que es: algo q
   define qué significa "relevante" para esa tarea.
 - **BM25:** ranking por palabras clave (frecuencia, rareza, normalización por longitud).
   **Híbrido:** combinación ponderada de BM25 y similitud de embeddings.
+
+
+## Fase 1: pipeline IMV/CAPI reproducible
+
+Para empezar desde cero, consulta [la guía de generación, destilación, SFT, GRPO y evaluación](docs/phase1_pipeline.md). Comienza sin GPU con `make rlm-plan` y los tests `make test-logic`; el entrenamiento real usa `make rlm-from-zero`. Los outputs nuevos van a `runs/` y no se mezclan con los datasets o pesos históricos.

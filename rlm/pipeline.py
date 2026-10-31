@@ -50,6 +50,7 @@ def parse_args(argv=None):
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
     parser.add_argument("--teacher-samples", type=int, default=4)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
+    parser.add_argument("--teacher-max-model-len", type=int, default=6144)
     parser.add_argument("--teacher-batch-size", type=int, default=16)
     parser.add_argument("--teacher-gpu-memory", type=float, default=0.85)
     parser.add_argument("--student", default="Qwen/Qwen3-0.6B")
@@ -115,6 +116,7 @@ def build_plan(args):
                 "distill", "rlm.distill", "--data", train, "--teacher", args.teacher,
                 "--backend", args.teacher_backend, "--samples", args.teacher_samples,
                 "--max-new-tokens", args.teacher_max_new_tokens,
+                "--max-model-len", args.teacher_max_model_len,
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
                 "--verifier", "imv", "--output", traces,

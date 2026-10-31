@@ -50,6 +50,8 @@ def train(args: argparse.Namespace) -> None:
 
     dataset = load_sft_dataset(args.data)
     print(f"{len(dataset)} verified traces loaded from {args.data}")
+    if not len(dataset):
+        raise ValueError("No verified traces: run distillation and validation before SFT.")
 
     peft_config = LoraConfig(
         r=args.lora_rank,
