@@ -41,6 +41,10 @@ def parse_args(argv=None):
     parser.add_argument("--through-stage", choices=ORDER, default="evaluate")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="replace selected stage outputs")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="resume incomplete distill, SFT or GRPO at --from-stage; never erase checkpoints",
+    )
     parser.add_argument("--smoke", action="store_true", help="small real GPU run")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-size", type=int, default=800)
@@ -65,6 +69,10 @@ def parse_args(argv=None):
     parser.add_argument("--eval-batch-size", type=int, default=2)
     parser.add_argument("--eval-max-new-tokens", type=int, default=1024)
     args = parser.parse_args(argv)
+    if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
+        parser.error("--resume needs --from-stage distill, sft or grpo")
+    if args.resume and args.force:
+        parser.error("--resume and --force cannot be combined")
     if ORDER.index(args.from_stage) > ORDER.index(args.through_stage):
         parser.error("--from-stage must precede --through-stage")
     if args.smoke:
@@ -77,6 +85,34 @@ def parse_args(argv=None):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     return args
+
+
+def latest_checkpoint(directory: Path) -> Path | None:
+    """Locate a complete Trainer checkpoint, never a partially written folder."""
+    if not directory.is_dir():
+        return None
+    candidates = [
+        p for p in directory.glob("checkpoint-*")
+        if p.is_dir() and p.name.removeprefix("checkpoint-").isdigit()
+        and (p / "trainer_state.json").is_file()
+    ]
+    return max(candidates, key=lambda p: int(p.name.removeprefix("checkpoint-"))) if candidates else None
+
+
+def _resume_flags(args, stage: str, output: Path) -> list[str]:
+    if not args.resume or args.from_stage != stage:
+        return []
+    if stage == "distill":
+        return ["--resume"]
+    checkpoint = latest_checkpoint(output)
+    if checkpoint is None:
+        if args.dry_run:
+            return ["--resume-from-checkpoint", "<latest-checkpoint>"]
+        raise SystemExit(
+            f"{stage}: no complete checkpoint under {output}; "
+            "re-run this stage with --force or use a fresh --run-dir"
+        )
+    return ["--resume-from-checkpoint", str(checkpoint)]
 
 
 def build_plan(args):
@@ -120,7 +156,8 @@ def build_plan(args):
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
                 "--verifier", "imv", "--output", traces,
-                "--log-path", logs / "distillation.jsonl"
+                "--log-path", logs / "distillation.jsonl",
+                *_resume_flags(args, "distill", traces)
             ), env_distill),
             Step("validate traces", py(
                 "rlm.validate_data", "--train", train, "--traces", traces,
@@ -133,7 +170,8 @@ def build_plan(args):
                 "train", "rlm.train_sft", "--data", traces, "--model", args.student,
                 "--output", sft, "--epochs", args.sft_epochs,
                 "--batch-size", args.sft_batch_size, "--grad-accum", args.sft_grad_accum,
-                "--max-length", args.sft_max_length
+                "--max-length", args.sft_max_length,
+                "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
         ], [sft]),
         Stage("grpo", [
@@ -143,7 +181,8 @@ def build_plan(args):
                 "--steps", args.grpo_steps, "--num-generations", args.grpo_generations,
                 "--micro-batch-size", args.grpo_micro_batch_size,
                 "--max-completion-length", args.grpo_completion_length,
-                "--seed", args.seed
+                "--seed", args.seed,
+                *_resume_flags(args, "grpo", grpo)
             ), env_train),
         ], [grpo]),
     ]
@@ -180,6 +219,10 @@ def main(argv=None):
             print(prefix + shlex.join(step.command))
     if args.dry_run:
         return
+    if args.resume and args.from_stage == "distill":
+        trace_file = (ROOT / args.run_dir).resolve() / "data" / "sft_traces.jsonl"
+        if not trace_file.is_file():
+            raise SystemExit(f"Cannot resume distillation: missing {trace_file}")
     if shutil.which("uv") is None and any(
         step.env_path for stage in plan for step in stage.steps
     ):
@@ -206,7 +249,9 @@ def main(argv=None):
             )
     for stage in plan:
         existing = [p for p in stage.outputs if p.exists()]
-        if existing and not args.force:
+        if existing and not args.force and not (
+            args.resume and stage.name == args.from_stage
+        ):
             raise SystemExit(
                 f"{stage.name}: output already exists ({existing[0]}). "
                 "Use a fresh --run-dir or --force to replace selected stages."

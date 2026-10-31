@@ -24,3 +24,37 @@ def test_smoke_has_small_datasets_and_short_training():
 def test_resume_from_sft_does_not_generate_again():
     plan = build_plan(parse_args(["--from-stage", "sft", "--through-stage", "grpo"]))
     assert [stage.name for stage in plan] == ["sft", "grpo"]
+
+
+def test_resume_must_be_a_trainable_stage():
+    import pytest
+
+    with pytest.raises(SystemExit):
+        parse_args(["--from-stage", "generate", "--resume"])
+    with pytest.raises(SystemExit):
+        parse_args(["--from-stage", "sft", "--resume", "--force"])
+
+
+def test_latest_checkpoint_uses_complete_highest_step(tmp_path):
+    from rlm.pipeline import latest_checkpoint
+
+    for n, complete in ((50, True), (100, True), (150, False)):
+        folder = tmp_path / f"checkpoint-{n}"
+        folder.mkdir()
+        if complete:
+            (folder / "trainer_state.json").write_text("{}", encoding="utf-8")
+    assert latest_checkpoint(tmp_path).name == "checkpoint-100"
+
+
+def test_resume_grpo_picks_checkpoint_and_preserves_earlier_stages(tmp_path):
+    args = parse_args([
+        "--run-dir", str(tmp_path),
+        "--from-stage", "grpo", "--through-stage", "grpo", "--resume",
+    ])
+    output = tmp_path / "weights" / "grpo_lora" / "checkpoint-30"
+    output.mkdir(parents=True)
+    (output / "trainer_state.json").write_text("{}", encoding="utf-8")
+    plan = build_plan(args)
+    assert len(plan) == 1
+    command = plan[0].steps[0].command
+    assert command[command.index("--resume-from-checkpoint") + 1] == str(output)

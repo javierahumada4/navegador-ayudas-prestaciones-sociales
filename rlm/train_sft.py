@@ -70,11 +70,12 @@ def train(args: argparse.Namespace) -> None:
         bf16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         logging_steps=10,
-        save_strategy="epoch",
+        save_strategy="steps",
+        save_steps=args.save_steps,
+        save_total_limit=3,
         report_to="none",
         model_init_kwargs={"dtype": torch.bfloat16 if torch.cuda.is_available() else torch.float32},
-        # Tu turno: consider `packing=True` for throughput, `assistant_only_loss=True` if your
-        # chat template supports it, and a small eval split to watch for over-fitting.
+        # Completion-only loss uses the prompt/completion structure above.
     )
     trainer = SFTTrainer(
         model=args.model,
@@ -102,6 +103,7 @@ def main() -> None:
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--max-length", type=int, default=2048)
     parser.add_argument("--lora-rank", type=int, default=16)
+    parser.add_argument("--save-steps", type=int, default=50)
     parser.add_argument("--resume-from-checkpoint", default=None, help="checkpoint-XXX folder")
     train(parser.parse_args())
 
