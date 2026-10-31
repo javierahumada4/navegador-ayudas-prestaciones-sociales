@@ -370,6 +370,7 @@ def generate_traces(
     thinking: bool = True,
     log_path: Path | None = None,
     id_offset: int = 0,
+    output_path: Path | None = None,
 ) -> list[dict]:
     """
     Generates traces using the teacher model.
@@ -398,6 +399,7 @@ def generate_traces(
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
         id_offset (int): Added to every ``example_id`` so ids stay the row
                             number in the full file when ``dataset`` is a shard.
+        output_path (Path | None): Stream completed batches to a durable JSONL file.
 
     Returns:
         rows (list[dicts]): New dataset made of formated json traces.
@@ -464,6 +466,7 @@ def generate_traces(
 
         stage("verifying")
         batch_verified: list[int] = []
+        batch_rows: list[dict] = []
         for b, example in enumerate(batch):
             i = id_offset + batch_start + b
             n_verified = 0
@@ -477,7 +480,7 @@ def generate_traces(
                     and verifier.verify(trace, str(example["answer"])).is_correct
                 )
                 n_verified += is_correct
-                rows.append(
+                batch_rows.append(
                     {
                         "example_id": i,
                         "sample_idx": j,
@@ -499,6 +502,16 @@ def generate_traces(
                 )
             batch_verified.append(n_verified)
 
+        if output_path is not None:
+            # A crashed 24h GPU session must not lose completed teacher batches.
+            with output_path.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    "".join(json.dumps(row, ensure_ascii=False, default=str) + "\n"
+                            for row in batch_rows)
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+        rows.extend(batch_rows)
         kept += sum(batch_verified)
         progress.update(len(batch))
         progress.set_postfix(
@@ -526,12 +539,65 @@ def generate_traces(
     return rows
 
 
+def _verified_resume_offset(
+    path: Path, dataset: Any, samples: int, id_offset: int, teacher: str, thinking: bool
+) -> int:
+    """Check and recover a contiguous prefix of a streamed teacher run.
+
+    An abruptly interrupted append may leave a partial final line/example; only
+    the complete verified-order prefix is retained before sampling resumes.
+    This does not reinterpret, relabel or duplicate any accepted trace.
+    """
+    if not path.is_file():
+        raise ValueError(f"Cannot resume: missing {path}")
+    valid: list[dict] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            # Only a truncated final line is recoverable; earlier corruption is fatal.
+            if line_no == len(path.read_text(encoding="utf-8").splitlines()):
+                break
+            raise ValueError(f"{path}:{line_no}: corrupted teacher trace")
+        valid.append(row)
+
+    complete_rows = (len(valid) // samples) * samples
+    if complete_rows > len(dataset) * samples:
+        raise ValueError(f"{path}: more samples than the selected dataset")
+    for n, row in enumerate(valid[:complete_rows]):
+        expected = dataset[n // samples]
+        if (
+            row.get("example_id") != id_offset + n // samples
+            or row.get("sample_idx") != n % samples
+            or row.get("question") != expected["prompt"][-1]["content"]
+            or str(row.get("answer")) != str(expected["answer"])
+            or row.get("teacher") != teacher
+            or row.get("thinking") != thinking
+        ):
+            raise ValueError(f"{path}: sample {n} does not match teacher/data configuration")
+    if len(valid) != complete_rows or path.stat().st_size != sum(
+        len((json.dumps(row, ensure_ascii=False, default=str) + "\n").encode("utf-8"))
+        for row in valid
+    ):
+        # Normalize the file to valid, complete examples before appending.
+        with path.open("w", encoding="utf-8") as handle:
+            for row in valid[:complete_rows]:
+                handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    return complete_rows // samples
+
+
 def main() -> None:
     # HF_TOKEN (and friends) from the repo's .env; variables already set in the shell win.
     load_dotenv(override=False)
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True)
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="continue a streaming output from its last complete example",
+    )
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
@@ -559,7 +625,7 @@ def main() -> None:
     parser.add_argument(
         "--log-path",
         default="rlm/data/logs/distill_metrics.jsonl",
-        help="per-example metrics JSONL, overwritten at the start of each run",
+        help="per-example metrics JSONL (appended when --resume)",
     )
     parser.add_argument(
         "--shard",
@@ -579,9 +645,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.samples <= 0:
+        parser.error("--samples must be positive")
     log_path = Path(args.log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("", encoding="utf-8")
+    if not args.resume:
+        log_path.write_text("", encoding="utf-8")
 
     dataset = load_domain_dataset(args.data)
     id_offset = 0
@@ -593,6 +662,19 @@ def main() -> None:
         end = index * len(dataset) // count
         dataset = dataset.select(range(id_offset, end))
         print(f"Shard {args.shard}: rows {id_offset}..{end - 1} of --data")
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        processed = _verified_resume_offset(
+            out, dataset, args.samples, id_offset, args.teacher, not args.no_thinking
+        )
+        print(f"Resuming: {processed}/{len(dataset)} teacher problems complete")
+        id_offset += processed
+        dataset = dataset.select(range(processed, len(dataset)))
+    else:
+        out.write_text("", encoding="utf-8")
+
     traces = generate_traces(
         dataset,
         args.teacher,
@@ -607,17 +689,16 @@ def main() -> None:
         thinking=not args.no_thinking,
         log_path=log_path,
         id_offset=id_offset,
+        output_path=out,
     )
 
-    out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as handle:
-        for row in traces:
-            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-    kept = sum(1 for t in traces if t["verified"])
+    # Include prior batches in the final acceptance rate after a resumed run.
+    persisted = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()
+                 if line.strip()]
+    kept = sum(1 for row in persisted if row["verified"])
     print(
-        f"{kept}/{len(traces)} traces verified "
-        f"({100 * kept / max(len(traces), 1):.1f}%) -> {out} | log -> {log_path}"
+        f"{kept}/{len(persisted)} traces verified "
+        f"({100 * kept / max(len(persisted), 1):.1f}%) -> {out} | log -> {log_path}"
     )
 
 
