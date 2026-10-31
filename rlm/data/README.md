@@ -27,7 +27,7 @@ ejecutable en [`rlm/generate_problems.py`](../generate_problems.py):
 ```bash
 uv run python -m rlm.generate_problems --n 800 --split train --out rlm/data/train.jsonl
 uv run python -m rlm.generate_problems --n 200 --split test  --out rlm/data/test.jsonl
-uv run python -m rlm.generate_problems --n 100 --split ood   --out rlm/data/test_ood.jsonl
+uv run python -m rlm.generate_problems --n 100 --split ood   --out rlm/test_ood/test.jsonl
 ```
 
 Recordad que las **trazas de razonamiento** tampoco se escriben a mano: las genera un modelo

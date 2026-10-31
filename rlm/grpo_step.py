@@ -38,9 +38,11 @@ def group_advantages(rewards: torch.Tensor, eps: float = 1e-4, scale: bool = Tru
         Advantages with shape ``(G,)``. A positive advantage means "better than the group".
     """
 
+    if rewards.numel() == 0:
+        raise ValueError('GRPO requires at least one reward')
     adv = rewards - rewards.mean()
     if scale:
-        return adv / (adv.std() + eps)
+        return adv / (adv.std(unbiased=False) + eps)
     return adv
 
 
@@ -96,6 +98,16 @@ def grpo_loss(
     ``kl`` for logging.
     """
 
+    if logp_new.shape != logp_old.shape or logp_new.shape != mask.shape:
+        raise ValueError('logp_new, logp_old and mask must have identical shapes')
+    if logp_new.ndim != 2 or rewards.shape != (logp_new.shape[0],):
+        raise ValueError('expected token matrices (G, T) and rewards (G,)')
+    if (mask.sum(dim=1) <= 0).any():
+        raise ValueError('every completion must contain at least one valid token')
+    if beta > 0 and logp_ref is None:
+        raise ValueError('logp_ref is required when beta > 0')
+    if logp_ref is not None and logp_ref.shape != logp_new.shape:
+        raise ValueError('logp_ref must have shape (G, T)')
     adv = group_advantages(rewards)
     ratio = policy_ratio(logp_new, logp_old)
     clipped_o = clipped_objective(ratio, adv, epsilon)
@@ -105,7 +117,7 @@ def grpo_loss(
         kl_mean = ((kl_div * mask).sum(dim=1) / mask.sum(dim=1)).mean()
     else:
         kl_div = torch.zeros_like(logp_new)
-        kl_mean = torch.tensor(0.0)
+        kl_mean = logp_new.new_zeros(())
 
     # Clipping is only active when min() picks the clipped branch: the ratio left the
     # trust region in the direction the advantage pushes it.

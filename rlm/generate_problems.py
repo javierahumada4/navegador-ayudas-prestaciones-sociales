@@ -140,7 +140,6 @@ def build_rule_context(rules: dict[str, Any]) -> str:
     disability_amount = _money(base_monthly * _D(amounts["disability_pct"]))
     mono_amount = _money(base_monthly * _D(amounts["monoparental_pct"]))
     disability_min = amounts["disability_min_percent"]
-    inst_months = mono["other_parent_institution_min_months"]
     dep_grade = mono["dependency_min_grade"]
 
     return f"""REGLAS EXACTAS IMV/CAPI 2026 PARA RESOLVER ESTOS PROBLEMAS
@@ -159,9 +158,9 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 - Añade una sola vez +{_D(amounts['monoparental_pct']) * 100:.0f}% de la base de un adulto = {_eur_es(mono_amount)}/mes cuando concurra alguno de estos supuestos:
   a) un solo adulto con uno o más descendientes hasta segundo grado menores, con guarda y custodia exclusiva;
   b) un solo adulto con menores en acogimiento familiar permanente o guarda con fines de adopción, siendo el único acogedor/guardador;
-  c) el otro progenitor, guardador o acogedor está en prisión o centro hospitalario durante un periodo ininterrumpido >= {inst_months} meses;
-  d) conviven exclusivamente progenitores/abuelos/guardadores/acogedores y menores, y uno de los adultos tiene dependencia grado >= {dep_grade}, incapacidad permanente absoluta o gran invalidez;
-  e) unidad formada exclusivamente por una mujer víctima de violencia de género y sus descendientes hasta segundo grado menores bajo guarda/custodia, o menores en acogimiento permanente/guarda preadoptiva.
+  c) conviven exclusivamente progenitores/abuelos/guardadores/acogedores y menores, y uno de los adultos tiene dependencia grado >= {dep_grade}, incapacidad permanente absoluta o gran invalidez;
+  d) unidad formada exclusivamente por una mujer víctima de violencia de género y sus descendientes hasta segundo grado menores bajo guarda/custodia, o menores en acogimiento permanente/guarda preadoptiva.
+- Alcance del oracle sintético: los casos del otro progenitor hospitalizado o encarcelado NO están modelados. No apliques ese supuesto a estos ejercicios.
 
 4) TOPE POR PENSIONES Y SUBSIDIO PARA MAYORES DE 52 AÑOS
 - Suma, para todos los miembros de la unidad, las pensiones contributivas o no contributivas de la Seguridad Social y, en su caso, el subsidio de desempleo para mayores de 52 años. Usa el importe mensual conjunto incluyendo la parte proporcional de pagas extraordinarias.

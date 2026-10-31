@@ -68,3 +68,19 @@ def test_clip_fraction_counts_only_active_clipping_on_valid_tokens():
     mask = torch.tensor([[1.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]])
     _, stats = grpo_step.grpo_loss(ratio.log(), logp_old, rewards, mask, epsilon=0.2)
     assert abs(stats["clip_fraction"] - 2 / 7) < 1e-6
+
+
+def test_single_reward_has_finite_zero_advantage():
+    assert torch.allclose(grpo_step.group_advantages(torch.tensor([1.0])), torch.zeros(1))
+
+
+def test_empty_completion_mask_fails_explicitly():
+    import pytest
+    with pytest.raises(ValueError, match="at least one valid token"):
+        grpo_step.grpo_loss(torch.zeros(2, 2), torch.zeros(2, 2), torch.ones(2), torch.zeros(2, 2))
+
+
+def test_positive_beta_requires_reference_policy():
+    import pytest
+    with pytest.raises(ValueError, match="logp_ref"):
+        grpo_step.grpo_loss(torch.zeros(2, 2), torch.zeros(2, 2), torch.ones(2), torch.ones(2, 2), beta=0.1)

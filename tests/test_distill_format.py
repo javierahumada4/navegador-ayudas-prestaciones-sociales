@@ -50,6 +50,17 @@ def test_spanish_amount_and_zero_are_normalized():
     )
 
 
+def test_comma_with_three_decimal_digits_uses_half_up():
+    trace, status = _structure_trace("<think>Calculo.</think><answer>474,005 €</answer>")
+    assert trace is not None and trace.endswith("<answer>474.01</answer>")
+
+
+def test_hedged_amount_in_one_tag_is_rejected():
+    assert _structure_trace("<think>Calculo.</think><answer>500 o 431.26</answer>") == (
+        None, "ambiguous_answer"
+    )
+
+
 def test_answer_tags_inside_reasoning_are_removed():
     raw = "<think>Formato: <answer>1.00</answer>. Total 474.01</think><answer>474.01</answer>"
     trace, status = _structure_trace(raw)

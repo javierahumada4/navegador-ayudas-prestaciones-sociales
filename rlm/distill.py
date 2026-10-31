@@ -29,7 +29,7 @@ import json
 import os
 import re
 import time
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import torch
@@ -37,17 +37,8 @@ from tqdm.auto import tqdm
 from dotenv import load_dotenv
 
 from rlm.data import load_domain_dataset
-from rlm.rewards import extract_answer, has_valid_format, normalize_number
+from rlm.rewards import NUMBER_PATTERN, extract_answer, has_valid_format, parse_imv_decimal
 from rlm.verifier import Verifier, build_verifier
-
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel, PreTrainedTokenizerBase
-    from vllm import LLM
-
-# Problems per generate call when --batch-size is not given. vLLM schedules the
-# sequences itself, so it takes big batches; HF keeps every sequence's KV cache
-# in memory at once, so 4 problems (16 sequences) is its ceiling on 16 GB.
-DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 4}
 
 if TYPE_CHECKING:
     from transformers import PreTrainedModel, PreTrainedTokenizerBase
@@ -109,13 +100,19 @@ def _structure_trace(raw: str) -> tuple[str | None, str]:
     answers = _ANSWER_BLOCK.findall(tail)
     if not answers:
         return None, "no_answer"
-    amounts = {normalize_number(answer) for answer in answers}
-    if len(amounts) != 1 or None in amounts:
-        return None, "ambiguous_answer"  # several different amounts: no hedging
-    try:
-        amount = Decimal(amounts.pop()).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    except InvalidOperation:
-        return None, "no_answer"
+    # Teacher answers are Spanish IMV money: 474,005 means 474.005, not 474005.
+    # Reject multiple numeric tokens inside one <answer> (e.g. "500 o 431.26").
+    amounts = set()
+    for answer in answers:
+        if len(NUMBER_PATTERN.findall(answer)) != 1:
+            return None, "ambiguous_answer"
+        parsed = parse_imv_decimal(answer)
+        if parsed is None or not parsed.is_finite():
+            return None, "ambiguous_answer"
+        amounts.add(parsed.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    if len(amounts) != 1:
+        return None, "ambiguous_answer"
+    amount = amounts.pop()
 
     trace = f"<think>\n{reasoning}\n</think>\n<answer>{amount}</answer>"
     assert has_valid_format(trace), trace[-200:]

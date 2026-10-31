@@ -16,11 +16,11 @@ lock: ## Regenera uv.lock tras cambiar pyproject.toml
 	$(UV) lock
 
 test: ## Ejecuta los tests
-	$(UV) run pytest
+	$(UV) run --extra train pytest
 
 lint: ## Comprueba estilo con ruff
-	$(UV) run ruff check .
-	$(UV) run ruff format --check .
+	$(UV) run --extra train ruff check .
+	$(UV) run --extra train ruff format --check .
 
 format: ## Formatea el código con ruff
 	$(UV) run ruff format .
