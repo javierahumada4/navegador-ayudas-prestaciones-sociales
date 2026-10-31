@@ -99,9 +99,10 @@ entrenamiento no sustituyen a una ejecución GPU real.
 
 ## Límites y entrega
 
-El oracle **no** modela el supuesto de otro progenitor hospitalizado o
-encarcelado; el contexto del profesor tampoco lo enseña como un caso
-admitido. Se ha corregido un parser de destilación que confundía
+El oracle, el generador y la ficha del profesor incluyen el caso de otro
+progenitor hospitalizado o encarcelado 12 meses o más; el caso explicita
+los meses ininterrumpidos en el enunciado. Se ha corregido un parser de
+destilación que confundía
 `474,005` con `474005`. Por defecto solo las trazas verificadas llegan a SFT.
 
 Tras el run, completar `EXPERIMENTS.md` con métricas observadas,

@@ -356,3 +356,22 @@ def test_one_adult_with_minors_is_explicitly_non_monoparental_unless_family_says
             rel["custody"] = "exclusive"
     monoparental_question, _ = generator.render(monoparental, random.Random(10))
     assert "custodia exclusiva" in monoparental_question
+
+
+def test_parent_in_prison_or_hospital_meets_12_month_monoparental_rule():
+    from random import Random
+
+    from rlm.imv_engine import is_monoparental
+
+    generator = IMVProblemGenerator()
+    case = generator._base_case(Random(31), 1, 1, "monoparental_institution")
+    unit = [p["id"] for p in case["persons"]]
+    case["other_parent_institution"] = {"kind": "prison", "continuous_months": 12}
+    assert is_monoparental(case, unit, generator.rules)
+    question, _ = generator.render(case, Random(8))
+    assert "12 meses ininterrumpidos en prisión" in question
+    case["other_parent_institution"]["continuous_months"] = 11
+    assert not is_monoparental(case, unit, generator.rules)
+    case["other_parent_institution"]["kind"] = "hospital"
+    case["other_parent_institution"]["continuous_months"] = 15
+    assert is_monoparental(case, unit, generator.rules)

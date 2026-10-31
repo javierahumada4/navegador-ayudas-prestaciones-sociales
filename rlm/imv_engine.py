@@ -178,9 +178,21 @@ def is_monoparental(case: dict[str, Any], unit: list[str], rules: dict[str, Any]
     if not minors:
         return False
 
-    # One adult with at least one minor under exclusive custody.
+    # One co-resident adult: exclusive custody or another statutory equivalent.
     if len(adults) == 1:
         adult = adults[0]
+        # The other parent is outside the household, and has been continuously
+        # imprisoned/hospitalised for the required months. This is an input
+        # fact, not a conclusion inferred from being a one-adult household.
+        institution = case.get("other_parent_institution", {})
+        if (
+            isinstance(institution, dict)
+            and institution.get("kind") in {"prison", "hospital"}
+            and int(institution.get("continuous_months", 0))
+            >= int(rules["monoparental"]["other_parent_institution_min_months"])
+            and any(_has_parent_child_relation(case, adult, minor) for minor in minors)
+        ):
+            return True
         if any(
             _has_parent_child_relation(case, adult, minor)
             and _custody(case, adult, minor) == "exclusive"
