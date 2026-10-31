@@ -66,3 +66,8 @@ def test_accuracy_reward_is_zero_without_answer_block():
 def test_thinking_length_counts_tokens_in_think_block():
     assert thinking_length(GOOD) == 5
     assert thinking_length("no think block") == 0
+
+
+def test_imv_accuracy_rejects_multiple_amounts_inside_answer():
+    raw = "<think>Calculo.</think><answer>500 o quizas 431.26</answer>"
+    assert imv_accuracy_reward([None], [raw], answer=["431.26"]) == [0.0]

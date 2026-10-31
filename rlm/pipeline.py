@@ -189,6 +189,21 @@ def main(argv=None):
     manifest = run / "manifest.json"
     record = (json.loads(manifest.read_text(encoding="utf-8"))
               if manifest.exists() else {"configuration": vars(args), "steps": []})
+    # Reuse of a run must never silently change its data/model/training configuration.
+    invariant_keys = (
+        "seed", "train_size", "test_size", "ood_size", "teacher", "teacher_backend",
+        "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
+        "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
+        "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
+        "grpo_completion_length", "smoke",
+    )
+    previous = record.get("configuration", {})
+    for key in invariant_keys:
+        if key in previous and previous[key] != getattr(args, key):
+            raise SystemExit(
+                f"Run configuration changed: {key}={previous[key]!r}, "
+                f"requested {getattr(args, key)!r}. Start a new --run-dir."
+            )
     for stage in plan:
         existing = [p for p in stage.outputs if p.exists()]
         if existing and not args.force:

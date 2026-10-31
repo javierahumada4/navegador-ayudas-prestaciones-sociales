@@ -43,3 +43,7 @@ def test_exact_match_ignores_case_and_spacing():
     v = ExactMatchVerifier()
     assert v.is_correct("  Madrid ", "madrid")
     assert not v.is_correct("Barcelona", "Madrid")
+
+
+def test_imv_verifier_does_not_accept_hedged_answers():
+    assert not IMVAmountVerifier().is_correct("500 o 431.26", "431.26")

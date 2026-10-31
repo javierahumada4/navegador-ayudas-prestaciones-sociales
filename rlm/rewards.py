@@ -194,6 +194,9 @@ def imv_numbers_match(predicted: str | None, expected: str | None) -> bool:
     """Compare monetary answers after HALF_UP quantisation to cents."""
     if predicted is None or expected is None:
         return False
+    # Never award accuracy for a hedged/ambiguous answer containing two amounts.
+    if len(NUMBER_PATTERN.findall(predicted)) != 1:
+        return False
     p, e = parse_imv_decimal(predicted), parse_imv_decimal(expected)
     if p is None or e is None:
         return False

@@ -1,0 +1,36 @@
+name: IMV phase 1 logic checks
+
+on:
+  push:
+    branches:
+      - fix/rlm-reproducible-pipeline
+  pull_request:
+    paths:
+      - 'rlm/**'
+      - 'tests/**'
+      - '.github/workflows/phase1-checks.yml'
+
+jobs:
+  logic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax checks
+        run: python -m compileall -q rlm tests
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: CPU logic regression tests
+        run: |
+          python -m pytest -q \
+            tests/test_generate_problems.py \
+            tests/test_validate_data.py \
+            tests/test_pipeline.py \
+            tests/test_imv_engine.py \
+            tests/test_rewards.py \
+            tests/test_verifier.py
+      - name: Full pipeline dry run
+        run: python -m rlm.pipeline --dry-run
