@@ -32,5 +32,7 @@ jobs:
             tests/test_imv_engine.py \
             tests/test_rewards.py \
             tests/test_verifier.py
+      - name: Generate and verify the full 800/200/100 split on CPU
+        run: python -m rlm.pipeline --through-stage generate --run-dir runs/ci-phase1
       - name: Full pipeline dry run
         run: python -m rlm.pipeline --dry-run
