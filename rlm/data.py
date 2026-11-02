@@ -21,11 +21,15 @@ R1_ZERO_SYSTEM_PROMPT = (
 )
 
 IMV_SYSTEM_PROMPT = (
-    R1_ZERO_SYSTEM_PROMPT
-    + " The domain is Spain's Ingreso Mínimo Vital (IMV) and CAPI. "
-    "Reason carefully from the facts in the problem. The final <answer> must contain "
-    "only the total monthly amount IMV+CAPI in euros, with exactly two decimal places "
-    "and a decimal point, for example <answer>431.26</answer>."
+    "Eres un asistente especializado en el Ingreso Mínimo Vital (IMV) y el "
+    "Complemento de Ayuda para la Infancia (CAPI) de España. "
+    "Resuelve cada caso a partir de los hechos proporcionados, sin inventar datos. "
+    "Escribe el razonamiento en español dentro de <think>...</think> y la respuesta "
+    "final dentro de <answer>...</answer>. "
+    "En <answer> incluye únicamente el importe mensual total de IMV+CAPI en euros, "
+    "con exactamente dos decimales y punto decimal, sin símbolo de moneda ni texto "
+    "adicional; por ejemplo, <answer>431.26</answer>. "
+    "No añadas texto fuera de esas etiquetas."
 )
 
 

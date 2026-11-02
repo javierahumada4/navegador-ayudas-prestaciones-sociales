@@ -13,6 +13,16 @@ sin incorporar trazas ni checkpoints históricos. No publica datos personales.
 - Acceso a Hugging Face (definir `HF_TOKEN` si algún modelo lo requiere).
 - Ejecución desde la **raíz del repositorio**.
 
+El prompt del **alumno IMV** está en español en `rlm/data.py`, al igual que
+el del **profesor** Qwen3 en modo thinking de `rlm/distill.py` y los
+enunciados. El formato de salida mantiene las etiquetas `<think>` y
+`<answer>`, así como el punto decimal (`431.26`). El prompt genérico
+de GSM8K continúa en inglés, porque se evalúa por separado.
+
+**No mezcles checkpoints ni trazas de runs anteriores con este cambio de
+prompt.** Para comparar base/SFT/GRPO, genera un `--run-dir` nuevo y mantén
+el mismo prompt durante toda la ejecución.
+
 Los extras `distill` (vLLM y su versión de torch) y `train`
 (TRL/Transformers/PEFT) tienen dependencias incompatibles. El lanzador prepara
 dos entornos aislados bajo el run, `.venv-distill` y `.venv-train`, mediante
