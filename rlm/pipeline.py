@@ -52,7 +52,7 @@ def parse_args(argv=None):
     parser.add_argument("--ood-size", type=int, default=100)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
-    parser.add_argument("--teacher-samples", type=int, default=4)
+    parser.add_argument("--teacher-samples", type=int, default=8)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
     parser.add_argument("--teacher-max-model-len", type=int, default=8192)
     parser.add_argument("--teacher-batch-size", type=int, default=16)
@@ -66,20 +66,21 @@ def parse_args(argv=None):
     parser.add_argument("--sft-grad-accum", type=int, default=8)
     parser.add_argument("--sft-max-length", type=int, default=8192)
     parser.add_argument("--sft-max-traces-per-problem", type=int, default=2)
+    parser.add_argument("--min-sft-problem-coverage", type=float, default=0.70,
+                        help="minimum fraction of training problems with valid <=1024-token SFT traces")
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
     parser.add_argument("--grpo-temperature", type=float, default=0.6)
     parser.add_argument("--grpo-top-p", type=float, default=0.95)
     parser.add_argument("--grpo-top-k", type=int, default=20)
     parser.add_argument("--sft-check-examples", type=int, default=8)
-    parser.add_argument("--sft-check-max-new-tokens", type=int, default=1536)
     parser.add_argument("--sft-min-format-rate", type=float, default=0.75)
     parser.add_argument("--sft-max-truncated-rate", type=float, default=0.25)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)
-    parser.add_argument("--grpo-completion-length", type=int, default=1024)
+    parser.add_argument("--completion-tokens", type=int, default=1024,
+                        help="shared SFT/GRPO/readiness/evaluation completion budget")
     parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
     parser.add_argument("--eval-batch-size", type=int, default=2)
-    parser.add_argument("--eval-max-new-tokens", type=int, default=1536)
     args = parser.parse_args(argv)
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
@@ -102,14 +103,15 @@ def parse_args(argv=None):
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
                 "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
                 "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
-                "sft_check_examples", "sft_check_max_new_tokens",
+                "sft_check_examples", "completion_tokens",
                 "sft_max_traces_per_problem"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     if args.grpo_zero_signal_patience < 0:
         parser.error("--grpo-zero-signal-patience must be >= 0")
     if not (0 <= args.sft_min_format_rate <= 1
-            and 0 <= args.sft_max_truncated_rate <= 1):
+            and 0 <= args.sft_max_truncated_rate <= 1
+            and 0 <= args.min_sft_problem_coverage <= 1):
         parser.error("--sft-min-format-rate and --sft-max-truncated-rate must be in [0, 1]")
     if (args.grpo_temperature <= 0
             or not (0 < args.grpo_top_p <= 1)
@@ -214,17 +216,20 @@ def build_plan(args):
                 "--output", sft, "--epochs", args.sft_epochs,
                 "--batch-size", args.sft_batch_size, "--grad-accum", args.sft_grad_accum,
                 "--max-length", args.sft_max_length,
+                "--max-completion-tokens", args.completion_tokens,
+                "--min-problem-coverage", args.min_sft_problem_coverage,
+                "--min-families", args.min_verified_families,
                 "--max-traces-per-problem", args.sft_max_traces_per_problem,
                 "--validation-report", reports / "sft_input_validation.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
-        ], [sft, reports / "sft_input_validation.json"]),
+        ], [sft, reports / "sft_input_validation.json", reports / "sft_selection.json"]),
         Stage("grpo", [
             Step("SFT readiness gate", uv(
                 "train", "rlm.check_sft", "--data", train,
                 "--model", args.student, "--adapter", sft,
                 "--n-examples", args.sft_check_examples,
-                "--max-new-tokens", args.sft_check_max_new_tokens,
+                "--max-new-tokens", args.completion_tokens,
                 "--min-format-rate", args.sft_min_format_rate,
                 "--max-truncated-rate", args.sft_max_truncated_rate,
                 "--batch-size", args.eval_batch_size,
@@ -238,7 +243,7 @@ def build_plan(args):
                 "--temperature", args.grpo_temperature,
                 "--top-p", args.grpo_top_p, "--top-k", args.grpo_top_k,
                 "--micro-batch-size", args.grpo_micro_batch_size,
-                "--max-completion-length", args.grpo_completion_length,
+                "--max-completion-length", args.completion_tokens,
                 "--zero-signal-patience", args.grpo_zero_signal_patience,
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
@@ -251,7 +256,7 @@ def build_plan(args):
             "train", "rlm.evaluate", "--data", input_path, "--model", args.student,
             "--adapters", *adapters, "--verifier", "imv", "--samples", 1,
             "--batch-size", args.eval_batch_size,
-            "--max-new-tokens", args.eval_max_new_tokens,
+            "--max-new-tokens", args.completion_tokens,
             "--seed", args.seed, "--out", reports / f"eval_{name}.json"
         ), env_train)
         for name, input_path in (

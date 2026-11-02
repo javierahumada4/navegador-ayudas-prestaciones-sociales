@@ -22,6 +22,8 @@ from pathlib import Path
 
 from datasets import load_dataset
 
+from rlm.sft_selection import select_budgeted_traces
+
 from rlm.data import build_prompt, get_imv_rule_context
 
 
@@ -57,6 +59,11 @@ def load_sft_dataset(path: str | Path, max_traces_per_problem: int = 2):
     """
     dataset = load_dataset("json", data_files=str(path), split="train")
     dataset = select_verified_traces(dataset, max_traces_per_problem)
+    return format_sft_dataset(dataset)
+
+
+def format_sft_dataset(dataset):
+    """Format already selected raw teacher rows as conversational SFT examples."""
     return dataset.map(
         lambda ex: {
             "prompt": build_prompt(
@@ -80,12 +87,25 @@ def train(args: argparse.Namespace) -> None:
 
     from rlm.sft_preflight import validate_sft_sequences
 
-    dataset = load_sft_dataset(args.data, args.max_traces_per_problem)
-    print(f"{len(dataset)} verified traces loaded from {args.data}")
-    if not len(dataset):
-        raise ValueError("No verified traces: run distillation and validation before SFT.")
-
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    raw = load_dataset("json", data_files=str(args.data), split="train")
+    report_dir = Path(args.validation_report or Path(args.output).parent / "sft_input_validation.json").parent
+    selected, coverage = select_budgeted_traces(
+        raw, tokenizer,
+        max_completion_tokens=args.max_completion_tokens,
+        max_length=args.max_length,
+        max_per_problem=args.max_traces_per_problem,
+        min_problem_coverage=args.min_problem_coverage,
+        min_families=args.min_families,
+        report_path=report_dir / "sft_selection.json",
+    )
+    dataset = format_sft_dataset(selected)
+    print(
+        f"SFT selection: {len(dataset)} verified complete traces, "
+        f"{coverage['covered_problems']}/{coverage['total_problems']} problems "
+        f"({coverage['problem_coverage']:.1%}); "
+        f"excluded={coverage['excluded_by_reason']}", flush=True,
+    )
     report = validate_sft_sequences(
         dataset, tokenizer, args.max_length,
         args.validation_report or Path(args.output).parent / "sft_input_validation.json",
@@ -148,7 +168,12 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--grad-accum", type=int, default=4)
-    parser.add_argument("--max-length", type=int, default=8192)
+    parser.add_argument("--max-length", type=int, default=8192,
+                        help="maximum total prompt + completion tokens")
+    parser.add_argument("--max-completion-tokens", type=int, default=1024,
+                        help="maximum SFT assistant completion tokens, shared with GRPO")
+    parser.add_argument("--min-problem-coverage", type=float, default=0.70)
+    parser.add_argument("--min-families", type=int, default=5)
     parser.add_argument(
         "--max-traces-per-problem", type=int, default=2,
         help="maximum unique verified teacher traces used per problem in SFT",
