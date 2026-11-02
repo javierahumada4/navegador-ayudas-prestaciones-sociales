@@ -105,26 +105,38 @@ Se comprueban los duplicados *entre todas las suites* y se evalúan
 base/SFT/GRPO por separado. Un smoke genera 8 casos por suite.
 
 El profesor produce cuatro muestras por caso (dos en smoke), filtradas
-por importe contra el oracle. **SFT utiliza como máximo 2 trazas
+por importe contra el oráculo. **SFT utiliza como máximo 2 trazas
 verificadas, diferentes y preferentemente breves, por problema**
-(`--sft-max-traces-per-problem`), sin cambiar el reporte bruto de
-destilación. Antes de SFT se anteponen al pensamiento del profesor
-las partidas verificadas por el oracle:
-`<imv>importe_con_dos_decimales</imv>` y
-`<capi>importe_con_dos_decimales</capi>`.
-El alumno también recibe la instrucción de generar esos dos campos
-dentro de `<think>`. Si una partida no corresponde, representa cero.
+(`--sft-max-traces-per-problem`). Las trazas antiguas se limpian de
+las etiquetas `<imv>` y `<capi>` cuando aparezcan: ya no forman parte
+del contrato del estudiante y nunca se añaden de nuevo.
 
-En GRPO se mantienen las recompensas anteriores de formato, importe
-final y formato decimal, y se añaden
-**`imv_component_reward` y `capi_component_reward` (peso 1 cada una)**.
-Cada recompensa compara una etiqueta **única y estricta** con el
-importe del oracle calculado a partir de `params`; no otorga puntos
-por palabras clave ni por números sueltos. Se admiten las etiquetas
-de componente en un `<think>` todavía sin cerrar, para dar señal
-parcial cuando se agote el límite de tokens. Esto no garantiza que
-haya variación entre generaciones; el monitor de señal cero sigue
-activo. GRPO empieza desde el adaptador SFT validado.
+El **único formato IMV admitido** es
+`<think>razonamiento</think><answer>123.45</answer>`, con un único
+`<answer>` final fuera de `<think>`, sin anidamientos y con dos
+decimales exactos (sin símbolos ni separadores). El detector genérico
+para GSM8K sigue permitiendo respuestas enteras. La evaluación,
+`SFT readiness`, el validador de trazas, la inferencia y la recompensa
+IMV usan el contrato estricto. Esto puede disminuir la tasa de formato
+publicada respecto de los runs anteriores, que aceptaban erróneamente
+`<answer>` dentro del razonamiento.
+
+En **GRPO hay solo tres recompensas**: formato estricto (1.0),
+importe total correcto contra el oráculo (2.0) y respuesta final
+única con dos decimales (0.5). Se ha eliminado toda recompensa
+por cantidades intermedias IMV/CAPI. Se mantiene el monitor de
+recompensas sin variación.
+
+La plantilla de **Qwen3 thinking** se aplica en SFT, GRPO e inferencia
+a partir del tokenizer, con `enable_thinking=True`. Nunca se añade
+manualmente `<think>` al prefijo de generación del alumno. Antes de
+SFT se comprueba que el ejemplo conversacional tokenizado tiene
+**exactamente el mismo prefijo de asistente** que se usa para
+generación, y que su final supervisado está intacto. GRPO utiliza
+ese prefijo ya renderizado en sus prompts para evitar discrepancias
+entre plantillas. El EOS se toma del tokenizer (`<|im_end|>` en
+Qwen3). No se han validado todavía los pesos en DGX con el nuevo
+contrato; las comprobaciones de CPU no sustituyen a un smoke GPU.
 
 **Los nuevos formatos de trazas, recompensas y splits requieren un
 `--run-dir` nuevo** y no deben combinarse con adaptadores anteriores.
@@ -172,8 +184,10 @@ pero no conviene reducirlos para ocultar una mala destilación.
 
 Antes de cargar los pesos del alumno, `rlm.train_sft` tokeniza **todas**
 las trazas verificadas con la plantilla de chat del modelo, y audita las
-etiquetas `<think>` y `<answer>`, la longitud completa del prompt más
-la respuesta, y una reserva de ocho tokens para el final de secuencia.
+etiquetas `<think>` y `<answer>`, que solo exista **una respuesta final
+de dos decimales**, la coincidencia del prefijo de generación, la longitud
+completa de prompt más respuesta y una reserva de ocho tokens para el final
+de secuencia.
 Cualquier ejemplo cuyo `</answer>` pueda quedar fuera de
 `--sft-max-length` **bloquea SFT**: nunca se descarta ni recorta una
 respuesta correcta silenciosamente. El informe se conserva en
