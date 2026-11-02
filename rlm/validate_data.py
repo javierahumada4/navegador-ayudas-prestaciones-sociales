@@ -62,9 +62,16 @@ def validate_case_dates(params, place="case"):
         raise ValueError(f"{place}: invalid chronology: {exc}") from exc
 
 
-def validate_splits(train, test, ood):
+def validate_splits(train, test, ood, extra_ood=None):
+    from rlm.generate_problems import OOD_FAMILIES
+
     seen_params, seen_questions, summary = {}, {}, {}
-    for split, path in {"train": train, "test": test, "ood": ood}.items():
+    paths = {"train": train, "test": test, "ood": ood}
+    for split, path in (extra_ood or {}).items():
+        if split not in OOD_FAMILIES or split == "ood":
+            raise ValueError(f"unknown or duplicate OOD split: {split}")
+        paths[split] = path
+    for split, path in paths.items():
         rows = read_jsonl(path)
         families = Counter()
         for n, row in enumerate(rows, 1):
@@ -80,8 +87,11 @@ def validate_splits(train, test, ood):
             if not isinstance(branch, dict) or not isinstance(branch.get("family"), str):
                 raise ValueError(f"{place}: missing family")
             family = branch["family"]
-            if (split == "ood") != (family == "capi_only"):
-                raise ValueError(f"{place}: capi_only must be held out in OOD")
+            if split in OOD_FAMILIES:
+                if family != OOD_FAMILIES[split]:
+                    raise ValueError(f"{place}: wrong family for split {split}: {family}")
+            elif family in OOD_FAMILIES.values():
+                raise ValueError(f"{place}: OOD family {family} leaked into {split}")
             label = expected_answer(row["params"])
             if row.get("answer") != label:
                 raise ValueError(f"{place}: stale oracle label {row.get('answer')!r} != {label!r}")
@@ -199,6 +209,10 @@ def main(argv=None):
     parser.add_argument("--train", required=True)
     parser.add_argument("--test")
     parser.add_argument("--ood")
+    parser.add_argument(
+        "--ood-extra", nargs=2, action="append", metavar=("SPLIT", "PATH"),
+        help="additional held-out suites: ood_threshold, ood_composition, ood_wording",
+    )
     parser.add_argument("--traces")
     parser.add_argument("--expected-trace-samples", type=int)
     parser.add_argument("--min-verified-traces", type=int, default=1)
@@ -212,7 +226,12 @@ def main(argv=None):
         parser.error("provide --test and --ood and/or --traces")
     summary = {}
     if args.test:
-        summary["splits"] = validate_splits(args.train, args.test, args.ood)
+        extras = dict(args.ood_extra or [])
+        if len(extras) != len(args.ood_extra or []):
+            parser.error("duplicate --ood-extra split")
+        summary["splits"] = validate_splits(
+            args.train, args.test, args.ood, extra_ood=extras
+        )
     if args.traces:
         summary["distillation"] = validate_traces(
             args.traces, args.train, expected_samples=args.expected_trace_samples

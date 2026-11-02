@@ -153,6 +153,10 @@ def build_plan(args):
     run = (ROOT / args.run_dir).resolve()
     data, weights, reports, logs = (run / x for x in ("data", "weights", "reports", "logs"))
     train, test, ood = (data / x for x in ("train.jsonl", "test.jsonl", "test_ood.jsonl"))
+    extra_ood = {
+        split: data / f"test_{split}.jsonl"
+        for split in ("ood_threshold", "ood_composition", "ood_wording")
+    }
     traces = data / "sft_traces.jsonl"
     sft, grpo = weights / "sft_lora", weights / "grpo_lora"
     env_distill, env_train = str(run / ".venv-distill"), str(run / ".venv-train")
@@ -171,15 +175,18 @@ def build_plan(args):
             ("train", args.train_size, train),
             ("test", args.test_size, test),
             ("ood", args.ood_size, ood),
+            *((split, args.ood_size, path) for split, path in extra_ood.items()),
         )
     ]
     generation.append(Step("validate splits", py(
         "rlm.validate_data", "--train", train, "--test", test, "--ood", ood,
+        *(flag for split, path in extra_ood.items()
+          for flag in ("--ood-extra", split, path)),
         "--out", reports / "dataset_validation.json"
     )))
     result = [
         Stage("generate", generation, [
-            train, test, ood, reports / "dataset_validation.json"
+            train, test, ood, *extra_ood.values(), reports / "dataset_validation.json"
         ]),
         Stage("distill", [
             Step("teacher traces", uv(
@@ -249,7 +256,9 @@ def build_plan(args):
             "--max-new-tokens", args.eval_max_new_tokens,
             "--seed", args.seed, "--out", reports / f"eval_{name}.json"
         ), env_train)
-        for name, input_path in (("test", test), ("ood", ood))
+        for name, input_path in (
+            ("test", test), ("ood", ood), *extra_ood.items()
+        )
     ]
     evaluation.append(Step("GRPO curves", uv(
         "train", "rlm.curves", "--runs", f"grpo={grpo}",
@@ -257,6 +266,7 @@ def build_plan(args):
     ), env_train))
     result.append(Stage("evaluate", evaluation, [
         reports / "eval_test.json", reports / "eval_ood.json",
+        *(reports / f"eval_{name}.json" for name in extra_ood),
         reports / "grpo_curves.png"
     ]))
     return result[ORDER.index(args.from_stage):ORDER.index(args.through_stage) + 1]
