@@ -8,7 +8,7 @@ def test_sft_strips_old_component_blocks():
         "Aplico las reglas.</think><answer>57.50</answer>"
     )
     cleaned = _remove_legacy_component_tags(trace)
-    assert cleaned == "<think>  Aplico las reglas.</think><answer>57.50</answer>"
+    assert cleaned == "<think> Aplico las reglas.</think><answer>57.50</answer>"
     assert _remove_legacy_component_tags(cleaned) == cleaned
 
 

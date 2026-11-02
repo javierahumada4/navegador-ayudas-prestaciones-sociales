@@ -71,10 +71,10 @@ def test_qwen_native_thinking_prefix_does_not_trigger_false_failure(tmp_path):
     class NativeThinkingTokenizer(TinyTokenizer):
         def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
             if add_generation_prompt:
-                return "<|im_start|>user\\nReglas y caso.<|im_end|><|im_start|>assistant\\n<think>\\n"
+                return "<|im_start|>user\nReglas y caso.<|im_end|><|im_start|>assistant\n<think>\n"
             trace = messages[-1]["content"]
-            return ("<|im_start|>user\\nReglas y caso.<|im_end|>"
-                    "<|im_start|>assistant\\n<think>\\n"
+            return ("<|im_start|>user\nReglas y caso.<|im_end|>"
+                    "<|im_start|>assistant\n<think>\n"
                     + trace.removeprefix("<think>") + "<|im_end|>")
     result = validate_sft_sequences(
         [row("<think>Breve.</think><answer>57.50</answer>")],
