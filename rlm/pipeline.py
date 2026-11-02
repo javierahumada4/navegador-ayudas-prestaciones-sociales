@@ -54,9 +54,12 @@ def parse_args(argv=None):
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
     parser.add_argument("--teacher-samples", type=int, default=4)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
-    parser.add_argument("--teacher-max-model-len", type=int, default=6144)
+    parser.add_argument("--teacher-max-model-len", type=int, default=8192)
     parser.add_argument("--teacher-batch-size", type=int, default=16)
     parser.add_argument("--teacher-gpu-memory", type=float, default=0.85)
+    parser.add_argument("--min-verified-traces", type=int, default=None)
+    parser.add_argument("--min-unique-trace-problems", type=int, default=None)
+    parser.add_argument("--min-verified-families", type=int, default=None)
     parser.add_argument("--student", default="Qwen/Qwen3-0.6B")
     parser.add_argument("--sft-epochs", type=float, default=2.0)
     parser.add_argument("--sft-batch-size", type=int, default=1)
@@ -65,9 +68,10 @@ def parse_args(argv=None):
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)
-    parser.add_argument("--grpo-completion-length", type=int, default=768)
+    parser.add_argument("--grpo-completion-length", type=int, default=1024)
+    parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
     parser.add_argument("--eval-batch-size", type=int, default=2)
-    parser.add_argument("--eval-max-new-tokens", type=int, default=1024)
+    parser.add_argument("--eval-max-new-tokens", type=int, default=1536)
     args = parser.parse_args(argv)
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
@@ -77,13 +81,23 @@ def parse_args(argv=None):
         parser.error("--from-stage must precede --through-stage")
     if args.smoke:
         args.train_size, args.test_size, args.ood_size = 24, 8, 8
-        args.teacher_samples, args.teacher_max_new_tokens = 2, 1024
+        args.teacher_samples = 2
         args.sft_epochs, args.grpo_steps, args.grpo_generations = 1.0, 2, 2
+    for key, default in zip(
+        ("min_verified_traces", "min_unique_trace_problems", "min_verified_families"),
+        (6, 4, 3) if args.smoke else (100, 50, 5),
+        strict=True,
+    ):
+        if getattr(args, key) is None:
+            setattr(args, key, default)
     for key in ("train_size", "test_size", "ood_size", "teacher_samples",
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
-                "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size"):
+                "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
+                "min_verified_traces", "min_unique_trace_problems", "min_verified_families"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
+    if args.grpo_zero_signal_patience < 0:
+        parser.error("--grpo-zero-signal-patience must be >= 0")
     return args
 
 
@@ -161,6 +175,9 @@ def build_plan(args):
             ), env_distill),
             Step("validate traces", py(
                 "rlm.validate_data", "--train", train, "--traces", traces,
+                "--min-verified-traces", args.min_verified_traces,
+                "--min-unique-trace-problems", args.min_unique_trace_problems,
+                "--min-verified-families", args.min_verified_families,
                 "--out", reports / "distillation_validation.json"
             )),
         ], [traces, logs / "distillation.jsonl",
@@ -181,6 +198,7 @@ def build_plan(args):
                 "--steps", args.grpo_steps, "--num-generations", args.grpo_generations,
                 "--micro-batch-size", args.grpo_micro_batch_size,
                 "--max-completion-length", args.grpo_completion_length,
+                "--zero-signal-patience", args.grpo_zero_signal_patience,
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
             ), env_train),
@@ -236,9 +254,10 @@ def main(argv=None):
     invariant_keys = (
         "seed", "train_size", "test_size", "ood_size", "teacher", "teacher_backend",
         "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
+        "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
         "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
         "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
-        "grpo_completion_length", "smoke",
+        "grpo_completion_length", "grpo_zero_signal_patience", "smoke",
     )
     previous = record.get("configuration", {})
     for key in invariant_keys:

@@ -58,3 +58,23 @@ def test_resume_grpo_picks_checkpoint_and_preserves_earlier_stages(tmp_path):
     assert len(plan) == 1
     command = plan[0].steps[0].command
     assert command[command.index("--resume-from-checkpoint") + 1] == str(output)
+
+
+def test_smoke_uses_longer_teacher_budget_and_quality_gate():
+    args = parse_args(["--smoke", "--teacher-max-new-tokens", "3072"])
+    assert args.teacher_max_new_tokens == 3072
+    assert args.teacher_max_model_len == 8192
+    assert (args.min_verified_traces, args.min_unique_trace_problems,
+            args.min_verified_families) == (6, 4, 3)
+    cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
+    assert cmds["teacher traces"][cmds["teacher traces"].index("--max-new-tokens") + 1] == "3072"
+    assert "--min-verified-traces" in cmds["validate traces"]
+    assert "--zero-signal-patience" in cmds["GRPO from SFT"]
+
+
+def test_full_dataset_quality_gate_is_stronger():
+    args = parse_args(["--dry-run"])
+    assert (args.min_verified_traces, args.min_unique_trace_problems,
+            args.min_verified_families) == (100, 50, 5)
+    assert args.grpo_completion_length == 1024
+    assert args.eval_max_new_tokens == 1536
