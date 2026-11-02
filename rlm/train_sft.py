@@ -49,12 +49,26 @@ def load_sft_dataset(path: str | Path):
 def train(args: argparse.Namespace) -> None:
     import torch
     from peft import LoraConfig
+    from transformers import AutoTokenizer
     from trl import SFTConfig, SFTTrainer
+
+    from rlm.sft_preflight import validate_sft_sequences
 
     dataset = load_sft_dataset(args.data)
     print(f"{len(dataset)} verified traces loaded from {args.data}")
     if not len(dataset):
         raise ValueError("No verified traces: run distillation and validation before SFT.")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    report = validate_sft_sequences(
+        dataset, tokenizer, args.max_length,
+        args.validation_report or Path(args.output).parent / "sft_input_validation.json",
+    )
+    print(
+        f"SFT preflight: {report['accepted']} complete tokenized sequences, "
+        f"max {report['max_observed_tokens']}/{args.max_length} tokens",
+        flush=True,
+    )
 
     peft_config = LoraConfig(
         r=args.lora_rank,
@@ -70,6 +84,8 @@ def train(args: argparse.Namespace) -> None:
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         max_length=args.max_length,
+        completion_only_loss=True,
+        packing=False,
         bf16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         logging_steps=10,
@@ -85,6 +101,7 @@ def train(args: argparse.Namespace) -> None:
         args=config,
         train_dataset=dataset,
         peft_config=peft_config,
+        processing_class=tokenizer,
     )
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(args.output)
@@ -105,6 +122,10 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--max-length", type=int, default=8192)
+    parser.add_argument(
+        "--validation-report", default=None,
+        help="JSON report of the pre-training token and answer tag audit",
+    )
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--save-steps", type=int, default=50)
     parser.add_argument("--resume-from-checkpoint", default=None, help="checkpoint-XXX folder")
