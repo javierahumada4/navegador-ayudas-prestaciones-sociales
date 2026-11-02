@@ -52,6 +52,10 @@ def parse_args(argv=None):
     parser.add_argument("--ood-size", type=int, default=100)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
+    parser.add_argument(
+        "--teacher-no-thinking", action="store_true",
+        help="disable native Qwen3 thinking; use the concise Spanish R1 format instead",
+    )
     parser.add_argument("--teacher-samples", type=int, default=4)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
     parser.add_argument("--teacher-max-model-len", type=int, default=8192)
@@ -169,6 +173,7 @@ def build_plan(args):
                 "--max-model-len", args.teacher_max_model_len,
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
+                *(["--no-thinking"] if args.teacher_no_thinking else []),
                 "--verifier", "imv", "--output", traces,
                 "--log-path", logs / "distillation.jsonl",
                 *_resume_flags(args, "distill", traces)
@@ -253,6 +258,7 @@ def main(argv=None):
     # Reuse of a run must never silently change its data/model/training configuration.
     invariant_keys = (
         "seed", "train_size", "test_size", "ood_size", "teacher", "teacher_backend",
+        "teacher_no_thinking",
         "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
         "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
         "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",

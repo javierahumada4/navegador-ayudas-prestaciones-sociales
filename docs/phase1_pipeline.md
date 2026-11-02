@@ -16,7 +16,12 @@ sin incorporar trazas ni checkpoints históricos. No publica datos personales.
 El prompt del **alumno IMV** está en español en `rlm/data.py`, al igual que
 el del **profesor** Qwen3 en modo thinking de `rlm/distill.py` y los
 enunciados. El formato de salida mantiene las etiquetas `<think>` y
-`<answer>`, así como el punto decimal (`431.26`). El prompt genérico
+`<answer>`, así como el punto decimal. Los prompts no incluyen un importe
+de ejemplo fijo que el modelo pueda copiar. El profesor debe razonar en
+español y de forma concisa, aunque **no se puede garantizar el idioma del
+pensamiento nativo de Qwen3 solo mediante instrucciones**. Para contrastar
+una variante que desactiva ese pensamiento nativo y prefija `<think>`,
+se puede usar `--teacher-no-thinking` en un run independiente. El prompt genérico
 de GSM8K continúa en inglés, porque se evalúa por separado.
 
 **No mezcles checkpoints ni trazas de runs anteriores con este cambio de
@@ -76,7 +81,24 @@ Los artefactos se guardan en el directorio indicado con `--run-dir`:
 repiten parámetros ni preguntas entre splits y que las trazas aceptadas
 son correctas. Si ninguna traza es aceptada, **SFT no se ejecuta**.
 La validación compara cada ejemplo con `rlm/imv_engine.py` y el
-fichero de reglas para 2026.
+fichero de reglas para 2026. También rechaza datos temporalmente imposibles:
+ninguna persona puede tener residencia continuada anterior a su nacimiento,
+ni constar conviviendo desde antes del nacimiento del integrante más joven.
+
+La destilación informa `rejected_by_reason`, `hit_max_tokens`,
+`verified_unique_problems` y `verified_families`. El modo `--smoke` exige
+al menos **6 trazas de 4 problemas y 3 familias distintas**; un run normal,
+100 trazas de 50 problemas y 5 familias, como mínimos de protección
+(no garantizan razonamientos correctos). Si no se alcanzan, se guarda
+`reports/distillation_validation.json` y el flujo se detiene **antes de SFT**.
+Los límites se pueden ajustar con `--min-verified-traces`,
+`--min-unique-trace-problems` y `--min-verified-families`,
+pero no conviene reducirlos para ocultar una mala destilación.
+
+GRPO avisa al detectar recompensas sin variación y detiene un run largo
+tras 5 pasos consecutivos sin señal (`--grpo-zero-signal-patience`).
+Un smoke con 2 pasos puede acabar con recompensa nula: eso **no** demuestra
+aprendizaje, aunque se hayan generado los informes.
 
 Para iniciar una etapa que todavía no se haya ejecutado, sin repetir las
 anteriores:
@@ -112,7 +134,11 @@ En caso de memoria insuficiente, reducir `--teacher-batch-size`,
 `--sft-batch-size`, `--grpo-generations`,
 `--grpo-micro-batch-size` y `--eval-batch-size`. El teacher incluye
 reglas detalladas de 2026 que pueden alargar mucho los prompts; por ello el
-pipeline reserva `--teacher-max-model-len 6144` por defecto.
+pipeline reserva `--teacher-max-model-len 8192` y
+`--teacher-max-new-tokens 2048` por defecto, **también en smoke**.
+Si aún se truncan muchas trazas, se puede probar `--teacher-max-new-tokens
+3072` en un run nuevo, sin exceder el contexto máximo y con el coste de
+más tiempo de generación.
 
 ## Pruebas
 
@@ -139,3 +165,20 @@ resultados. Para desplegar `/reasoning`, configurar `ARCA_RLM_ADAPTER` con
 `weights/grpo_lora` o subir ese adaptador a Hugging Face; comprobar
 `/health` y una petición real antes de exponer ngrok. Docker Compose levanta la API sin reservar GPU;
 los servicios `smoke`, `train` y `check-gpu` sí requieren runtime NVIDIA.
+
+
+## Ejemplo local en WSL2 (GPU NVIDIA de 12 GB)
+
+Una vez comprobado `nvidia-smi` en Ubuntu/WSL2, ejecutar el ensayo con
+**un nuevo directorio**, sin mezclar las trazas y adaptadores anteriores:
+
+```bash
+VLLM_USE_FLASHINFER_SAMPLER=0 python3 -m rlm.pipeline --smoke --run-dir runs/phase1-smoke-v2 --teacher Qwen/Qwen3-1.7B --teacher-batch-size 1 --teacher-gpu-memory 0.75 --grpo-micro-batch-size 1 --eval-batch-size 1
+```
+
+`VLLM_USE_FLASHINFER_SAMPLER=0` evita el muestreador FlashInfer que
+requiere compilar kernels con `nvcc` en algunas configuraciones WSL2;
+no deshabilita CUDA ni FlashAttention. Si el profesor insiste en razonar
+en inglés o genera cadenas interminables, probar `--teacher-no-thinking`
+en **otro run-dir** y contrastar aceptación y cobertura antes de SFT.
+El cambio de prompt o modelo no debe evaluarse reusando LoRA históricos.

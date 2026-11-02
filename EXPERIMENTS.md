@@ -38,5 +38,11 @@ nuevo run. En esta rama se han dejado fuera de Git los antiguos
 `rlm/data/{train,test}.jsonl`, `rlm/test_ood/test.jsonl` y
 `reports/phase1_eval.json`; permanecen en las ramas/commits anteriores.
 La destilación guarda cada batch y el entrenamiento puede reanudar desde
-checkpoints. La ejecución GPU integral sigue pendiente. Anotar la fecha, GPU/VRAM, SHA, duración, hiperparámetros,
+checkpoints. La ejecución GPU integral sigue pendiente. Tras el smoke local
+inicial se detectaron 45 de 48 generaciones del profesor truncadas (solo 3
+verificadas, de 2 problemas), y dos pasos GRPO con 100% de grupos sin
+señal. Por ello el pipeline incorporó límites de calidad y corte de GRPO,
+un presupuesto de profesor de 2048 tokens en smoke y coherencia
+cronológica en el generador. Los resultados anteriores no son comparables
+con los nuevos y no se presentan como mejoras verificadas. Anotar la fecha, GPU/VRAM, SHA, duración, hiperparámetros,
 aceptación, ablation y resultados de cada ejecución real.
