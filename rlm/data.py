@@ -30,6 +30,10 @@ IMV_SYSTEM_PROMPT = (
     "En <answer> incluye únicamente el importe mensual total de IMV+CAPI en euros, "
     "con exactamente dos decimales y punto decimal, sin símbolo de moneda ni texto "
     "adicional, entre las etiquetas de apertura <answer> y cierre </answer>. "
+    "Dentro del razonamiento indica una vez el importe mensual de IMV entre "
+    "<imv> y </imv> y el importe mensual de CAPI entre <capi> y </capi>; "
+    "ambas partidas deben tener dos decimales y punto decimal, incluso "
+    "cuando una de las prestaciones no corresponda. "
     "Escribe un razonamiento breve y pertinente, y termina con la respuesta. "
     "No añadas texto fuera de esas etiquetas."
 )

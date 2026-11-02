@@ -128,3 +128,21 @@ def test_explicit_grpo_sampling_options_forwarded():
     assert grpo[grpo.index("--temperature") + 1] == "0.7"
     assert grpo[grpo.index("--top-p") + 1] == "0.9"
     assert grpo[grpo.index("--top-k") + 1] == "40"
+
+
+def test_sft_caps_teacher_traces_and_evaluates_each_ood_axis():
+    args = parse_args(["--smoke", "--sft-max-traces-per-problem", "1"])
+    plan = build_plan(args)
+    commands = {step.title: step.command for stage in plan for step in stage.steps}
+    sft = commands["supervised LoRA"]
+    assert sft[sft.index("--max-traces-per-problem") + 1] == "1"
+    assert {"generate ood", "generate ood_threshold",
+            "generate ood_composition", "generate ood_wording"} <= set(commands)
+    assert {"evaluate ood", "evaluate ood_threshold",
+            "evaluate ood_composition", "evaluate ood_wording"} <= set(commands)
+    validation = commands["validate splits"]
+    assert validation.count("--ood-extra") == 3
+    for axis in ("ood_threshold", "ood_composition", "ood_wording"):
+        assert axis in validation
+        assert any(str(p).endswith("eval_" + axis + ".json")
+                   for p in plan[-1].outputs)

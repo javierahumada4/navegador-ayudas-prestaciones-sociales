@@ -69,6 +69,7 @@ def parse_args(argv=None):
     parser.add_argument("--sft-batch-size", type=int, default=1)
     parser.add_argument("--sft-grad-accum", type=int, default=8)
     parser.add_argument("--sft-max-length", type=int, default=8192)
+    parser.add_argument("--sft-max-traces-per-problem", type=int, default=2)
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
     parser.add_argument("--grpo-temperature", type=float, default=0.6)
@@ -105,7 +106,8 @@ def parse_args(argv=None):
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
                 "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
                 "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
-                "sft_check_examples", "sft_check_max_new_tokens"):
+                "sft_check_examples", "sft_check_max_new_tokens",
+                "sft_max_traces_per_problem"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     if args.grpo_zero_signal_patience < 0:
@@ -217,6 +219,7 @@ def build_plan(args):
                 "--output", sft, "--epochs", args.sft_epochs,
                 "--batch-size", args.sft_batch_size, "--grad-accum", args.sft_grad_accum,
                 "--max-length", args.sft_max_length,
+                "--max-traces-per-problem", args.sft_max_traces_per_problem,
                 "--validation-report", reports / "sft_input_validation.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
@@ -303,6 +306,7 @@ def main(argv=None):
         "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
         "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
         "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
+        "sft_max_traces_per_problem",
         "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
         "grpo_temperature", "grpo_top_p", "grpo_top_k",
         "sft_check_examples", "sft_check_max_new_tokens",

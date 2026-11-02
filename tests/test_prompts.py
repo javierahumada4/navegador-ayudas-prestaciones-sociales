@@ -102,3 +102,10 @@ def test_teacher_prompt_does_not_contain_copyable_placeholder():
     from rlm.distill import TEACHER_THINKING_SYSTEM_PROMPT
 
     assert "IMPORTE" not in TEACHER_THINKING_SYSTEM_PROMPT
+
+
+def test_student_prompt_describes_verifiable_imv_and_capi_fields():
+    prompt = build_prompt("Caso de prueba")[0]["content"]
+    assert "<imv>" in prompt and "</imv>" in prompt
+    assert "<capi>" in prompt and "</capi>" in prompt
+    assert "IMPORTE" not in prompt
