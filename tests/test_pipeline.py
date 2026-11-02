@@ -1,4 +1,6 @@
 """A staged execution plan must be valid without a GPU or downloaded model."""
+import pytest
+
 from rlm.pipeline import build_plan, parse_args
 
 

@@ -66,10 +66,6 @@ TEACHER_THINKING_SYSTEM_PROMPT = (
     "de moneda ni texto adicional. No escribas etiquetas <think> por tu cuenta."
 )
 
-# Without native thinking the teacher follows the R1-Zero format, but may answer with
-# a bare number; starting its reply inside <think> makes it reason first.
-NO_THINKING_PREFILL = "<think>\n"
-
 _THINK_TAG = re.compile(r"</?think>")
 _ANSWER_TAG = re.compile(r"</?answer>")
 _ANSWER_BLOCK = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
@@ -397,10 +393,8 @@ def generate_traces(
                             prompt with the exact rule sheet is ~2200 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
-        thinking (bool): Qwen3 native thinking mode, with the teacher-only
-                            system prompt. ``False`` passes ``enable_thinking=False``
-                            and prefills ``<think>``, so the teacher reasons in the
-                            R1-Zero format of the row's system prompt.
+        thinking (bool): Qwen3 native thinking mode. False is rejected because
+                            no-thinking outputs do not provide native reasoning traces.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
         id_offset (int): Added to every ``example_id`` so ids stay the row
                             number in the full file when ``dataset`` is a shard.
@@ -468,7 +462,6 @@ def generate_traces(
                 # Templates without this switch simply ignore it.
                 enable_thinking=thinking,
             )
-            + ("" if thinking else NO_THINKING_PREFILL)
             for prompt in prompts
         ]
         stage("generating")
@@ -484,8 +477,8 @@ def generate_traces(
             n_verified = 0
             for j in range(samples):
                 completion = completions[b * samples + j]
-                # The prefill is part of the prompt, not of the completion.
-                raw = ("" if thinking else NO_THINKING_PREFILL) + completion["text"]
+                # Preserve the model completion: never synthesize thinking tags.
+                raw = completion["text"]
                 trace, format_status = _structure_trace(raw)
                 is_correct = (
                     trace is not None
@@ -651,7 +644,7 @@ def main() -> None:
     parser.add_argument(
         "--no-thinking",
         action="store_true",
-        help="disable Qwen3 native thinking; the teacher follows our <think><answer> format",
+        help="deprecated and rejected: Qwen3 distillation requires native thinking",
     )
     parser.add_argument(
         "--no-teacher-rules",
