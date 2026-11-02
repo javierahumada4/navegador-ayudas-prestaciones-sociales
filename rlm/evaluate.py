@@ -149,6 +149,13 @@ def score_row(
     sample_idx: int = 0,
 ) -> dict:
     verdict = verifier.verify(raw, problem["answer"])
+    valid_format = (
+        has_valid_imv_format(raw) if verifier.name == "imv"
+        else has_valid_format(raw)
+    )
+    # IMV pass@1 means a *usable* final answer, not an accidental correct
+    # number embedded in an invalid/nested response.
+    correct = verdict.is_correct and (valid_format if verifier.name == "imv" else True)
     branches = problem.get("branches") or {}
     row = {
         "id": problem["id"],
@@ -158,10 +165,8 @@ def score_row(
         "expected": problem["answer"],
         "raw": raw,
         "predicted": verdict.predicted,
-        "is_correct": verdict.is_correct,
-        "has_valid_format": (
-            has_valid_imv_format(raw) if verifier.name == "imv" else has_valid_format(raw)
-        ),
+        "is_correct": correct,
+        "has_valid_format": valid_format,
         "n_tokens": n_tokens,
         "thinking_words": thinking_length(raw),
         "truncated": n_tokens >= max_new_tokens,
@@ -169,7 +174,12 @@ def score_row(
         "failure_details": {},
     }
     if not row["is_correct"]:
-        row["failure"], row["failure_details"] = diagnose_failure(row, problem.get("params"))
+        if verdict.is_correct and not valid_format and verifier.name == "imv":
+            row["failure"], row["failure_details"] = "invalid_format", {}
+        else:
+            row["failure"], row["failure_details"] = diagnose_failure(
+                row, problem.get("params")
+            )
     return row
 
 

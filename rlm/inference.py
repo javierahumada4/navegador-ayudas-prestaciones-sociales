@@ -200,23 +200,29 @@ class ReasoningModel:
     ) -> ReasoningResponse:
         raw, n_tokens = self.generate(question, max_new_tokens)
         thinking, answer = split_thinking(raw)
+        valid_format = (
+            has_valid_imv_format(raw) if self.verifier_name == "imv"
+            else has_valid_format(raw)
+        )
         verdict = None
         if expected_answer is not None:
             result = self.verifier.verify(raw, expected_answer)
             verdict = VerifierVerdict(
-                is_correct=result.is_correct,
+                is_correct=result.is_correct and (
+                    valid_format if self.verifier_name == "imv" else True
+                ),
                 predicted=result.predicted,
                 expected=result.expected,
-                detail=result.detail,
+                detail=(
+                    "invalid IMV output format" if not valid_format
+                    and self.verifier_name == "imv" else result.detail
+                ),
             )
         return ReasoningResponse(
             thinking=thinking,
             answer=answer,
             raw=raw,
-            has_valid_format=(
-                has_valid_imv_format(raw) if self.verifier_name == "imv"
-                else has_valid_format(raw)
-            ),
+            has_valid_format=valid_format,
             verifier=verdict,
             tokens_generated=n_tokens,
             truncated=n_tokens >= max_new_tokens,

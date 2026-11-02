@@ -41,8 +41,10 @@ def extract_unique_final_answer(text: str) -> str | None:
         return None
     match = matches[0]
     # A final answer must not be inside an unclosed thinking section.
-    thought_close = text.find("</think>")
-    if thought_close != -1 and match.start() < thought_close:
+    prior = text[:match.start()]
+    if prior.count("<think>") != prior.count("</think>"):
+        return None
+    if "</think>" in text[match.end():]:
         return None
     return match.group("answer").strip()
 BOXED_PATTERN = re.compile(r"\\boxed\{(?P<answer>[^{}]*)\}")

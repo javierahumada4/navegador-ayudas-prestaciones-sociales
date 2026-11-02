@@ -100,3 +100,10 @@ def test_generic_format_still_supports_gsm8k_integer():
     assert format_reward([], [
         "<think><answer>4</answer></think><answer>4</answer>"
     ]) == [0.0]
+
+
+def test_unclosed_think_cannot_receive_imv_accuracy():
+    from rlm.rewards import imv_accuracy_reward
+
+    raw = "<think>Razono <answer>52.00</answer>"
+    assert imv_accuracy_reward([], [raw], answer=["52.00"]) == [0.0]
