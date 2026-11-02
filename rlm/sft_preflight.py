@@ -66,7 +66,7 @@ def validate_sft_sequences(dataset, tokenizer, max_length: int, report_path: str
                         assistant_text = full_text.rsplit("<assistant>", 1)[-1]
                     else:
                         assistant_text = full_text[len(prompt_text):]
-                    expected_answer = re.search(r"<answer>\\d+\\.\\d{2}</answer>", trace)
+                    expected_answer = re.search(r"<answer>\d+\.\d{2}</answer>", trace)
                     if (assistant_text.count("<think>") != 1
                             or assistant_text.count("</think>") != 1
                             or assistant_text.count("<answer>") != 1
