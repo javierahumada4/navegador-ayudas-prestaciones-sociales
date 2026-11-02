@@ -103,6 +103,9 @@ def validate_traces(path, train):
     family = {x["question"]: x["branches"]["family"] for x in training}
     verifier = IMVAmountVerifier()
     counts, accepted, seen = Counter(), Counter(), set()
+    accepted_questions = set()
+    rejection_reasons = Counter()
+    max_token_count = 0
     rows = read_jsonl(path)
     for n, row in enumerate(rows, 1):
         place = f"{path}:{n}"
@@ -122,11 +125,22 @@ def validate_traces(path, train):
             if not verifier.verify(trace, answers[question]).is_correct:
                 raise ValueError(f"{place}: verified trace disagrees with oracle")
             accepted[bucket] += 1
+            accepted_questions.add(question)
+        else:
+            reason = (
+                "incorrect_amount" if row.get("trace") is not None
+                else row.get("format_status") or "unknown_rejection"
+            )
+            rejection_reasons[reason] += 1
+        if row.get("hit_max_tokens"):
+            max_token_count += 1
     kept = sum(accepted.values())
-    if not kept:
-        raise ValueError("No verified teacher traces: SFT must not start")
     return {
         "generated": len(rows), "verified": kept,
+        "verified_unique_problems": len(accepted_questions),
+        "verified_families": sum(bool(n) for n in accepted.values()),
+        "rejected_by_reason": dict(rejection_reasons),
+        "hit_max_tokens": max_token_count,
         "acceptance_rate": round(kept / len(rows), 6),
         "by_family": {
             name: {"generated": count, "verified": accepted[name],
@@ -136,12 +150,36 @@ def validate_traces(path, train):
     }
 
 
+def require_trace_quality(report, *, min_verified=1, min_unique_problems=1,
+                          min_families=1):
+    """Prevent SFT on a handful of verified but unrepresentative teacher traces."""
+    requirements = (
+        ("verified traces", report["verified"], min_verified),
+        ("unique verified problems", report["verified_unique_problems"], min_unique_problems),
+        ("verified families", report["verified_families"], min_families),
+    )
+    failed = [
+        f"{label}: {actual} < required {minimum}"
+        for label, actual, minimum in requirements if actual < minimum
+    ]
+    if failed:
+        raise ValueError(
+            "Insufficient SFT data; training aborted ("
+            + "; ".join(failed)
+            + "). Inspect rejected_by_reason and hit_max_tokens; "
+            "increase the teacher token budget or improve the teacher."
+        )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train", required=True)
     parser.add_argument("--test")
     parser.add_argument("--ood")
     parser.add_argument("--traces")
+    parser.add_argument("--min-verified-traces", type=int, default=1)
+    parser.add_argument("--min-unique-trace-problems", type=int, default=1)
+    parser.add_argument("--min-verified-families", type=int, default=1)
     parser.add_argument("--out")
     args = parser.parse_args(argv)
     if bool(args.test) != bool(args.ood):
@@ -159,6 +197,13 @@ def main(argv=None):
         path = Path(args.out)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(payload + "\n", encoding="utf-8")
+    if args.traces:
+        require_trace_quality(
+            summary["distillation"],
+            min_verified=args.min_verified_traces,
+            min_unique_problems=args.min_unique_trace_problems,
+            min_families=args.min_verified_families,
+        )
 
 
 if __name__ == "__main__":

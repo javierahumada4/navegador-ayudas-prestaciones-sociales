@@ -86,3 +86,50 @@ def test_household_cannot_predate_youngest_member(tmp_path):
     )
     with pytest.raises(ValueError, match="invalid chronology"):
         validate_splits(train, test, ood)
+
+
+def test_gate_rejects_three_verified_traces_from_two_problems(tmp_path):
+    from rlm.validate_data import require_trace_quality
+
+    train, _, _ = _splits(tmp_path)
+    training = [json.loads(line) for line in train.read_text(encoding="utf-8").splitlines()]
+    traces = tmp_path / "teacher_traces.jsonl"
+    samples = []
+    for n in range(6):
+        example = training[n // 3]
+        verified = n < 3
+        samples.append({
+            "question": example["question"], "answer": example["answer"],
+            "sample_idx": n % 3, "verified": verified,
+            "trace": f"<think>Razono.</think><answer>{example['answer']}</answer>" if verified else None,
+            "format_status": "clean" if verified else "unclosed_think",
+            "hit_max_tokens": not verified,
+        })
+    traces.write_text("\n".join(json.dumps(r) for r in samples) + "\n", encoding="utf-8")
+    report = validate_traces(traces, train)
+    assert report["verified"] == 3
+    assert report["verified_unique_problems"] == 1
+    assert report["hit_max_tokens"] == 3
+    assert report["rejected_by_reason"]["unclosed_think"] == 3
+    with pytest.raises(ValueError, match="Insufficient SFT data"):
+        require_trace_quality(report, min_verified=6, min_unique_problems=4, min_families=3)
+
+
+def test_gate_saves_failure_report_if_no_teacher_trace_survives(tmp_path):
+    from rlm.validate_data import main as validate_main
+
+    train, _, _ = _splits(tmp_path)
+    example = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    traces = tmp_path / "no_success.jsonl"
+    report = tmp_path / "report.json"
+    traces.write_text(
+        json.dumps({"question": example["question"], "answer": example["answer"],
+                    "sample_idx": 0, "verified": False, "trace": None,
+                    "format_status": "unclosed_think", "hit_max_tokens": True}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Insufficient SFT data"):
+        validate_main(["--train", str(train), "--traces", str(traces),
+                       "--out", str(report), "--min-verified-traces", "1"])
+    data = json.loads(report.read_text(encoding="utf-8"))["distillation"]
+    assert data["verified"] == 0 and data["rejected_by_reason"] == {"unclosed_think": 1}
