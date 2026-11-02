@@ -19,7 +19,10 @@ enunciados. El formato de salida mantiene las etiquetas `<think>` y
 `<answer>`, así como el punto decimal. Los prompts no incluyen un importe
 de ejemplo fijo que el modelo pueda copiar. El profesor debe razonar en
 español y de forma concisa, aunque **no se puede garantizar el idioma del
-pensamiento nativo de Qwen3 solo mediante instrucciones**. Para contrastar
+pensamiento nativo de Qwen3 solo mediante instrucciones**. **El idioma no es
+un filtro de aceptación**: se conservan las trazas inglesas cuando el formato
+y el importe final son correctos. El código ya no rechaza trazas por la
+heurística `non_spanish_reasoning`. Para contrastar
 una variante que desactiva ese pensamiento nativo y prefija `<think>`,
 se puede usar `--teacher-no-thinking` en un run independiente. El prompt genérico
 de GSM8K continúa en inglés, porque se evalúa por separado.
@@ -148,6 +151,12 @@ La validación compara cada ejemplo con `rlm/imv_engine.py` y el
 fichero de reglas para 2026. También rechaza datos temporalmente imposibles:
 ninguna persona puede tener residencia continuada anterior a su nacimiento,
 ni constar conviviendo desde antes del nacimiento del integrante más joven.
+
+Para recuperar trazas de runs anteriores rechazadas solo por idioma,
+usa `python -m rlm.reverify_traces --train ... --input ... --output ...`.
+No se modifica el archivo original: la herramienta vuelve a verificar
+el formato y el importe de cada candidata y solo entonces cambia su
+estado. No es necesario volver a generar las salidas del profesor.
 
 La destilación informa `rejected_by_reason`, `hit_max_tokens`,
 `verified_unique_problems` y `verified_families`. El modo `--smoke` exige

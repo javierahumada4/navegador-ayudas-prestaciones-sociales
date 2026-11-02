@@ -148,3 +148,23 @@ def test_traces_cannot_silently_drop_problems_or_sample_indices(tmp_path):
     )
     with pytest.raises(ValueError, match="Missing .* teacher samples"):
         validate_traces(trace_path, train, expected_samples=2)
+
+
+def test_english_reasoning_accepted_when_format_and_amount_are_correct(tmp_path):
+    train, _, _ = _splits(tmp_path)
+    row = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    # Deliberately English; language must never be a condition for verification.
+    english = " ".join(["the income is calculated and we check the monthly amount"] * 4)
+    trace = f"<think>{english}</think><answer>{row['answer']}</answer>"
+    path = tmp_path / "english_trace.jsonl"
+    path.write_text(json.dumps({
+        "question": row["question"],
+        "answer": row["answer"],
+        "sample_idx": 0,
+        "verified": True,
+        "trace": trace,
+        "format_status": "clean",
+    }) + "\n", encoding="utf-8")
+    stats = validate_traces(path, train)
+    assert stats["verified"] == 1
+    assert stats["rejected_by_reason"] == {}

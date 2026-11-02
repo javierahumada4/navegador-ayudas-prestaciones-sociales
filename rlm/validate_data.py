@@ -9,7 +9,6 @@ from pathlib import Path
 
 from rlm.imv_engine import expected_answer
 from rlm.rewards import has_valid_format
-from rlm.trace_quality import is_predominantly_english_reasoning
 from rlm.verifier import IMVAmountVerifier
 
 
@@ -140,18 +139,12 @@ def validate_traces(path, train, expected_samples=None):
                 raise ValueError(f"{place}: malformed verified trace")
             if not verifier.verify(trace, answers[question]).is_correct:
                 raise ValueError(f"{place}: verified trace disagrees with oracle")
-            if is_predominantly_english_reasoning(trace):
-                raise ValueError(f"{place}: predominantly English verified reasoning")
             accepted[bucket] += 1
             accepted_questions.add(question)
         else:
             reason = (
-                row.get("format_status")
-                if row.get("format_status") == "non_spanish_reasoning"
-                else (
-                    "incorrect_amount" if row.get("trace") is not None
-                    else row.get("format_status") or "unknown_rejection"
-                )
+                "incorrect_amount" if row.get("trace") is not None
+                else row.get("format_status") or "unknown_rejection"
             )
             rejection_reasons[reason] += 1
         if row.get("hit_max_tokens"):
