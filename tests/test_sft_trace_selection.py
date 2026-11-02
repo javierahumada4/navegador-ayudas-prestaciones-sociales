@@ -15,6 +15,21 @@ def test_sft_adds_verifiable_components_once():
     assert _trace_with_verified_components(out, case) == out
 
 
+def test_legacy_teacher_component_claims_cannot_override_the_oracle():
+    case = IMVProblemGenerator().generate(1, "train", seed=9)[0].params
+    wrong = (
+        "<think><imv>999999.00</imv> <capi>999999.00</capi>"
+        "Justifico las partidas.</think><answer>0.00</answer>"
+    )
+    out = _trace_with_verified_components(wrong, case)
+    expected = evaluate_imv_case(case)
+    assert "<imv>999999.00</imv>" not in out
+    assert "<capi>999999.00</capi>" not in out
+    assert out.count("<imv>") == out.count("<capi>") == 1
+    assert f"<imv>{expected['imv_monthly_eur']:.2f}</imv>" in out
+    assert f"<capi>{expected['capi_monthly_eur']:.2f}</capi>" in out
+
+
 def test_sft_keeps_shortest_distinct_traces_with_limit():
     from datasets import Dataset
     rows = [
