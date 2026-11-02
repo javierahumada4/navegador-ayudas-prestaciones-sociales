@@ -169,7 +169,7 @@ def build_plan(args):
             Step("teacher traces", uv(
                 "distill", "rlm.distill", "--data", train, "--teacher", args.teacher,
                 "--backend", args.teacher_backend, "--samples", args.teacher_samples,
-                "--max-new-tokens", args.teacher_max_new_tokens,
+                "--seed", args.seed, "--max-new-tokens", args.teacher_max_new_tokens,
                 "--max-model-len", args.teacher_max_model_len,
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
@@ -180,6 +180,7 @@ def build_plan(args):
             ), env_distill),
             Step("validate traces", py(
                 "rlm.validate_data", "--train", train, "--traces", traces,
+                "--expected-trace-samples", args.teacher_samples,
                 "--min-verified-traces", args.min_verified_traces,
                 "--min-unique-trace-problems", args.min_unique_trace_problems,
                 "--min-verified-families", args.min_verified_families,

@@ -85,3 +85,12 @@ def test_optional_teacher_non_native_thinking_mode():
     command = plan[1].steps[0].command
     assert "--no-thinking" in command
     assert "--no-thinking" not in build_plan(parse_args(["--smoke"]))[1].steps[0].command
+
+
+def test_teacher_seed_and_expected_sample_count_travel_through_pipeline():
+    args = parse_args(["--dry-run", "--smoke", "--seed", "31"])
+    commands = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
+    teacher = commands["teacher traces"]
+    validate = commands["validate traces"]
+    assert teacher[teacher.index("--seed") + 1] == "31"
+    assert validate[validate.index("--expected-trace-samples") + 1] == "2"

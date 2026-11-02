@@ -97,7 +97,7 @@ def validate_splits(train, test, ood):
     return summary
 
 
-def validate_traces(path, train):
+def validate_traces(path, train, expected_samples=None):
     training = read_jsonl(train)
     answers = {x["question"]: x["answer"] for x in training}
     family = {x["question"]: x["branches"]["family"] for x in training}
@@ -112,7 +112,12 @@ def validate_traces(path, train):
         question = row.get("question")
         if question not in answers or row.get("answer") != answers[question]:
             raise ValueError(f"{place}: not a training question or target mismatch")
-        key = (question, row.get("sample_idx"))
+        index = row.get("sample_idx")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise ValueError(f"{place}: invalid sample_idx")
+        if expected_samples is not None and index >= expected_samples:
+            raise ValueError(f"{place}: sample_idx exceeds expected samples")
+        key = (question, index)
         if key in seen:
             raise ValueError(f"{place}: repeated sample index")
         seen.add(key)
@@ -134,6 +139,17 @@ def validate_traces(path, train):
             rejection_reasons[reason] += 1
         if row.get("hit_max_tokens"):
             max_token_count += 1
+    if expected_samples is not None:
+        missing = [
+            (question, index)
+            for question in answers
+            for index in range(expected_samples)
+            if (question, index) not in seen
+        ]
+        if missing:
+            raise ValueError(
+                f"Missing {len(missing)} teacher samples; first missing: {missing[0]}"
+            )
     kept = sum(accepted.values())
     return {
         "generated": len(rows), "verified": kept,
@@ -177,6 +193,7 @@ def main(argv=None):
     parser.add_argument("--test")
     parser.add_argument("--ood")
     parser.add_argument("--traces")
+    parser.add_argument("--expected-trace-samples", type=int)
     parser.add_argument("--min-verified-traces", type=int, default=1)
     parser.add_argument("--min-unique-trace-problems", type=int, default=1)
     parser.add_argument("--min-verified-families", type=int, default=1)
@@ -190,7 +207,9 @@ def main(argv=None):
     if args.test:
         summary["splits"] = validate_splits(args.train, args.test, args.ood)
     if args.traces:
-        summary["distillation"] = validate_traces(args.traces, args.train)
+        summary["distillation"] = validate_traces(
+            args.traces, args.train, expected_samples=args.expected_trace_samples
+        )
     payload = json.dumps(summary, indent=2, ensure_ascii=False)
     print(payload)
     if args.out:

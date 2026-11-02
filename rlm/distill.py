@@ -155,7 +155,7 @@ def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]
     return model, tokenizer
 
 def _load_vllm(
-    teacher: str, gpu_memory_utilization: float, max_model_len: int
+    teacher: str, gpu_memory_utilization: float, max_model_len: int, seed: int = 0
 ) -> tuple[LLM, PreTrainedTokenizerBase]:
     """
     Load the teacher as a vLLM engine.
@@ -180,7 +180,7 @@ def _load_vllm(
         dtype="bfloat16",
         gpu_memory_utilization=gpu_memory_utilization,
         max_model_len=max_model_len,
-        seed=0,
+        seed=seed,
     )
     return llm, llm.get_tokenizer()
 
@@ -372,6 +372,7 @@ def generate_traces(
     max_model_len: int | None = None,
     teacher_uses_rule_context: bool = True,
     thinking: bool = True,
+    seed: int = 0,
     log_path: Path | None = None,
     id_offset: int = 0,
     output_path: Path | None = None,
@@ -414,13 +415,15 @@ def generate_traces(
 
     if backend == "vllm":
         llm, tokenizer = _load_vllm(
-            teacher, gpu_memory_utilization, max_model_len or max_new_tokens + 3072
+            teacher, gpu_memory_utilization, max_model_len or max_new_tokens + 3072,
+            seed=seed,
         )
 
         def generate(texts: list[str]) -> tuple[list[dict], list[int]]:
             return _generate_vllm(llm, texts, samples, max_new_tokens)
 
     elif backend == "hf":
+        torch.manual_seed(seed)
         model, tokenizer = _load_model(teacher)
         # Batched generation needs left padding so every completion starts at the same column.
         tokenizer.padding_side = "left"
@@ -604,6 +607,7 @@ def main() -> None:
     )
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--samples", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-new-tokens", type=int, default=2048)
     parser.add_argument("--backend", choices=["vllm", "hf"], default="vllm")
     parser.add_argument(
@@ -691,6 +695,7 @@ def main() -> None:
         max_model_len=args.max_model_len,
         teacher_uses_rule_context=not args.no_teacher_rules,
         thinking=not args.no_thinking,
+        seed=args.seed,
         log_path=log_path,
         id_offset=id_offset,
         output_path=out,

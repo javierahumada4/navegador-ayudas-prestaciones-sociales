@@ -133,3 +133,18 @@ def test_gate_saves_failure_report_if_no_teacher_trace_survives(tmp_path):
                        "--out", str(report), "--min-verified-traces", "1"])
     data = json.loads(report.read_text(encoding="utf-8"))["distillation"]
     assert data["verified"] == 0 and data["rejected_by_reason"] == {"unclosed_think": 1}
+
+
+def test_traces_cannot_silently_drop_problems_or_sample_indices(tmp_path):
+    train, _, _ = _splits(tmp_path)
+    row = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    trace_path = tmp_path / "traces.jsonl"
+    trace_path.write_text(
+        json.dumps({
+            "question": row["question"], "answer": row["answer"], "sample_idx": 0,
+            "verified": False, "format_status": "unclosed_think",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Missing .* teacher samples"):
+        validate_traces(trace_path, train, expected_samples=2)
