@@ -23,7 +23,7 @@ rounded after adding the already-rounded IMV and CAPI components.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import calendar
 import json
@@ -252,14 +252,25 @@ def guaranteed_income_monthly(
 
 def _registration_months(case: dict[str, Any], applicant_id: str, start: date, end: date) -> int:
     """Count approximate covered calendar months in normalized registration periods."""
-    total_days = 0
+    # Merge overlapping or duplicate enrolment intervals before counting days.
+    # The oracle's approximate day-to-month conversion is unchanged.
+    intervals = []
     for period in case.get("social_security_registration_periods", []):
         if period["person_id"] != applicant_id:
             continue
         p0 = max(parse_date(period["from"]), start)
         p1 = min(parse_date(period["to"]) if period.get("to") else end, end)
         if p0 <= p1:
-            total_days += (p1 - p0).days + 1
+            intervals.append((p0, p1))
+    if not intervals:
+        return 0
+    merged = []
+    for left, right in sorted(intervals):
+        if merged and left <= merged[-1][1] + timedelta(days=1):
+            merged[-1] = (merged[-1][0], max(merged[-1][1], right))
+        else:
+            merged.append((left, right))
+    total_days = sum((right - left).days + 1 for left, right in merged)
     return total_days // 30
 
 
