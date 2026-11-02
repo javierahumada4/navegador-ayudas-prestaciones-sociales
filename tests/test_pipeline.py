@@ -59,7 +59,10 @@ def test_resume_grpo_picks_checkpoint_and_preserves_earlier_stages(tmp_path):
     (output / "trainer_state.json").write_text("{}", encoding="utf-8")
     plan = build_plan(args)
     assert len(plan) == 1
-    command = plan[0].steps[0].command
+    assert [step.title for step in plan[0].steps] == [
+        "SFT readiness gate", "GRPO from SFT"
+    ]
+    command = plan[0].steps[-1].command
     assert command[command.index("--resume-from-checkpoint") + 1] == str(output)
 
 
