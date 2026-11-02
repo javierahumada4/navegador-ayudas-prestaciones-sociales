@@ -38,6 +38,7 @@ from dotenv import load_dotenv
 
 from rlm.data import load_domain_dataset
 from rlm.rewards import NUMBER_PATTERN, extract_answer, has_valid_format, parse_imv_decimal
+from rlm.trace_quality import is_predominantly_english_reasoning
 from rlm.verifier import Verifier, build_verifier
 
 if TYPE_CHECKING:
@@ -486,6 +487,9 @@ def generate_traces(
                     trace is not None
                     and verifier.verify(trace, str(example["answer"])).is_correct
                 )
+                if is_correct and is_predominantly_english_reasoning(trace):
+                    is_correct = False
+                    format_status = "non_spanish_reasoning"
                 n_verified += is_correct
                 batch_rows.append(
                     {
