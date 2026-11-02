@@ -71,6 +71,13 @@ def parse_args(argv=None):
     parser.add_argument("--sft-max-length", type=int, default=8192)
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
+    parser.add_argument("--grpo-temperature", type=float, default=0.6)
+    parser.add_argument("--grpo-top-p", type=float, default=0.95)
+    parser.add_argument("--grpo-top-k", type=int, default=20)
+    parser.add_argument("--sft-check-examples", type=int, default=8)
+    parser.add_argument("--sft-check-max-new-tokens", type=int, default=1536)
+    parser.add_argument("--sft-min-format-rate", type=float, default=0.75)
+    parser.add_argument("--sft-max-truncated-rate", type=float, default=0.25)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)
     parser.add_argument("--grpo-completion-length", type=int, default=1024)
     parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
@@ -86,7 +93,7 @@ def parse_args(argv=None):
     if args.smoke:
         args.train_size, args.test_size, args.ood_size = 24, 8, 8
         args.teacher_samples = 2
-        args.sft_epochs, args.grpo_steps, args.grpo_generations = 1.0, 2, 2
+        args.sft_epochs, args.grpo_steps = 1.0, 2
     for key, default in zip(
         ("min_verified_traces", "min_unique_trace_problems", "min_verified_families"),
         (6, 4, 3) if args.smoke else (100, 50, 5),
@@ -97,11 +104,20 @@ def parse_args(argv=None):
     for key in ("train_size", "test_size", "ood_size", "teacher_samples",
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
                 "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
-                "min_verified_traces", "min_unique_trace_problems", "min_verified_families"):
+                "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
+                "sft_check_examples", "sft_check_max_new_tokens"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     if args.grpo_zero_signal_patience < 0:
         parser.error("--grpo-zero-signal-patience must be >= 0")
+    if not (0 <= args.sft_min_format_rate <= 1
+            and 0 <= args.sft_max_truncated_rate <= 1):
+        parser.error("--sft-min-format-rate and --sft-max-truncated-rate must be in [0, 1]")
+    if (args.grpo_temperature <= 0
+            or not (0 < args.grpo_top_p <= 1)
+            or args.grpo_top_k < 0):
+        parser.error("--grpo-temperature > 0, --grpo-top-p in (0, 1], "
+                     "and --grpo-top-k >= 0 are required")
     return args
 
 
@@ -194,21 +210,35 @@ def build_plan(args):
                 "--output", sft, "--epochs", args.sft_epochs,
                 "--batch-size", args.sft_batch_size, "--grad-accum", args.sft_grad_accum,
                 "--max-length", args.sft_max_length,
+                "--validation-report", reports / "sft_input_validation.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
-        ], [sft]),
+        ], [sft, reports / "sft_input_validation.json"]),
         Stage("grpo", [
+            Step("SFT readiness gate", uv(
+                "train", "rlm.check_sft", "--data", train,
+                "--model", args.student, "--adapter", sft,
+                "--n-examples", args.sft_check_examples,
+                "--max-new-tokens", args.sft_check_max_new_tokens,
+                "--min-format-rate", args.sft_min_format_rate,
+                "--max-truncated-rate", args.sft_max_truncated_rate,
+                "--batch-size", args.eval_batch_size,
+                "--seed", args.seed,
+                "--out", reports / "sft_readiness.json",
+            ), env_train),
             Step("GRPO from SFT", uv(
                 "train", "rlm.train_grpo", "--data", train,
                 "--model", args.student, "--init-adapter", sft, "--output", grpo,
                 "--steps", args.grpo_steps, "--num-generations", args.grpo_generations,
+                "--temperature", args.grpo_temperature,
+                "--top-p", args.grpo_top_p, "--top-k", args.grpo_top_k,
                 "--micro-batch-size", args.grpo_micro_batch_size,
                 "--max-completion-length", args.grpo_completion_length,
                 "--zero-signal-patience", args.grpo_zero_signal_patience,
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
             ), env_train),
-        ], [grpo]),
+        ], [grpo, reports / "sft_readiness.json"]),
     ]
     adapters = ["base=none", f"sft={sft}", f"grpo={grpo}"]
     evaluation = [
@@ -264,6 +294,9 @@ def main(argv=None):
         "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
         "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
         "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
+        "grpo_temperature", "grpo_top_p", "grpo_top_k",
+        "sft_check_examples", "sft_check_max_new_tokens",
+        "sft_min_format_rate", "sft_max_truncated_rate",
         "grpo_completion_length", "grpo_zero_signal_patience", "smoke",
     )
     previous = record.get("configuration", {})

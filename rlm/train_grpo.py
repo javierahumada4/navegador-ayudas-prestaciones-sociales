@@ -131,6 +131,8 @@ def train(args: argparse.Namespace) -> None:
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
         temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
         beta=args.beta,
         epsilon=args.epsilon,
         bf16=device == "cuda",
@@ -227,7 +229,9 @@ def main() -> None:
         help="abort after this many GRPO logs with all groups reward-identical; 0 disables",
     )
     parser.add_argument("--learning-rate", type=float, default=5e-6)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.6)
+    parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--epsilon", type=float, default=0.2, help="PPO/GRPO clipping range")
     parser.add_argument(
@@ -246,6 +250,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.zero_signal_patience < 0:
         parser.error("--zero-signal-patience must be nonnegative")
+    if args.temperature <= 0 or not (0 < args.top_p <= 1) or args.top_k < 0:
+        parser.error("temperature > 0, top-p in (0, 1] and top-k >= 0 required")
     train(args)
 
 

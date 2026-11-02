@@ -11,6 +11,8 @@ def test_plan_wires_all_stages_and_isolates_uv_extras():
     assert "--traces" in commands["validate traces"]
     assert "--adapters" in commands["evaluate test"]
     assert "--runs" in commands["GRPO curves"]
+    assert "--validation-report" in commands["supervised LoRA"]
+    assert "--adapter" in commands["SFT readiness gate"]
     assert plan[1].steps[0].env_path != plan[2].steps[0].env_path
 
 
@@ -18,6 +20,7 @@ def test_smoke_has_small_datasets_and_short_training():
     args = parse_args(["--smoke", "--dry-run"])
     assert (args.train_size, args.test_size, args.ood_size) == (24, 8, 8)
     assert args.grpo_steps == 2
+    assert args.grpo_generations == 4
     assert len(build_plan(args)) == 5
 
 
@@ -94,3 +97,31 @@ def test_teacher_seed_and_expected_sample_count_travel_through_pipeline():
     validate = commands["validate traces"]
     assert teacher[teacher.index("--seed") + 1] == "31"
     assert validate[validate.index("--expected-trace-samples") + 1] == "2"
+
+
+def test_grpo_must_pass_sft_readiness_and_uses_qwen_thinking_sampling():
+    args = parse_args(["--smoke", "--dry-run"])
+    plan = build_plan(args)
+    assert [step.title for step in plan[3].steps] == [
+        "SFT readiness gate", "GRPO from SFT"
+    ]
+    cmds = {step.title: step.command for stage in plan for step in stage.steps}
+    readiness = cmds["SFT readiness gate"]
+    assert readiness[readiness.index("--data") + 1].endswith("data/train.jsonl")
+    assert "--min-format-rate" in readiness
+    assert "--max-truncated-rate" in readiness
+    grpo = cmds["GRPO from SFT"]
+    for flag, expected in (("--num-generations", "4"), ("--temperature", "0.6"),
+                           ("--top-p", "0.95"), ("--top-k", "20")):
+        assert grpo[grpo.index(flag) + 1] == expected
+    assert any(str(path).endswith("sft_readiness.json") for path in plan[3].outputs)
+
+
+def test_explicit_grpo_sampling_options_forwarded():
+    args = parse_args(["--grpo-generations", "8", "--grpo-temperature", "0.7",
+                       "--grpo-top-p", "0.9", "--grpo-top-k", "40"])
+    grpo = build_plan(args)[3].steps[-1].command
+    assert grpo[grpo.index("--num-generations") + 1] == "8"
+    assert grpo[grpo.index("--temperature") + 1] == "0.7"
+    assert grpo[grpo.index("--top-p") + 1] == "0.9"
+    assert grpo[grpo.index("--top-k") + 1] == "40"
