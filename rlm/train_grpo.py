@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from rlm.data import load_domain_dataset, load_gsm8k
+from rlm.imv_engine import evaluate_imv_case
 from rlm.rewards import (
     _completion_text,
     accuracy_reward,
@@ -24,6 +25,54 @@ from rlm.rewards import (
 )
 
 _TWO_DECIMAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
+_COMPONENT_NUMBER = re.compile(r"^(?:0|[1-9]\d*)\.\d{2}$")
+
+
+def _claimed_component(text: str, key: str) -> str | None:
+    """Read a single structured component inside <think>, even when truncated.
+
+    Never infer a reward from a number mentioned in prose or from the final
+    <answer>. Requiring a *unique*, two-decimal field limits accidental matches.
+    """
+    if not text.lstrip().startswith("<think>"):
+        return None
+    thought = text.lstrip().split("</think>", 1)[0]
+    opening, closing = f"<{key}>", f"</{key}>"
+    if thought.count(opening) != 1 or thought.count(closing) != 1:
+        return None
+    value = thought.split(opening, 1)[1].split(closing, 1)[0]
+    return value if _COMPONENT_NUMBER.fullmatch(value) else None
+
+
+def _verified_component_reward(completions: Sequence, params: Sequence[dict],
+                               key: str) -> list[float]:
+    """Compare declared intermediate euros to the reference oracle, in cents."""
+    if len(completions) != len(params):
+        raise ValueError("GRPO reward expected one params object per completion")
+    from decimal import Decimal
+
+    scores = []
+    for completion, case in zip(completions, params, strict=True):
+        if not isinstance(case, dict):
+            raise ValueError("IMV GRPO reward requires case params in its dataset")
+        claim = _claimed_component(_completion_text(completion), key)
+        if claim is None:
+            scores.append(0.0)
+            continue
+        result = evaluate_imv_case(case)
+        expected = Decimal(str(result[f"{key}_monthly_eur"]))
+        scores.append(1.0 if Decimal(claim) == expected else 0.0)
+    return scores
+
+
+def imv_component_reward(prompts: Sequence, completions: Sequence,
+                         params: Sequence[dict], **kwargs) -> list[float]:
+    return _verified_component_reward(completions, params, "imv")
+
+
+def capi_component_reward(prompts: Sequence, completions: Sequence,
+                          params: Sequence[dict], **kwargs) -> list[float]:
+    return _verified_component_reward(completions, params, "capi")
 
 
 def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
@@ -98,8 +147,11 @@ def train(args: argparse.Namespace) -> None:
         dataset = load_domain_dataset(args.data)
         # Critical: do not use generic accuracy_reward here. IMV money is rounded
         # HALF_UP to cents by the oracle and verifier.
-        reward_funcs = [format_reward, imv_accuracy_reward, domain_reward]
-        default_weights = [1.0, 2.0, 0.5]
+        reward_funcs = [
+            format_reward, imv_accuracy_reward, domain_reward,
+            imv_component_reward, capi_component_reward,
+        ]
+        default_weights = [1.0, 2.0, 0.5, 1.0, 1.0]
         monitors = [zero_answer_rate]
 
     reward_weights = args.reward_weights or default_weights
@@ -146,6 +198,8 @@ def train(args: argparse.Namespace) -> None:
         num_completions_to_print=2,
         model_init_kwargs={"dtype": torch.bfloat16 if device == "cuda" else torch.float32},
         reward_weights=reward_weights,
+        # The reward callbacks need per-case params; GRPOTrainer must keep them.
+        remove_unused_columns=False,
     )
 
     if args.init_adapter:
@@ -240,7 +294,7 @@ def main() -> None:
         nargs="+",
         default=None,
         help="one weight per reward, in order: format accuracy [domain]; "
-        "default 1.0 2.0 0.5 (GSM8K: 1.0 2.0)",
+        "default 1.0 2.0 0.5 1.0 1.0 (GSM8K: 1.0 2.0)",
     )
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--n-examples", type=int, default=None)

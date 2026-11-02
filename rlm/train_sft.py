@@ -23,24 +23,69 @@ from pathlib import Path
 from datasets import load_dataset
 
 from rlm.data import build_prompt, get_imv_rule_context
+from rlm.imv_engine import evaluate_imv_case
 
 
-def load_sft_dataset(path: str | Path):
+def _trace_with_verified_components(trace: str, params: dict | None) -> str:
+    """Supply oracle-verified intermediate targets as part of SFT supervision.
+
+    Keep the teacher's original explanation, but prepend concise numeric
+    targets so GRPO can later reward correct IMV/CAPI independently of the
+    final total, even when a long generation never closes </think>.
+    """
+    if params is None or "<imv>" in trace or "<capi>" in trace:
+        return trace
+    result = evaluate_imv_case(params)
+    imv = f"{result['imv_monthly_eur']:.2f}"
+    capi = f"{result['capi_monthly_eur']:.2f}"
+    return trace.replace(
+        "<think>",
+        f"<think>\n<imv>{imv}</imv> <capi>{capi}</capi>\n", 1,
+    )
+
+
+def select_verified_traces(dataset, max_per_problem: int):
+    """Keep at most N short, distinct verified traces per question."""
+    if max_per_problem <= 0:
+        raise ValueError("max_per_problem must be positive")
+    if "verified" in dataset.column_names:
+        dataset = dataset.filter(lambda ex: bool(ex["verified"]))
+    groups: dict[str, list[int]] = {}
+    for idx, example in enumerate(dataset):
+        groups.setdefault(example["question"], []).append(idx)
+    selected = set()
+    for indices in groups.values():
+        ranked = sorted(indices, key=lambda i: (len(dataset[i]["trace"]), i))
+        seen_traces: set[str] = set()
+        for idx in ranked:
+            trace = dataset[idx]["trace"]
+            if trace in seen_traces:
+                continue
+            selected.add(idx)
+            seen_traces.add(trace)
+            if len(seen_traces) >= max_per_problem:
+                break
+    return dataset.select(sorted(selected))
+
+
+def load_sft_dataset(path: str | Path, max_traces_per_problem: int = 2):
     """Turn distilled traces into TRL's prompt/completion conversational format.
 
     Expected JSONL fields: ``question``, ``trace`` (the full ``<think>…</think><answer>…</answer>``
     text) and ``answer``. Only traces marked ``verified: true`` are used.
     """
     dataset = load_dataset("json", data_files=str(path), split="train")
-    if "verified" in dataset.column_names:
-        dataset = dataset.filter(lambda ex: bool(ex["verified"]))
+    dataset = select_verified_traces(dataset, max_traces_per_problem)
     return dataset.map(
         lambda ex: {
             "prompt": build_prompt(
                 ex["question"],
                 rule_context=ex.get("rule_context") or get_imv_rule_context(),
             ),
-            "completion": [{"role": "assistant", "content": ex["trace"]}],
+            "completion": [{
+                "role": "assistant",
+                "content": _trace_with_verified_components(ex["trace"], ex.get("params")),
+            }],
         },
         remove_columns=dataset.column_names,
     )
@@ -54,7 +99,7 @@ def train(args: argparse.Namespace) -> None:
 
     from rlm.sft_preflight import validate_sft_sequences
 
-    dataset = load_sft_dataset(args.data)
+    dataset = load_sft_dataset(args.data, args.max_traces_per_problem)
     print(f"{len(dataset)} verified traces loaded from {args.data}")
     if not len(dataset):
         raise ValueError("No verified traces: run distillation and validation before SFT.")
@@ -122,6 +167,10 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--max-length", type=int, default=8192)
+    parser.add_argument(
+        "--max-traces-per-problem", type=int, default=2,
+        help="maximum unique verified teacher traces used per problem in SFT",
+    )
     parser.add_argument(
         "--validation-report", default=None,
         help="JSON report of the pre-training token and answer tag audit",
