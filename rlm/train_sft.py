@@ -22,7 +22,7 @@ from pathlib import Path
 
 from datasets import load_dataset
 
-from rlm.data import build_prompt
+from rlm.data import build_prompt, get_imv_rule_context
 
 
 def load_sft_dataset(path: str | Path):
@@ -36,7 +36,10 @@ def load_sft_dataset(path: str | Path):
         dataset = dataset.filter(lambda ex: bool(ex["verified"]))
     return dataset.map(
         lambda ex: {
-            "prompt": build_prompt(ex["question"]),
+            "prompt": build_prompt(
+                ex["question"],
+                rule_context=ex.get("rule_context") or get_imv_rule_context(),
+            ),
             "completion": [{"role": "assistant", "content": ex["trace"]}],
         },
         remove_columns=dataset.column_names,
@@ -101,7 +104,7 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--grad-accum", type=int, default=4)
-    parser.add_argument("--max-length", type=int, default=2048)
+    parser.add_argument("--max-length", type=int, default=8192)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--save-steps", type=int, default=50)
     parser.add_argument("--resume-from-checkpoint", default=None, help="checkpoint-XXX folder")

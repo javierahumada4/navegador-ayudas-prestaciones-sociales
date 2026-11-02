@@ -102,3 +102,8 @@ def test_summary_selection_and_markdown():
     table = render_markdown({"models": {"base": {"summary": summary}}})
     assert "| base |" in table and "wrongly_denied" in table
     json.dumps(rows)  # rows must be serialisable for the report
+
+
+def test_evaluation_dataset_keeps_exact_teacher_rule_context():
+    problem = load_problems(str(TEST_DATA), 1)[0]
+    assert problem["rule_context"] == IMVProblemGenerator().rule_context

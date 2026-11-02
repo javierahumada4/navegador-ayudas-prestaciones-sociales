@@ -20,3 +20,21 @@ def test_closed_think_without_answer_tags_keeps_the_tail():
 
 def test_no_tags_at_all_returns_raw():
     assert split_thinking("441.29") == ("", "441.29")
+
+
+def test_inference_prompts_receive_same_imv_rule_sheet():
+    from rlm.data import get_imv_rule_context
+    from rlm.inference import ReasoningModel
+
+    model = ReasoningModel(base_model="unused")
+    result = model._prompt("Caso IMV")
+    assert result[1]["content"] == get_imv_rule_context() + "\n\nCaso IMV"
+    custom = model._prompt("Caso IMV", "REGLAS ESPECIFICAS")
+    assert custom[1]["content"] == "REGLAS ESPECIFICAS\n\nCaso IMV"
+
+
+def test_non_imv_inference_does_not_inject_imv_rules():
+    from rlm.inference import ReasoningModel
+
+    model = ReasoningModel(base_model="unused", verifier_name="numeric")
+    assert model._prompt("Otro dominio")[1]["content"] == "Otro dominio"

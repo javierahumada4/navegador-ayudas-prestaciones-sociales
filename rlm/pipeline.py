@@ -68,7 +68,7 @@ def parse_args(argv=None):
     parser.add_argument("--sft-epochs", type=float, default=2.0)
     parser.add_argument("--sft-batch-size", type=int, default=1)
     parser.add_argument("--sft-grad-accum", type=int, default=8)
-    parser.add_argument("--sft-max-length", type=int, default=4096)
+    parser.add_argument("--sft-max-length", type=int, default=8192)
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)

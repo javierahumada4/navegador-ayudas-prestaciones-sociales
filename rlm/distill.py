@@ -36,7 +36,7 @@ import torch
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
 
-from rlm.data import load_domain_dataset
+from rlm.data import get_imv_rule_context, load_domain_dataset
 from rlm.rewards import NUMBER_PATTERN, extract_answer, has_valid_format, parse_imv_decimal
 from rlm.trace_quality import is_predominantly_english_reasoning
 from rlm.verifier import Verifier, build_verifier
@@ -62,9 +62,9 @@ TEACHER_THINKING_SYSTEM_PROMPT = (
     "calcula IMV y CAPI aplicables y suma los importes usando el redondeo indicado. "
     "No recites tablas completas ni repitas los datos ni reconsideres el resultado. "
     "Termina de pensar en cuanto obtengas el importe. "
-    "Tu respuesta visible debe ser ÚNICAMENTE <answer>IMPORTE</answer>, con un "
-    "número de dos decimales y punto decimal en IMPORTE, sin símbolo de moneda "
-    "ni texto adicional. No escribas etiquetas <think> por tu cuenta."
+    "Tu respuesta visible debe contener únicamente el total mensual en euros "
+    "con dos decimales y punto decimal entre <answer> y </answer>, sin símbolo "
+    "de moneda ni texto adicional. No escribas etiquetas <think> por tu cuenta."
 )
 
 # Without native thinking the teacher follows the R1-Zero format, but may answer with
@@ -509,6 +509,8 @@ def generate_traces(
                         "thinking": thinking,
                         "params": example.get("params"),
                         "branches": example.get("branches"),
+                        # Store the teacher's exact rule sheet for reproducible SFT.
+                        "rule_context": example.get("rule_context") or get_imv_rule_context(),
                     }
                 )
             batch_verified.append(n_verified)
@@ -664,7 +666,8 @@ def main() -> None:
     if not args.resume:
         log_path.write_text("", encoding="utf-8")
 
-    dataset = load_domain_dataset(args.data)
+    # The teacher prepends the rules exactly once in _teacher_prompt.
+    dataset = load_domain_dataset(args.data, include_rules=False)
     id_offset = 0
     if args.shard:
         index, count = (int(part) for part in args.shard.split("/"))

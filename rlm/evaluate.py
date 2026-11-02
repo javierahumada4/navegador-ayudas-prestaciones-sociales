@@ -56,6 +56,7 @@ def load_problems(data: str, n_examples: int | None) -> list[dict]:
                     "answer": str(ex["answer"]),
                     "branches": ex.get("branches"),
                     "params": ex.get("params"),
+                    "rule_context": ex.get("rule_context"),
                 }
             )
     return problems[:n_examples] if n_examples else problems
@@ -125,6 +126,7 @@ def evaluate_model(
             batch = problems[start : start + batch_size]
             outputs = model.generate_batch(
                 [p["question"] for p in batch],
+                rule_contexts=[p.get("rule_context") for p in batch],
                 max_new_tokens=max_new_tokens,
                 do_sample=do_sample,
                 temperature=temperature,
