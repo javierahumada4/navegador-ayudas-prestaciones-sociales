@@ -24,7 +24,9 @@ from pathlib import Path
 
 from rlm.data import load_gsm8k
 from rlm.imv_engine import evaluate_imv_case
-from rlm.rewards import has_valid_format, imv_money, parse_imv_decimal, thinking_length
+from rlm.rewards import (
+    has_valid_format, has_valid_imv_format, imv_money, parse_imv_decimal, thinking_length,
+)
 from rlm.verifier import Verifier, build_verifier
 
 # Answers within this distance of the expected amount are counted as near misses.
@@ -157,7 +159,9 @@ def score_row(
         "raw": raw,
         "predicted": verdict.predicted,
         "is_correct": verdict.is_correct,
-        "has_valid_format": has_valid_format(raw),
+        "has_valid_format": (
+            has_valid_imv_format(raw) if verifier.name == "imv" else has_valid_format(raw)
+        ),
         "n_tokens": n_tokens,
         "thinking_words": thinking_length(raw),
         "truncated": n_tokens >= max_new_tokens,

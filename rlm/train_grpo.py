@@ -13,6 +13,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from rlm.chat_template import render_thinking_prompt
 from rlm.data import load_domain_dataset, load_gsm8k
 from rlm.rewards import (
     _completion_text,
@@ -25,7 +26,9 @@ from rlm.rewards import (
     parse_imv_decimal,
 )
 
-_TWO_DECIMAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
+_TWO_DECIMAL_ANSWER = re.compile(r"^(?:0|[1-9]\d*)\.\d{2}$")
+
+
 def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
     """Reward the clean machine-readable IMV answer contract: exactly `123.45`."""
     scores: list[float] = []
@@ -85,7 +88,7 @@ class ZeroSignalMonitor:
 def train(args: argparse.Namespace) -> None:
     import torch
     from peft import LoraConfig
-    from transformers import TrainerCallback
+    from transformers import AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
     is_gsm8k = args.data == "gsm8k"
@@ -96,6 +99,14 @@ def train(args: argparse.Namespace) -> None:
         monitors = []
     else:
         dataset = load_domain_dataset(args.data)
+        # Serialize with exactly the same Qwen3 native thinking-mode assistant
+        # prefix that SFT preflight and inference use. TRL GRPO then tokenizes
+        # the already-rendered string; it cannot silently choose a different
+        # chat-template mode.
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        dataset = dataset.map(
+            lambda ex: {"prompt": render_thinking_prompt(tokenizer, ex["prompt"])}
+        )
         # Critical: do not use generic accuracy_reward here. IMV money is rounded
         # HALF_UP to cents by the oracle and verifier.
         reward_funcs = [imv_format_reward, imv_accuracy_reward, domain_reward]
@@ -173,6 +184,7 @@ def train(args: argparse.Namespace) -> None:
         args=config,
         train_dataset=dataset,
         peft_config=peft_config,
+        **({"processing_class": tokenizer} if not is_gsm8k else {}),
     )
 
     class AbortOnZeroSignal(TrainerCallback):

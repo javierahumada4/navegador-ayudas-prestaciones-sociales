@@ -28,7 +28,7 @@ from rlm.data import build_prompt, get_imv_rule_context
 
 def _remove_legacy_component_tags(trace: str) -> str:
     """Remove obsolete IMV/CAPI XML fields from old teacher reasoning traces."""
-    clean = re.sub(r"<(imv|capi)>.*?</\\1>", "", trace, flags=re.DOTALL)
+    clean = re.sub(r"<(imv|capi)>.*?</\1>", "", trace, flags=re.DOTALL)
     if re.search(r"</?(?:imv|capi)>", clean):
         raise ValueError("Unmatched legacy component tags in teacher trace")
     return clean
@@ -121,6 +121,7 @@ def train(args: argparse.Namespace) -> None:
         max_length=args.max_length,
         completion_only_loss=True,
         packing=False,
+        eos_token=tokenizer.eos_token,
         bf16=torch.cuda.is_available(),
         gradient_checkpointing=True,
         logging_steps=10,

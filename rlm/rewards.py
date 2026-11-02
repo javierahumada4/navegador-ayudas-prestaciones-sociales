@@ -28,6 +28,7 @@ def has_valid_imv_format(text: str) -> bool:
     match = FORMAT_PATTERN.fullmatch(text)
     return bool(
         match
+        and match.group("think").strip()
         and STRICT_IMV_AMOUNT.fullmatch(match.group("answer"))
         and not LEGACY_COMPONENT_TAG.search(match.group("think"))
     )

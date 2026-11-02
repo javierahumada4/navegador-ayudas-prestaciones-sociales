@@ -11,7 +11,8 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from rlm.rewards import has_valid_format
+from rlm.chat_template import render_supervised_exchange
+from rlm.rewards import has_valid_imv_format
 
 FINAL_AMOUNT = re.compile(r"<answer>\d+\.\d{2}</answer>\s*$")
 
@@ -43,15 +44,12 @@ def validate_sft_sequences(dataset, tokenizer, max_length: int, report_path: str
         reason = None
         tokens = 0
         prompt_tokens = 0
-        if not has_valid_format(trace) or not FINAL_AMOUNT.search(trace):
+        if not has_valid_imv_format(trace) or not FINAL_AMOUNT.search(trace):
             reason = "invalid_or_unclosed_answer_tags"
         else:
             try:
-                prompt_text = tokenizer.apply_chat_template(
-                    prompt, tokenize=False, add_generation_prompt=True
-                )
-                full_text = tokenizer.apply_chat_template(
-                    prompt + completion, tokenize=False, add_generation_prompt=False
+                prompt_text, full_text = render_supervised_exchange(
+                    tokenizer, prompt, trace
                 )
                 if not full_text.startswith(prompt_text):
                     reason = "chat_template_prompt_mismatch"
@@ -66,18 +64,20 @@ def validate_sft_sequences(dataset, tokenizer, max_length: int, report_path: str
                         assistant_text = full_text.rsplit("<assistant>", 1)[-1]
                     else:
                         assistant_text = full_text[len(prompt_text):]
-                    expected_answer = re.search(r"<answer>\d+\.\d{2}</answer>", trace)
-                    if (assistant_text.count("<think>") != 1
-                            or assistant_text.count("</think>") != 1
-                            or assistant_text.count("<answer>") != 1
-                            or assistant_text.count("</answer>") != 1
-                            or expected_answer is None
-                            or expected_answer.group() not in assistant_text):
+                    assistant_text = assistant_text.strip()
+                    if assistant_text.endswith("<|im_end|>"):
+                        assistant_text = assistant_text.removesuffix("<|im_end|>").strip()
+                    elif assistant_text.endswith("</>"):
+                        assistant_text = assistant_text.removesuffix("</>").strip()
+                    if not has_valid_imv_format(assistant_text):
                         reason = "assistant_completion_tags_mismatch"
                     else:
-                        prompt_tokens = len(_token_ids(tokenizer, prompt_text))
-                        tokens = len(_token_ids(tokenizer, full_text))
-                        if tokens <= prompt_tokens:
+                        prompt_ids = _token_ids(tokenizer, prompt_text)
+                        full_ids = _token_ids(tokenizer, full_text)
+                        prompt_tokens, tokens = len(prompt_ids), len(full_ids)
+                        if full_ids[:prompt_tokens] != prompt_ids:
+                            reason = "tokenization_prefix_mismatch"
+                        elif tokens <= prompt_tokens:
                             reason = "no_completion_tokens"
                         elif tokens + reserve_tokens > max_length:
                             reason = "answer_may_be_truncated"
