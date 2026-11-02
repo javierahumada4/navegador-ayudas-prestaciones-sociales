@@ -120,6 +120,39 @@ Los límites se pueden ajustar con `--min-verified-traces`,
 `--min-unique-trace-problems` y `--min-verified-families`,
 pero no conviene reducirlos para ocultar una mala destilación.
 
+### Validaciones de SFT y entrada a GRPO
+
+Antes de cargar los pesos del alumno, `rlm.train_sft` tokeniza **todas**
+las trazas verificadas con la plantilla de chat del modelo, y audita las
+etiquetas `<think>` y `<answer>`, la longitud completa del prompt más
+la respuesta, y una reserva de ocho tokens para el final de secuencia.
+Cualquier ejemplo cuyo `</answer>` pueda quedar fuera de
+`--sft-max-length` **bloquea SFT**: nunca se descarta ni recorta una
+respuesta correcta silenciosamente. El informe se conserva en
+`reports/sft_input_validation.json` incluso si el control falla. Si
+tienes una MIG de 16 GiB, aumentar `--sft-max-length` puede causar OOM;
+en ese caso hay que reducir la longitud de las trazas, no ocultar el
+truncamiento.
+
+Una vez entrenado SFT, el pipeline ejecuta **`SFT readiness gate` antes
+de iniciar GRPO**, con hasta ocho preguntas del conjunto de *entrenamiento*
+seleccionadas de distintas familias. Este control funcional exige al
+menos **75 % de respuestas con formato válido y como máximo 25 % truncadas**
+(`--sft-min-format-rate`, `--sft-max-truncated-rate`).
+El presupuesto es `--sft-check-max-new-tokens 1536`. Siempre se escribe
+`reports/sft_readiness.json`, aunque GRPO sea bloqueado. Este control
+**no es una evaluación de generalización**, pues no emplea ni test ni OOD.
+Los resultados de test y OOD siguen reservados para la fase final.
+
+GRPO ahora utiliza **4 generaciones por problema incluso en smoke**;
+la temperatura predeterminada es **0.6**, `top_p=0.95` y
+`top_k=20`, recomendados para Qwen3 en modo thinking. Se pueden
+ajustar con `--grpo-generations`, `--grpo-temperature`,
+`--grpo-top-p` y `--grpo-top-k`. Cuatro generaciones consumen
+más GPU que dos; en la DGX es preferible `--grpo-micro-batch-size 1`.
+El smoke sigue teniendo solo **2 pasos** de GRPO: sirve para comprobar
+el flujo, no para demostrar aprendizaje.
+
 GRPO avisa al detectar recompensas sin variación y detiene un run largo
 tras 5 pasos consecutivos sin señal (`--grpo-zero-signal-patience`).
 Un smoke con 2 pasos puede acabar con recompensa nula: eso **no** demuestra
