@@ -67,7 +67,7 @@ def parse_args(argv=None):
     parser.add_argument("--sft-max-length", type=int, default=8192)
     parser.add_argument("--sft-max-traces-per-problem", type=int, default=2)
     parser.add_argument("--min-sft-problem-coverage", type=float, default=0.70,
-                        help="minimum fraction of training problems with valid <=1024-token SFT traces")
+                        help="minimum fraction of problems with complete SFT traces within the shared token budget")
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
     parser.add_argument("--grpo-temperature", type=float, default=0.6)
@@ -112,7 +112,7 @@ def parse_args(argv=None):
     if not (0 <= args.sft_min_format_rate <= 1
             and 0 <= args.sft_max_truncated_rate <= 1
             and 0 <= args.min_sft_problem_coverage <= 1):
-        parser.error("--sft-min-format-rate and --sft-max-truncated-rate must be in [0, 1]")
+        parser.error("SFT readiness rates and minimum problem coverage must be in [0, 1]")
     if (args.grpo_temperature <= 0
             or not (0 < args.grpo_top_p <= 1)
             or args.grpo_top_k < 0):

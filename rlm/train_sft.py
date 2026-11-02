@@ -22,9 +22,8 @@ from pathlib import Path
 
 from datasets import load_dataset
 
-from rlm.sft_selection import select_budgeted_traces
-
 from rlm.data import build_prompt, get_imv_rule_context
+from rlm.sft_selection import select_budgeted_traces
 
 
 def select_verified_traces(dataset, max_per_problem: int):
@@ -89,7 +88,8 @@ def train(args: argparse.Namespace) -> None:
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     raw = load_dataset("json", data_files=str(args.data), split="train")
-    report_dir = Path(args.validation_report or Path(args.output).parent / "sft_input_validation.json").parent
+    report_file = Path(args.validation_report or Path(args.output).parent / "sft_input_validation.json")
+    report_dir = report_file.parent
     selected, coverage = select_budgeted_traces(
         raw, tokenizer,
         max_completion_tokens=args.max_completion_tokens,
@@ -108,7 +108,7 @@ def train(args: argparse.Namespace) -> None:
     )
     report = validate_sft_sequences(
         dataset, tokenizer, args.max_length,
-        args.validation_report or Path(args.output).parent / "sft_input_validation.json",
+        report_file,
     )
     print(
         f"SFT preflight: {report['accepted']} complete tokenized sequences, "

@@ -47,13 +47,12 @@ los modelos podían reproducirlo como respuesta. Ahora se indica que el
 número debe escribirse entre las etiquetas de apertura y cierre
 `<answer>` y `</answer>`, sin ejemplo numérico.
 
-Como los prompts del alumno son ahora considerablemente más largos,
-`--sft-max-length` pasa de 4096 a **8192** tokens. Esto aumenta la memoria
-necesaria: en una MIG de 16 GiB puede ser necesario reducir el tamaño de
-lote o revisar el presupuesto antes de repetir el smoke. Reducir
-`--sft-max-length` indiscriminadamente puede truncar la respuesta
-supervisada. Este cambio **invalida la comparación directa con los LoRA
-anteriores**: empieza un `--run-dir` nuevo para las evaluaciones comparables.
+Como los prompts IMV incluyen reglas legales largas, `--sft-max-length 8192`
+limita el **prompt más la respuesta**; no debe ponerse a 1024. El
+argumento único `--completion-tokens 1024` limita las **respuestas** del
+SFT, el readiness gate, GRPO y la evaluación usando el tokenizador del
+alumno. No se recortan trazas ni se fabrican cierres de etiquetas.
+Este cambio invalida los LoRA anteriores: inicia un `--run-dir` nuevo.
 Que los modelos vean las reglas no garantiza por sí solo una mejora en pass@1.
 
 Los extras `distill` (vLLM y su versión de torch) y `train`
@@ -62,6 +61,30 @@ dos entornos aislados bajo el run, `.venv-distill` y `.venv-train`, mediante
 `UV_PROJECT_ENVIRONMENT`. No instalar ambos extras en un mismo entorno.
 
 ## Comandos
+
+### Entrenamiento completo para estudiar el aprendizaje de SFT
+
+Con una carpeta nueva, sin `--smoke`:
+
+```bash
+python -u -m rlm.pipeline \
+  --run-dir runs/phase1-dgx-1024-full \
+  --seed 42 \
+  --teacher Qwen/Qwen3-4B --teacher-backend vllm \
+  --teacher-samples 8 --teacher-batch-size 1 --teacher-gpu-memory 0.75 \
+  --student Qwen/Qwen3-1.7B \
+  --completion-tokens 1024 --sft-max-length 8192 \
+  --sft-epochs 2 --sft-batch-size 1 --sft-grad-accum 8 \
+  --min-sft-problem-coverage 0.70 \
+  --grpo-micro-batch-size 1 --eval-batch-size 1
+```
+
+El profesor mantiene `--teacher-max-new-tokens 2048` para poder completar
+una traza; **SFT solo acepta completions de hasta 1024 tokens**
+según el tokenizador del alumno. No se mezclan datasets ni adaptadores
+de ensayos anteriores. El entrenamiento puede superar una sesión de
+24 h de DGX; conserva los checkpoints y los informes por etapas.
+
 
 Inspeccionar el plan sin escribir ni usar GPU:
 
@@ -176,26 +199,33 @@ pero no conviene reducirlos para ocultar una mala destilación.
 
 ### Validaciones de SFT y entrada a GRPO
 
-Antes de cargar los pesos del alumno, `rlm.train_sft` tokeniza **todas**
-las trazas verificadas con la plantilla de chat del modelo, y audita las
-etiquetas `<think>` y `<answer>`, que solo exista **una respuesta final
-de dos decimales**, la coincidencia del prefijo de generación, la longitud
-completa de prompt más respuesta y una reserva de ocho tokens para el final
-de secuencia.
-Cualquier ejemplo cuyo `</answer>` pueda quedar fuera de
-`--sft-max-length` **bloquea SFT**: nunca se descarta ni recorta una
-respuesta correcta silenciosamente. El informe se conserva en
-`reports/sft_input_validation.json` incluso si el control falla. Si
-tienes una MIG de 16 GiB, aumentar `--sft-max-length` puede causar OOM;
-en ese caso hay que reducir la longitud de las trazas, no ocultar el
-truncamiento.
+Antes de cargar los pesos del alumno, `rlm.train_sft` examina todas las
+trazas **verificadas** con el tokenizador y la plantilla de chat reales.
+Selecciona hasta dos trazas distintas y cortas por problema, siempre con
+respuesta final completa, descartando las que superen **1024 tokens de
+completion** o el máximo de prompt+completion (`--sft-max-length 8192`).
+El informe `reports/sft_selection.json` cuenta descartes por longitud,
+cobertura de problemas y familias. No se corta ninguna respuesta.
+
+Para preservar cobertura, el entrenamiento **completo** genera 8 muestras
+por problema (el smoke sigue usando 2). La cobertura de los problemas
+**con trazas elegibles de SFT** debe alcanzar al menos 70 % y cubrir
+un mínimo de 5 familias, antes de entrenar. Puedes configurar la
+cobertura con `--min-sft-problem-coverage`. Si no se alcanza, el run
+se detiene con el informe guardado: hay que generar más muestras,
+mejorar el profesor o usar un run nuevo, no relajar los límites sin
+justificación. Esto es un umbral de protección, no una garantía de
+obtener cobertura suficiente en cada ejecución.
+Las trazas finalmente seleccionadas superan además el preflight
+`reports/sft_input_validation.json` para descartar fallos de plantilla
+y de tokenización.
 
 Una vez entrenado SFT, el pipeline ejecuta **`SFT readiness gate` antes
 de iniciar GRPO**, con hasta ocho preguntas del conjunto de *entrenamiento*
 seleccionadas de distintas familias. Este control funcional exige al
 menos **75 % de respuestas con formato válido y como máximo 25 % truncadas**
 (`--sft-min-format-rate`, `--sft-max-truncated-rate`).
-El presupuesto es `--sft-check-max-new-tokens 1536`. Siempre se escribe
+El presupuesto del control es también `--completion-tokens 1024`. Siempre se escribe
 `reports/sft_readiness.json`, aunque GRPO sea bloqueado. Este control
 **no es una evaluación de generalización**, pues no emplea ni test ni OOD.
 Los resultados de test y OOD siguen reservados para la fase final.

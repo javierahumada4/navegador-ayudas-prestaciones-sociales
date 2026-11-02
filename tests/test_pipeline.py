@@ -84,8 +84,9 @@ def test_full_dataset_quality_gate_is_stronger():
     args = parse_args(["--dry-run"])
     assert (args.min_verified_traces, args.min_unique_trace_problems,
             args.min_verified_families) == (100, 50, 5)
-    assert args.grpo_completion_length == 1024
-    assert args.eval_max_new_tokens == 1536
+    assert args.completion_tokens == 1024
+    assert args.teacher_samples == 8
+    assert args.min_sft_problem_coverage == 0.70
 
 
 def test_distillation_cannot_disable_native_thinking():
@@ -148,3 +149,25 @@ def test_sft_caps_teacher_traces_and_evaluates_each_ood_axis():
         assert axis in validation
         assert any(str(p).endswith("eval_" + axis + ".json")
                    for p in plan[-1].outputs)
+
+def test_shared_completion_budget_is_forwarded_to_all_stages():
+    args = parse_args(["--completion-tokens", "1024"])
+    cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
+    for title, flag in (
+        ("supervised LoRA", "--max-completion-tokens"),
+        ("SFT readiness gate", "--max-new-tokens"),
+        ("GRPO from SFT", "--max-completion-length"),
+        ("evaluate test", "--max-new-tokens"),
+    ):
+        command = cmds[title]
+        assert command[command.index(flag) + 1] == "1024"
+    sft = cmds["supervised LoRA"]
+    assert sft[sft.index("--max-length") + 1] == "8192"
+    assert sft[sft.index("--min-problem-coverage") + 1] == "0.7"
+    assert "--min-families" in sft
+    assert any(str(p).endswith("sft_selection.json") for p in build_plan(args)[2].outputs)
+
+
+def test_shared_completion_budget_must_be_positive():
+    with pytest.raises(SystemExit):
+        parse_args(["--completion-tokens", "0"])
