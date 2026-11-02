@@ -1,5 +1,4 @@
-"""Protect the Spanish-language SFT contract without heavyweight dependencies."""
-import pytest
+"""Language detection is diagnostic only and must not reject correct traces."""
 
 from rlm.trace_quality import is_predominantly_english_reasoning
 
@@ -28,7 +27,7 @@ def test_spanish_or_brief_numerical_reasoning_is_not_flagged():
     )
 
 
-def test_verified_english_trace_is_rejected_by_split_validator(tmp_path):
+def test_verified_english_trace_is_accepted_by_split_validator(tmp_path):
     from rlm.generate_problems import IMVProblemGenerator
     from rlm.validate_data import validate_traces
     import json
@@ -51,5 +50,6 @@ def test_verified_english_trace_is_rejected_by_split_validator(tmp_path):
             "trace": f"<think>{thought}</think><answer>{p.answer}</answer>",
         }) + "\n"
     )
-    with pytest.raises(ValueError, match="English verified reasoning"):
-        validate_traces(trace_file, train)
+    report = validate_traces(trace_file, train)
+    assert report["verified"] == 1
+    assert report["rejected_by_reason"] == {}
