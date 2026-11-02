@@ -3,7 +3,8 @@ name: IMV phase 1 logic checks
 on:
   push:
     branches:
-      - fix/rlm-reproducible-pipeline
+      - 'fix/**'
+      - 'refactor/**'
   pull_request:
     paths:
       - 'rlm/**'

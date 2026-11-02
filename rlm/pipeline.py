@@ -52,10 +52,6 @@ def parse_args(argv=None):
     parser.add_argument("--ood-size", type=int, default=100)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
-    parser.add_argument(
-        "--teacher-no-thinking", action="store_true",
-        help="disable native Qwen3 thinking; use the concise Spanish R1 format instead",
-    )
     parser.add_argument("--teacher-samples", type=int, default=4)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
     parser.add_argument("--teacher-max-model-len", type=int, default=8192)
@@ -85,11 +81,6 @@ def parse_args(argv=None):
     parser.add_argument("--eval-batch-size", type=int, default=2)
     parser.add_argument("--eval-max-new-tokens", type=int, default=1536)
     args = parser.parse_args(argv)
-    if args.teacher_no_thinking:
-        parser.error(
-            "--teacher-no-thinking disables native Qwen3 reasoning and must not "
-            "be used to distill <think> traces. Omit this flag."
-        )
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
     if args.resume and args.force:
@@ -203,7 +194,6 @@ def build_plan(args):
                 "--max-model-len", args.teacher_max_model_len,
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
-                *(["--no-thinking"] if args.teacher_no_thinking else []),
                 "--verifier", "imv", "--output", traces,
                 "--log-path", logs / "distillation.jsonl",
                 *_resume_flags(args, "distill", traces)
@@ -305,25 +295,16 @@ def main(argv=None):
     record = (json.loads(manifest.read_text(encoding="utf-8"))
               if manifest.exists() else {"configuration": vars(args), "steps": []})
     # Reuse of a run must never silently change its data/model/training configuration.
-    invariant_keys = (
-        "seed", "train_size", "test_size", "ood_size", "teacher", "teacher_backend",
-        "teacher_no_thinking",
-        "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
-        "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
-        "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
-        "sft_max_traces_per_problem",
-        "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
-        "grpo_temperature", "grpo_top_p", "grpo_top_k",
-        "sft_check_examples", "sft_check_max_new_tokens",
-        "sft_min_format_rate", "sft_max_truncated_rate",
-        "grpo_completion_length", "grpo_zero_signal_patience", "smoke",
-    )
+    # Operational flags may change between invocations; model/data parameters may not.
+    execution_options = {"run_dir", "from_stage", "through_stage", "dry_run", "force", "resume"}
     previous = record.get("configuration", {})
-    for key in invariant_keys:
-        if key in previous and previous[key] != getattr(args, key):
+    for key, value in vars(args).items():
+        if key in execution_options:
+            continue
+        if key in previous and previous[key] != value:
             raise SystemExit(
                 f"Run configuration changed: {key}={previous[key]!r}, "
-                f"requested {getattr(args, key)!r}. Start a new --run-dir."
+                f"requested {value!r}. Start a new --run-dir."
             )
     for stage in plan:
         existing = [p for p in stage.outputs if p.exists()]

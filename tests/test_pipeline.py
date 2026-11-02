@@ -88,12 +88,11 @@ def test_full_dataset_quality_gate_is_stronger():
     assert args.eval_max_new_tokens == 1536
 
 
-def test_non_native_thinking_is_rejected_before_spending_gpu(capsys):
-    with pytest.raises(SystemExit) as exc:
-        parse_args(["--smoke", "--teacher-no-thinking"])
-    assert exc.value.code == 2
-    assert "--teacher-no-thinking disables native" in capsys.readouterr().err
-    assert "--no-thinking" not in build_plan(parse_args(["--smoke"]))[1].steps[0].command
+def test_distillation_cannot_disable_native_thinking():
+    teacher = build_plan(parse_args(["--smoke"]))[1].steps[0].command
+    assert "--no-thinking" not in teacher
+    with pytest.raises(SystemExit):
+        parse_args(["--teacher-no-thinking"])
 
 
 def test_teacher_seed_and_expected_sample_count_travel_through_pipeline():
