@@ -44,13 +44,13 @@ def _trace_with_verified_components(trace: str, params: dict | None) -> str:
     # they could contradict the verified oracle despite a correct final sum.
     head, separator, tail = trace.partition("</think>")
     head = re.sub(r"<(imv|capi)>.*?</\1>", "", head, flags=re.DOTALL)
-    if not separator or re.search(r"</?(?:imv|capi)>", head):
+    if not separator or "<think>" not in head or re.search(r"</?(?:imv|capi)>", head):
         raise ValueError("Malformed teacher intermediate fields in SFT trace")
-    head = head.replace(
-        "<think>",
-        f"<think>\n<imv>{imv}</imv> <capi>{capi}</capi>\n", 1,
+    reasoning = head.split("<think>", 1)[1].strip()
+    return (
+        f"<think>\n<imv>{imv}</imv> <capi>{capi}</capi>\n"
+        f"{reasoning}\n</think>{tail}"
     )
-    return head + separator + tail
 
 
 def select_verified_traces(dataset, max_per_problem: int):
