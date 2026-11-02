@@ -65,3 +65,19 @@ def test_sft_preflight_rejects_bad_or_missing_answer(tmp_path):
         with pytest.raises(ValueError, match="SFT preflight rejected"):
             validate_sft_sequences([row(trace)], tok, 1000, tmp_path / "failure.json")
         assert json.loads((tmp_path / "failure.json").read_text())["rejected"] == 1
+
+
+def test_qwen_native_thinking_prefix_does_not_trigger_false_failure(tmp_path):
+    class NativeThinkingTokenizer(TinyTokenizer):
+        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+            if add_generation_prompt:
+                return "<|im_start|>user\\nReglas y caso.<|im_end|><|im_start|>assistant\\n<think>\\n"
+            trace = messages[-1]["content"]
+            return ("<|im_start|>user\\nReglas y caso.<|im_end|>"
+                    "<|im_start|>assistant\\n<think>\\n"
+                    + trace.removeprefix("<think>") + "<|im_end|>")
+    result = validate_sft_sequences(
+        [row("<think>Breve.</think><answer>57.50</answer>")],
+        NativeThinkingTokenizer(), 500, tmp_path / "native.json",
+    )
+    assert result["accepted"] == 1

@@ -56,12 +56,23 @@ def validate_sft_sequences(dataset, tokenizer, max_length: int, report_path: str
                 if not full_text.startswith(prompt_text):
                     reason = "chat_template_prompt_mismatch"
                 else:
-                    continuation = full_text[len(prompt_text):]
-                    if (continuation.count("<think>") != 1
-                            or continuation.count("</think>") != 1
-                            or continuation.count("<answer>") != 1
-                            or continuation.count("</answer>") != 1
-                            or trace not in continuation):
+                    # Qwen3 may include the opening <think> in its assistant
+                    # generation prefix. Inspect the full *assistant turn*,
+                    # not only the continuation after that prefix.
+                    marker = "<|im_start|>assistant"
+                    if marker in full_text:
+                        assistant_text = full_text.rsplit(marker, 1)[-1]
+                    elif "<assistant>" in full_text:
+                        assistant_text = full_text.rsplit("<assistant>", 1)[-1]
+                    else:
+                        assistant_text = full_text[len(prompt_text):]
+                    expected_answer = re.search(r"<answer>\\d+\\.\\d{2}</answer>", trace)
+                    if (assistant_text.count("<think>") != 1
+                            or assistant_text.count("</think>") != 1
+                            or assistant_text.count("<answer>") != 1
+                            or assistant_text.count("</answer>") != 1
+                            or expected_answer is None
+                            or expected_answer.group() not in assistant_text):
                         reason = "assistant_completion_tags_mismatch"
                     else:
                         prompt_tokens = len(_token_ids(tokenizer, prompt_text))
