@@ -36,6 +36,7 @@ import torch
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
 
+from rlm.chat_template import render_thinking_prompt
 from rlm.data import get_imv_rule_context, load_domain_dataset
 from rlm.rewards import NUMBER_PATTERN, extract_answer, has_valid_format, parse_imv_decimal
 from rlm.verifier import Verifier, build_verifier
@@ -192,16 +193,15 @@ def _append_jsonl(path: Path, record: dict) -> None:
         handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 def _teacher_prompt(
-    example: dict, use_rule_context: bool, thinking: bool
+    example: dict, use_rule_context: bool
 ) -> list[dict]:
     """
     Build the teacher's messages: the row's prompt, with the rules prepended and,
-    in thinking mode, the teacher-only system prompt.
+    the teacher-only system prompt.
 
     Args:
         example: Example taken from the dataset.
         use_rule_context (bool): Prepend ``rule_context`` if the row has one.
-        thinking (bool): Qwen3 native thinking mode.
 
     Returns:
         prompt (List[dict]): Teacher messages; the row itself is not modified.
@@ -210,11 +210,10 @@ def _teacher_prompt(
         prompt = _prepend_rules(example)
     else:
         prompt = [dict(message) for message in example["prompt"]]
-    if thinking:
-        for message in prompt:
-            if message.get("role") == "system":
-                message["content"] = TEACHER_THINKING_SYSTEM_PROMPT
-                break
+    for message in prompt:
+        if message.get("role") == "system":
+            message["content"] = TEACHER_THINKING_SYSTEM_PROMPT
+            break
     return prompt
 
 def _prepend_rules(
@@ -367,7 +366,6 @@ def generate_traces(
     gpu_memory_utilization: float = 0.9,
     max_model_len: int | None = None,
     teacher_uses_rule_context: bool = True,
-    thinking: bool = True,
     seed: int = 0,
     log_path: Path | None = None,
     id_offset: int = 0,
@@ -393,8 +391,6 @@ def generate_traces(
                             prompt with the exact rule sheet is ~2200 tokens).
         teacher_uses_rule_context (bool): Prepend each row's ``rule_context``
                             to the teacher prompt only.
-        thinking (bool): Qwen3 native thinking mode. False is rejected because
-                            no-thinking outputs do not provide native reasoning traces.
         log_path (Path | None): Per-example metrics JSONL. ``None`` disables it.
         id_offset (int): Added to every ``example_id`` so ids stay the row
                             number in the full file when ``dataset`` is a shard.
@@ -404,11 +400,6 @@ def generate_traces(
         rows (list[dicts]): New dataset made of formated json traces.
     """
 
-    if not thinking:
-        raise ValueError(
-            "Qwen3 --no-thinking disables native <think>...</think> generation. "
-            "Distillation needs genuine reasoning traces; use enable_thinking=True."
-        )
     if batch_size is None:
         batch_size = DEFAULT_BATCH_SIZE[backend]
 
@@ -450,18 +441,12 @@ def generate_traces(
 
         stage("prepending")
         prompts = [
-            _teacher_prompt(example, teacher_uses_rule_context, thinking)
+            _teacher_prompt(example, teacher_uses_rule_context)
             for example in batch
         ]
         stage("tokenizing")
         texts = [
-            tokenizer.apply_chat_template(
-                prompt,
-                tokenize=False,
-                add_generation_prompt=True,
-                # Templates without this switch simply ignore it.
-                enable_thinking=thinking,
-            )
+            render_thinking_prompt(tokenizer, prompt)
             for prompt in prompts
         ]
         stage("generating")
@@ -500,7 +485,7 @@ def generate_traces(
                         "n_tokens": completion["n_tokens"],
                         "hit_max_tokens": completion["hit_max"],
                         "teacher": teacher,
-                        "thinking": thinking,
+                        "thinking": True,
                         "params": example.get("params"),
                         "branches": example.get("branches"),
                         # Store the teacher's exact rule sheet for reproducible SFT.
@@ -547,7 +532,7 @@ def generate_traces(
 
 
 def _verified_resume_offset(
-    path: Path, dataset: Any, samples: int, id_offset: int, teacher: str, thinking: bool
+    path: Path, dataset: Any, samples: int, id_offset: int, teacher: str
 ) -> int:
     """Check and recover a contiguous prefix of a streamed teacher run.
 
@@ -581,7 +566,7 @@ def _verified_resume_offset(
             or row.get("question") != expected["prompt"][-1]["content"]
             or str(row.get("answer")) != str(expected["answer"])
             or row.get("teacher") != teacher
-            or row.get("thinking") != thinking
+            or row.get("thinking") is not True
         ):
             raise ValueError(f"{path}: sample {n} does not match teacher/data configuration")
     if len(valid) != complete_rows or path.stat().st_size != sum(
@@ -642,21 +627,11 @@ def main() -> None:
         "several sessions can split one run; outputs concatenate",
     )
     parser.add_argument(
-        "--no-thinking",
-        action="store_true",
-        help="deprecated and rejected: Qwen3 distillation requires native thinking",
-    )
-    parser.add_argument(
         "--no-teacher-rules",
         action="store_true",
         help="do not prepend row.rule_context to the teacher prompt",
     )
     args = parser.parse_args()
-    if args.no_thinking:
-        parser.error(
-            "--no-thinking is incompatible with verified Qwen3 reasoning traces. "
-            "Remove it to use the model's native thinking mode."
-        )
 
     if args.samples <= 0:
         parser.error("--samples must be positive")
@@ -681,7 +656,7 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     if args.resume:
         processed = _verified_resume_offset(
-            out, dataset, args.samples, id_offset, args.teacher, not args.no_thinking
+            out, dataset, args.samples, id_offset, args.teacher
         )
         print(f"Resuming: {processed}/{len(dataset)} teacher problems complete")
         id_offset += processed
@@ -700,7 +675,6 @@ def main() -> None:
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
         teacher_uses_rule_context=not args.no_teacher_rules,
-        thinking=not args.no_thinking,
         seed=args.seed,
         log_path=log_path,
         id_offset=id_offset,

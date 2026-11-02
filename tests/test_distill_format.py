@@ -66,12 +66,3 @@ def test_answer_tags_inside_reasoning_are_removed():
     trace, status = _structure_trace(raw)
     assert status == "repaired"
     assert trace.count("<answer>") == 1 and has_valid_format(trace)
-
-
-def test_distillation_rejects_non_native_thinking_before_loading_gpu():
-    from rlm.distill import generate_traces
-    with pytest.raises(ValueError, match="disables native"):
-        generate_traces(
-            [], teacher="Qwen/Qwen3-4B", samples=1, max_new_tokens=128,
-            verifier=None, thinking=False, backend="hf",
-        )

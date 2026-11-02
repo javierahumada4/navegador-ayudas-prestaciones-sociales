@@ -63,7 +63,7 @@ def test_rule_context_is_identical_for_student_and_teacher_dataset(tmp_path):
     teacher = load_domain_dataset(path, include_rules=False)
     assert student[0]["prompt"][1]["content"] == "REGLAS EXACTAS PERSONALIZADAS\n\nCaso X"
     assert teacher[0]["prompt"][1]["content"] == "Caso X"
-    teacher_prompt = _teacher_prompt(teacher[0], use_rule_context=True, thinking=True)
+    teacher_prompt = _teacher_prompt(teacher[0], use_rule_context=True)
     assert teacher_prompt[1]["content"] == student[0]["prompt"][1]["content"]
     assert student[0]["prompt"][1]["content"].count("REGLAS EXACTAS PERSONALIZADAS") == 1
 

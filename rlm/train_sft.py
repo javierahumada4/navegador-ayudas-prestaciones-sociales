@@ -19,19 +19,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import re
 
 from datasets import load_dataset
 
 from rlm.data import build_prompt, get_imv_rule_context
-
-
-def _remove_legacy_component_tags(trace: str) -> str:
-    """Remove obsolete IMV/CAPI XML fields from old teacher reasoning traces."""
-    clean = re.sub(r"<(imv|capi)>.*?</\1>", "", trace, flags=re.DOTALL)
-    if re.search(r"</?(?:imv|capi)>", clean):
-        raise ValueError("Unmatched legacy component tags in teacher trace")
-    return clean
 
 
 def select_verified_traces(dataset, max_per_problem: int):
@@ -74,7 +65,7 @@ def load_sft_dataset(path: str | Path, max_traces_per_problem: int = 2):
             ),
             "completion": [{
                 "role": "assistant",
-                "content": _remove_legacy_component_tags(ex["trace"]),
+                "content": ex["trace"],
             }],
         },
         remove_columns=dataset.column_names,

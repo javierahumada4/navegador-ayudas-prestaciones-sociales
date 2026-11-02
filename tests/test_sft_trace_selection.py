@@ -1,23 +1,5 @@
 """SFT keeps short verified traces without adding intermediate output fields."""
-from rlm.train_sft import _remove_legacy_component_tags, select_verified_traces
-
-
-def test_sft_strips_old_component_blocks():
-    trace = (
-        "<think><imv>999.00</imv> <capi>9.00</capi>"
-        "Aplico las reglas.</think><answer>57.50</answer>"
-    )
-    cleaned = _remove_legacy_component_tags(trace)
-    assert cleaned == "<think> Aplico las reglas.</think><answer>57.50</answer>"
-    assert _remove_legacy_component_tags(cleaned) == cleaned
-
-
-def test_sft_rejects_unpaired_old_component_blocks():
-    import pytest
-    with pytest.raises(ValueError, match="Unmatched"):
-        _remove_legacy_component_tags(
-            "<think><imv>99.00</think><answer>0.00</answer>"
-        )
+from rlm.train_sft import select_verified_traces
 
 
 def test_sft_keeps_shortest_distinct_traces_with_limit():

@@ -1,7 +1,6 @@
 # Fase 1 reproducible — IMV + CAPI
 
-Esta guía corresponde a la rama `fix/rlm-reproducible-pipeline`, derivada de
-`feat/ngrok`. Genera **desde cero** problemas, trazas verificadas y adaptadores,
+Esta guía describe cómo generar **desde cero** problemas, trazas verificadas y adaptadores,
 sin incorporar trazas ni checkpoints históricos. No publica datos personales.
 
 ## Requisitos
@@ -24,11 +23,8 @@ un filtro de aceptación**: se conservan las trazas inglesas cuando el formato
 y el importe final son correctos. El código ya no rechaza trazas por la
 heurística `non_spanish_reasoning`. Para generar trazas de razonamiento
 **debe utilizarse el thinking nativo** (`enable_thinking=True`).
-`--teacher-no-thinking` se rechaza antes de cargar la GPU porque la
-plantilla Qwen3 desactiva explícitamente la generación de `<think>` y
-`</think>`. En ejecuciones previas, añadir manualmente `<think>` al prompt
-provocó 48 generaciones sin `</think>` aunque todas terminaron en `<answer>`.
-No se insertan cierres artificiales ni se reclasifican esas trazas para SFT.
+El pipeline utiliza exclusivamente thinking nativo, sin una alternativa que lo desactive.
+No se añaden etiquetas de cierre artificiales a las trazas truncadas.
 El prompt genérico de GSM8K continúa en inglés, porque se evalúa por separado.
 
 **No mezcles checkpoints ni trazas de runs anteriores con este cambio de
@@ -168,12 +164,6 @@ fichero de reglas para 2026. También rechaza datos temporalmente imposibles:
 ninguna persona puede tener residencia continuada anterior a su nacimiento,
 ni constar conviviendo desde antes del nacimiento del integrante más joven.
 
-Para recuperar trazas de runs anteriores rechazadas solo por idioma,
-usa `python -m rlm.reverify_traces --train ... --input ... --output ...`.
-No se modifica el archivo original: la herramienta vuelve a verificar
-el formato y el importe de cada candidata y solo entonces cambia su
-estado. No es necesario volver a generar las salidas del profesor.
-
 La destilación informa `rejected_by_reason`, `hit_max_tokens`,
 `verified_unique_problems` y `verified_families`. El modo `--smoke` exige
 al menos **6 trazas de 4 problemas y 3 familias distintas**; un run normal,
@@ -291,19 +281,9 @@ resultados. Para desplegar `/reasoning`, configurar `ARCA_RLM_ADAPTER` con
 los servicios `smoke`, `train` y `check-gpu` sí requieren runtime NVIDIA.
 
 
-## Ejemplo local en WSL2 (GPU NVIDIA de 12 GB)
+## Adaptación a GPU locales
 
-Una vez comprobado `nvidia-smi` en Ubuntu/WSL2, ejecutar el ensayo con
-**un nuevo directorio**, sin mezclar las trazas y adaptadores anteriores:
-
-```bash
-VLLM_USE_FLASHINFER_SAMPLER=0 python3 -m rlm.pipeline --smoke --run-dir runs/phase1-smoke-v2 --teacher Qwen/Qwen3-1.7B --teacher-batch-size 1 --teacher-gpu-memory 0.75 --grpo-micro-batch-size 1 --eval-batch-size 1
-```
-
-`VLLM_USE_FLASHINFER_SAMPLER=0` evita el muestreador FlashInfer que
-requiere compilar kernels con `nvcc` en algunas configuraciones WSL2;
-no deshabilita CUDA ni FlashAttention. Si el profesor insiste en razonar
-en inglés o genera cadenas interminables, mantener el thinking nativo
-y revisar la longitud de las explicaciones y el presupuesto de generación,
-sin desactivar el modo de pensamiento.
-El cambio de prompt o modelo no debe evaluarse reusando LoRA históricos.
+Si el ensayo no cabe en memoria, ajusta `--teacher-batch-size`,
+`--teacher-gpu-memory`, `--grpo-micro-batch-size` y `--eval-batch-size`.
+Utiliza otro `--run-dir` al cambiar modelos o prompts y conserva el modo
+thinking nativo. Documenta las variables específicas de CUDA/vLLM que necesites.
