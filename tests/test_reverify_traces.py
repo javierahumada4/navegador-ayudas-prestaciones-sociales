@@ -80,10 +80,10 @@ def test_repair_no_thinking_recovers_oracle_correct_without_gpu(tmp_path):
             "thinking": thinking, "raw": raw,
         }
     _write(source, [
-        sample(0, "<think>\\nRazono.\\n<answer>35,50</answer>"),
-        sample(1, "<think>\\nRazono.\\n<answer>99.00</answer>"),
-        sample(2, "<think>\\nNo hay respuesta final"),
-        sample(3, "<think>\\nRazono.\\n<answer>35.50</answer>", thinking=True),
+        sample(0, "<think>\nRazono.\n<answer>35,50</answer>"),
+        sample(1, "<think>\nRazono.\n<answer>99.00</answer>"),
+        sample(2, "<think>\nNo hay respuesta final"),
+        sample(3, "<think>\nRazono.\n<answer>35.50</answer>", thinking=True),
     ])
     result = reverify_unclosed_no_thinking_rejections(train, source, output)
     assert result["promoted"] == 1

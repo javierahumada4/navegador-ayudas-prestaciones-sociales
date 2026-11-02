@@ -114,7 +114,7 @@ def reverify_unclosed_no_thinking_rejections(
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x", encoding="utf-8") as out:
         for row in rows:
-            out.write(json.dumps(row, ensure_ascii=False) + "\\n")
+            out.write(json.dumps(row, ensure_ascii=False) + "\n")
     return {
         "total": len(rows), "promoted": promoted,
         "repaired_but_incorrect": repaired_but_incorrect,

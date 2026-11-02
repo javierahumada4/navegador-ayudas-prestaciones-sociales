@@ -82,7 +82,7 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
     The reasoning is everything before the first ``</think>`` (the end of the
     teacher's thinking) with any stray tags removed; the answer comes from the
     ``<answer>`` blocks after it. The result is always exactly
-    ``<think>\\n{reasoning}\\n</think>\\n<answer>{amount}</answer>``, or ``None``.
+    ``<think>\n{reasoning}\n</think>\n<answer>{amount}</answer>``, or ``None``.
 
     Args:
         raw (str): Teacher completion as decoded.
@@ -97,7 +97,7 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
     repaired_prefill = False
     if "</think>" not in raw:
         # When Qwen3 native thinking is disabled, the pipeline itself has
-        # prefixed "<think>\\n". The teacher can produce a proper final
+        # prefixed "<think>\n". The teacher can produce a proper final
         # <answer> without writing </think>. Only this explicitly selected
         # mode permits inserting the missing boundary. Never repair truly
         # unfinished thinking with no final answer.
@@ -105,7 +105,7 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
             answer_pos = raw.find("<answer>")
             valid_suffix = (
                 answer_pos >= 0
-                and re.fullmatch(r"<answer>.*?</answer>\\s*", raw[answer_pos:], re.DOTALL)
+                and re.fullmatch(r"<answer>.*?</answer>\s*", raw[answer_pos:], re.DOTALL)
             )
             if (raw.startswith(NO_THINKING_PREFILL)
                     and raw.count("<think>") == 1
@@ -113,7 +113,7 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
                     and raw.count("</answer>") == 1
                     and valid_suffix
                     and raw[len(NO_THINKING_PREFILL):answer_pos].strip()):
-                raw = raw[:answer_pos].rstrip() + "\\n</think>\\n" + raw[answer_pos:]
+                raw = raw[:answer_pos].rstrip() + "\n</think>\n" + raw[answer_pos:]
                 repaired_prefill = True
         if "</think>" not in raw:
             return None, "unclosed_think"  # actual truncation / no final answer
