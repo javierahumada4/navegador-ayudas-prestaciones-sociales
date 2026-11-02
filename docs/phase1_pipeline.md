@@ -85,20 +85,59 @@ python -m rlm.pipeline \
   --student Qwen/Qwen3-0.6B
 ```
 
-De forma predeterminada genera 800 casos de entrenamiento, 200 de test
-y 100 OOD, reservados para la familia `capi_only`. Produce cuatro muestras
-del profesor por caso, filtra con el oracle, entrena LoRA SFT sobre las
-trazas válidas y luego GRPO **inicializado con el adaptador SFT**. Evalúa
-base/SFT/GRPO separadamente en test y OOD.
+De forma predeterminada genera 800 casos de entrenamiento y 200 de
+test, con cobertura casi uniforme de **10 familias** (incluida
+`boundary`, que sitúa renta, patrimonio, activos o residencia a un
+céntimo/día del umbral). Los casos se calculan con el mismo oracle
+determinista; el control de splits verifica etiquetas y ausencia de
+duplicados. No es una muestra representativa de la población española.
+
+Además, genera **cuatro suites OOD independientes** de 100 casos cada
+una: `ood` (CAPI sin IMV, familia ausente de train/test),
+`ood_threshold` (interacciones de dos condiciones próximas al límite),
+`ood_composition` (unidades con **4 adultos**, fuera del rango de
+train/test) y `ood_wording` (formulaciones alternativas de los
+enunciados; es un cambio léxico, no una población independiente).
+Se comprueban los duplicados *entre todas las suites* y se evalúan
+base/SFT/GRPO por separado. Un smoke genera 8 casos por suite.
+
+El profesor produce cuatro muestras por caso (dos en smoke), filtradas
+por importe contra el oracle. **SFT utiliza como máximo 2 trazas
+verificadas, diferentes y preferentemente breves, por problema**
+(`--sft-max-traces-per-problem`), sin cambiar el reporte bruto de
+destilación. Antes de SFT se anteponen al pensamiento del profesor
+las partidas verificadas por el oracle:
+`<imv>importe_con_dos_decimales</imv>` y
+`<capi>importe_con_dos_decimales</capi>`.
+El alumno también recibe la instrucción de generar esos dos campos
+dentro de `<think>`. Si una partida no corresponde, representa cero.
+
+En GRPO se mantienen las recompensas anteriores de formato, importe
+final y formato decimal, y se añaden
+**`imv_component_reward` y `capi_component_reward` (peso 1 cada una)**.
+Cada recompensa compara una etiqueta **única y estricta** con el
+importe del oracle calculado a partir de `params`; no otorga puntos
+por palabras clave ni por números sueltos. Se admiten las etiquetas
+de componente en un `<think>` todavía sin cerrar, para dar señal
+parcial cuando se agote el límite de tokens. Esto no garantiza que
+haya variación entre generaciones; el monitor de señal cero sigue
+activo. GRPO empieza desde el adaptador SFT validado.
+
+**Los nuevos formatos de trazas, recompensas y splits requieren un
+`--run-dir` nuevo** y no deben combinarse con adaptadores anteriores.
 
 Los artefactos se guardan en el directorio indicado con `--run-dir`:
 
-- `data/train.jsonl`, `data/test.jsonl` y `data/test_ood.jsonl`;
+- `data/train.jsonl`, `data/test.jsonl`, `data/test_ood.jsonl`,
+  `data/test_ood_threshold.jsonl`, `data/test_ood_composition.jsonl`
+  y `data/test_ood_wording.jsonl`;
 - `data/sft_traces.jsonl` con muestras aceptadas y rechazadas;
 - `logs/distillation.jsonl` y `reports/distillation_validation.json`
   con la tasa de aceptación por familia;
 - `weights/sft_lora/` y `weights/grpo_lora/`;
-- `reports/eval_test.json` y `reports/eval_ood.json`;
+- `reports/eval_test.json`, `reports/eval_ood.json` y los informes
+  `eval_ood_threshold.json`, `eval_ood_composition.json`,
+  `eval_ood_wording.json`;
 - `reports/grpo_curves.png`;
 - `manifest.json` con configuración, comandos, resultados y fechas.
 
