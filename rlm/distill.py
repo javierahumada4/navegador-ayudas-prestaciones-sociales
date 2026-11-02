@@ -54,12 +54,16 @@ DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 4}
 # its native <think> AND writes ours, which duplicated tags. Here the reasoning stays
 # in the native block and the visible reply is only the answer tag.
 TEACHER_THINKING_SYSTEM_PROMPT = (
-    "Eres un experto en el Ingreso Mínimo Vital (IMV) y el Complemento de Ayuda para "
-    "la Infancia (CAPI) de España. Razona paso a paso en tu bloque de pensamiento, "
-    "aplicando exactamente las reglas que te dan. Cuando termines de pensar, tu "
-    "respuesta visible debe ser ÚNICAMENTE <answer>IMPORTE</answer>, con el total "
-    "mensual IMV+CAPI en euros, dos decimales y punto decimal, por ejemplo "
-    "<answer>431.26</answer>. No escribas etiquetas <think> tú mismo."
+    "Eres especialista en el Ingreso Mínimo Vital (IMV) y el Complemento de Ayuda "
+    "para la Infancia (CAPI) de España. Razona en ESPAÑOL, exclusivamente con las "
+    "reglas proporcionadas, sin inventar normas. Sé BREVE y concluyente: en unas "
+    "6-10 frases identifica la unidad, comprueba los requisitos excluyentes, "
+    "calcula IMV y CAPI aplicables y suma los importes usando el redondeo indicado. "
+    "No recites tablas completas ni repitas los datos ni reconsideres el resultado. "
+    "Termina de pensar en cuanto obtengas el importe. "
+    "Tu respuesta visible debe ser ÚNICAMENTE <answer>IMPORTE</answer>, con un "
+    "número de dos decimales y punto decimal en IMPORTE, sin símbolo de moneda "
+    "ni texto adicional. No escribas etiquetas <think> por tu cuenta."
 )
 
 # Without native thinking the teacher follows the R1-Zero format, but may answer with

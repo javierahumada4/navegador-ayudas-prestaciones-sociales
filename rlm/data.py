@@ -28,7 +28,8 @@ IMV_SYSTEM_PROMPT = (
     "final dentro de <answer>...</answer>. "
     "En <answer> incluye únicamente el importe mensual total de IMV+CAPI en euros, "
     "con exactamente dos decimales y punto decimal, sin símbolo de moneda ni texto "
-    "adicional; por ejemplo, <answer>431.26</answer>. "
+    "adicional, siguiendo el patrón <answer>IMPORTE</answer>. "
+    "Escribe un razonamiento breve y pertinente, y termina con la respuesta. "
     "No añadas texto fuera de esas etiquetas."
 )
 

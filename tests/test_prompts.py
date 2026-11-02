@@ -24,7 +24,8 @@ def test_imv_uses_spanish_system_instructions_and_machine_readable_answer():
         assert term in system
     for tag in ("<think>", "</think>", "<answer>", "</answer>"):
         assert tag in system
-    assert "<answer>431.26</answer>" in system
+    assert "<answer>IMPORTE</answer>" in system
+    assert "<answer>431.26</answer>" not in system
     assert "The domain is Spain" not in system
 
 
