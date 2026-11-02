@@ -195,10 +195,13 @@ def train(args: argparse.Namespace) -> None:
                 )
 
     trainer.add_callback(AbortOnZeroSignal(args.zero_signal_patience))
-    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    try:
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    finally:
+        # Retain diagnostic curves even when zero-signal guard aborts the run.
+        print(f"training log -> {save_log_history(trainer, args.output)}", flush=True)
     trainer.save_model(args.output)
     print(f"final adapter saved to {args.output}")
-    print(f"training log -> {save_log_history(trainer, args.output)}")
 
 
 def main() -> None:
