@@ -71,3 +71,32 @@ def test_thinking_length_counts_tokens_in_think_block():
 def test_imv_accuracy_rejects_multiple_amounts_inside_answer():
     raw = "<think>Calculo.</think><answer>500 o quizas 431.26</answer>"
     assert imv_accuracy_reward([None], [raw], answer=["431.26"]) == [0.0]
+
+
+def test_strict_imv_format_rejects_nested_or_duplicate_answers():
+    from rlm.rewards import has_valid_imv_format, imv_format_reward, imv_accuracy_reward
+
+    valid = "<think>Calculo con los datos.</think><answer>0.00</answer>"
+    assert has_valid_imv_format(valid)
+    bad = [
+        "<think><answer>0.00</answer></think><answer>0.00</answer>",
+        "<think>R.</think><answer>0.00</answer><answer>0.00</answer>",
+        "<think>R.</think><answer>0</answer>",
+        "<think>R.</think><answer>0,00</answer>",
+        "<think><imv>0.00</imv> R.</think><answer>0.00</answer>",
+        "<think>R.</think><capi>0.00</capi><answer>0.00</answer>",
+        "<think>R.</think><answer>0.00 €</answer>",
+        "<think>R.</think><answer>00.00</answer>",
+        "<think>R.</think><answer>0.000</answer>",
+        "<think>R.</think><answer>0.00</answer> extra",
+    ]
+    assert imv_format_reward([], [valid]) == [1.0]
+    assert imv_format_reward([], bad) == [0.0] * len(bad)
+    assert imv_accuracy_reward([], bad[:2], answer=["0.00", "0.00"]) == [0.0, 0.0]
+
+
+def test_generic_format_still_supports_gsm8k_integer():
+    assert format_reward([], ["<think>2+2</think><answer>4</answer>"]) == [1.0]
+    assert format_reward([], [
+        "<think><answer>4</answer></think><answer>4</answer>"
+    ]) == [0.0]

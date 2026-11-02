@@ -12,7 +12,7 @@ import argparse
 import json
 from pathlib import Path
 
-from rlm.rewards import has_valid_format
+from rlm.rewards import has_valid_imv_format
 from rlm.validate_data import read_jsonl
 from rlm.verifier import IMVAmountVerifier
 
@@ -37,7 +37,7 @@ def reverify_language_rejections(train_path: str | Path, input_path: str | Path,
             raise ValueError(f"Trace {index}: unknown training question or target mismatch")
         if row.get("format_status") == "non_spanish_reasoning" and row.get("verified") is False:
             trace = row.get("trace")
-            if (isinstance(trace, str) and has_valid_format(trace)
+            if (isinstance(trace, str) and has_valid_imv_format(trace)
                     and verifier.verify(trace, expected[question]).is_correct):
                 row["verified"] = True
                 row["format_status"] = "reverified_no_language_filter"

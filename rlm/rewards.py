@@ -14,11 +14,36 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 CENT = Decimal("0.01")
 
 FORMAT_PATTERN = re.compile(
-    r"^\s*<think>(?P<think>(?:(?!</?think>).)*)</think>"
+    r"^\s*<think>(?P<think>(?:(?!</?(?:think|answer)>).)*)</think>"
     r"\s*<answer>(?P<answer>(?:(?!</?answer>).)*)</answer>\s*$",
     re.DOTALL,
 )
 ANSWER_PATTERN = re.compile(r"<answer>(?P<answer>.*?)</answer>", re.DOTALL)
+STRICT_IMV_AMOUNT = re.compile(r"(?:0|[1-9][0-9]*)\.[0-9]{2}")
+LEGACY_COMPONENT_TAG = re.compile(r"</?(?:imv|capi)>", re.IGNORECASE)
+
+
+def has_valid_imv_format(text: str) -> bool:
+    """One thinking block and one final two-decimal answer, without nested tags."""
+    match = FORMAT_PATTERN.fullmatch(text)
+    return bool(
+        match
+        and STRICT_IMV_AMOUNT.fullmatch(match.group("answer"))
+        and not LEGACY_COMPONENT_TAG.search(match.group("think"))
+    )
+
+
+def extract_unique_final_answer(text: str) -> str | None:
+    """Single final answer only; no reward for duplicated/nested answer tags."""
+    matches = list(ANSWER_PATTERN.finditer(text))
+    if len(matches) != 1 or text.count("<answer>") != 1 or text.count("</answer>") != 1:
+        return None
+    match = matches[0]
+    # A final answer must not be inside an unclosed thinking section.
+    thought_close = text.find("</think>")
+    if thought_close != -1 and match.start() < thought_close:
+        return None
+    return match.group("answer").strip()
 BOXED_PATTERN = re.compile(r"\\boxed\{(?P<answer>[^{}]*)\}")
 # Permissive token; separator semantics are resolved below.
 NUMBER_PATTERN = re.compile(r"-?\d(?:[\d.,\s]*\d)?")
@@ -204,7 +229,13 @@ def imv_numbers_match(predicted: str | None, expected: str | None) -> bool:
 
 
 def format_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
+    """Generic R1/GSM8K format reward: forbids nested answer/thinking blocks."""
     return [1.0 if has_valid_format(_completion_text(c)) else 0.0 for c in completions]
+
+
+def imv_format_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
+    """Strict IMV contract: one thinking block, one final two-decimal answer."""
+    return [1.0 if has_valid_imv_format(_completion_text(c)) else 0.0 for c in completions]
 
 
 def accuracy_reward(
@@ -224,7 +255,7 @@ def imv_accuracy_reward(
     """IMV accuracy reward: same HALF_UP-to-cents semantics as the oracle."""
     rewards = []
     for completion, expected in zip(completions, answer, strict=True):
-        predicted = extract_answer(_completion_text(completion))
+        predicted = extract_unique_final_answer(_completion_text(completion))
         rewards.append(1.0 if imv_numbers_match(predicted, expected) else 0.0)
     return rewards
 

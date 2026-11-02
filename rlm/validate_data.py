@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from rlm.imv_engine import expected_answer
-from rlm.rewards import has_valid_format
+from rlm.rewards import has_valid_imv_format
 from rlm.verifier import IMVAmountVerifier
 
 
@@ -135,7 +135,7 @@ def validate_traces(path, train, expected_samples=None):
         counts[bucket] += 1
         if row.get("verified") is True:
             trace = row.get("trace")
-            if not isinstance(trace, str) or not has_valid_format(trace):
+            if not isinstance(trace, str) or not has_valid_imv_format(trace):
                 raise ValueError(f"{place}: malformed verified trace")
             if not verifier.verify(trace, answers[question]).is_correct:
                 raise ValueError(f"{place}: verified trace disagrees with oracle")
