@@ -57,9 +57,35 @@ def save_log_history(trainer, output_dir: str) -> Path:
     return path
 
 
+class ZeroSignalMonitor:
+    """Detect consecutive GRPO steps for which all groups have zero reward variance."""
+
+    def __init__(self, patience: int = 5):
+        self.patience = patience
+        self.streak = 0
+        self.last_step: int | None = None
+
+    def observe(self, step: int, logs: dict) -> bool:
+        """Return True if an unproductive run should stop.
+
+        TRL may emit other logs for the same step or prefix keys with train/.
+        Those must not spuriously advance the streak.
+        """
+        match = next(
+            (value for key, value in logs.items()
+             if key.split("/")[-1] == "frac_reward_zero_std"), None
+        )
+        if match is None or self.last_step == step:
+            return False
+        self.last_step = step
+        self.streak = self.streak + 1 if float(match) >= 0.9999 else 0
+        return self.patience > 0 and self.streak >= self.patience
+
+
 def train(args: argparse.Namespace) -> None:
     import torch
     from peft import LoraConfig
+    from transformers import TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
     is_gsm8k = args.data == "gsm8k"
@@ -145,6 +171,30 @@ def train(args: argparse.Namespace) -> None:
         train_dataset=dataset,
         peft_config=peft_config,
     )
+
+    class AbortOnZeroSignal(TrainerCallback):
+        def __init__(self, patience):
+            self.monitor = ZeroSignalMonitor(patience)
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs is None:
+                return
+            abort = self.monitor.observe(state.global_step, logs)
+            if self.monitor.streak == 1:
+                print(
+                    "WARNING: GRPO group rewards have zero variance; "
+                    "the policy cannot learn from this step.",
+                    flush=True,
+                )
+            if abort:
+                raise RuntimeError(
+                    f"GRPO aborted: {self.monitor.streak} consecutive steps with "
+                    "100% zero-variance reward groups. Reduce reasoning length, "
+                    "improve SFT coverage, and inspect format/accuracy rewards "
+                    "before another long GPU run."
+                )
+
+    trainer.add_callback(AbortOnZeroSignal(args.zero_signal_patience))
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(args.output)
     print(f"final adapter saved to {args.output}")
@@ -168,7 +218,11 @@ def main() -> None:
         default=1,
         help="completions per loss forward; lower it if the loss step runs out of memory",
     )
-    parser.add_argument("--max-completion-length", type=int, default=768)
+    parser.add_argument("--max-completion-length", type=int, default=1024)
+    parser.add_argument(
+        "--zero-signal-patience", type=int, default=5,
+        help="abort after this many GRPO logs with all groups reward-identical; 0 disables",
+    )
     parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--beta", type=float, default=0.0)
@@ -186,7 +240,10 @@ def main() -> None:
     parser.add_argument("--save-steps", type=int, default=50)
     parser.add_argument("--resume-from-checkpoint", default=None)
     parser.add_argument("--seed", type=int, default=0)
-    train(parser.parse_args())
+    args = parser.parse_args()
+    if args.zero_signal_patience < 0:
+        parser.error("--zero-signal-patience must be nonnegative")
+    train(args)
 
 
 if __name__ == "__main__":
