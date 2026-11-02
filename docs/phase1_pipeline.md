@@ -28,6 +28,31 @@ de GSM8K continúa en inglés, porque se evalúa por separado.
 prompt.** Para comparar base/SFT/GRPO, genera un `--run-dir` nuevo y mantén
 el mismo prompt durante toda la ejecución.
 
+### Misma hoja de reglas en profesor y alumno
+
+Por defecto, el **profesor** y el **alumno** reciben el mismo texto
+`rule_context` generado por `build_rule_context(load_ruleset())`, delante
+del enunciado del caso. El alumno lo usa en **SFT, GRPO, evaluación y
+`/reasoning`**. Las trazas nuevas almacenan una copia exacta de esa hoja de
+reglas, que SFT reutiliza; para trazas antiguas sin `rule_context`, se
+reconstruye desde las reglas actuales del repositorio. La destilación
+sigue añadiendo las reglas **una sola vez**, antes de generar la respuesta
+del profesor. El dominio GSM8K no recibe las reglas IMV.
+
+Se ha eliminado el marcador literal `IMPORTE` de ambos prompts, pues
+los modelos podían reproducirlo como respuesta. Ahora se indica que el
+número debe escribirse entre las etiquetas de apertura y cierre
+`<answer>` y `</answer>`, sin ejemplo numérico.
+
+Como los prompts del alumno son ahora considerablemente más largos,
+`--sft-max-length` pasa de 4096 a **8192** tokens. Esto aumenta la memoria
+necesaria: en una MIG de 16 GiB puede ser necesario reducir el tamaño de
+lote o revisar el presupuesto antes de repetir el smoke. Reducir
+`--sft-max-length` indiscriminadamente puede truncar la respuesta
+supervisada. Este cambio **invalida la comparación directa con los LoRA
+anteriores**: empieza un `--run-dir` nuevo para las evaluaciones comparables.
+Que los modelos vean las reglas no garantiza por sí solo una mejora en pass@1.
+
 Los extras `distill` (vLLM y su versión de torch) y `train`
 (TRL/Transformers/PEFT) tienen dependencias incompatibles. El lanzador prepara
 dos entornos aislados bajo el run, `.venv-distill` y `.venv-train`, mediante
