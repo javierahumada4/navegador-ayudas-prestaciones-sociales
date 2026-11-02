@@ -44,3 +44,21 @@ def test_fingerprint_ignores_key_order():
     params = GEN.generate(1, "train", seed=13)[0].params
     assert GEN.key(params) == GEN.key(dict(reversed(list(params.items()))))
     assert json.loads(GEN.key(params)) == params
+
+
+def test_people_and_household_dates_are_chronologically_possible():
+    from datetime import date
+
+    for split, seed in (("train", 9), ("test", 15), ("ood", 33)):
+        for problem in GEN.generate(200, split, seed=seed):
+            params = problem.params
+            app = date.fromisoformat(params["application_date"])
+            births = [date.fromisoformat(p["date_of_birth"]) for p in params["persons"]]
+            together = date.fromisoformat(params["domicile"]["same_domicile_since"])
+            assert max(births) <= together <= app
+            for person in params["persons"]:
+                born = date.fromisoformat(person["date_of_birth"])
+                residence = date.fromisoformat(
+                    person["continuous_legal_effective_residence_since"]
+                )
+                assert born <= residence <= app

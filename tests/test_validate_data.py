@@ -63,3 +63,26 @@ def test_verified_teacher_trace_uses_training_label(tmp_path):
     report = validate_traces(path, train)
     assert report["verified"] == 1
     assert report["acceptance_rate"] == 1.0
+
+
+def test_residence_before_birth_fails_validation(tmp_path):
+    train, test, ood = _splits(tmp_path)
+    rows = [json.loads(line) for line in train.read_text(encoding="utf-8").splitlines()]
+    youngest = min(rows[0]["params"]["persons"], key=lambda p: p["date_of_birth"])
+    youngest["continuous_legal_effective_residence_since"] = "1900-01-01"
+    train.write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="invalid chronology"):
+        validate_splits(train, test, ood)
+
+
+def test_household_cannot_predate_youngest_member(tmp_path):
+    train, test, ood = _splits(tmp_path)
+    rows = [json.loads(line) for line in train.read_text(encoding="utf-8").splitlines()]
+    rows[0]["params"]["domicile"]["same_domicile_since"] = "1900-01-01"
+    train.write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="invalid chronology"):
+        validate_splits(train, test, ood)

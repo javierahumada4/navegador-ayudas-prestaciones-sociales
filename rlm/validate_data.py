@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 from rlm.imv_engine import expected_answer
@@ -31,6 +32,35 @@ def read_jsonl(path):
     return records
 
 
+def validate_case_dates(params, place="case"):
+    """Reject chronologically impossible synthetic case facts before oracle checks."""
+    try:
+        application = date.fromisoformat(params["application_date"])
+        residents = params["persons"]
+        if not residents:
+            raise ValueError("empty household")
+        births = []
+        for person in residents:
+            born = date.fromisoformat(person["date_of_birth"])
+            residence = date.fromisoformat(
+                person["continuous_legal_effective_residence_since"]
+            )
+            if not born <= residence <= application:
+                raise ValueError(
+                    f"{person['id']}: residence start {residence} outside "
+                    f"birth {born} .. application {application}"
+                )
+            births.append(born)
+        together = date.fromisoformat(params["domicile"]["same_domicile_since"])
+        if not max(births) <= together <= application:
+            raise ValueError(
+                f"household co-residence {together} outside "
+                f"youngest birth {max(births)} .. application {application}"
+            )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"{place}: invalid chronology: {exc}") from exc
+
+
 def validate_splits(train, test, ood):
     seen_params, seen_questions, summary = {}, {}, {}
     for split, path in {"train": train, "test": test, "ood": ood}.items():
@@ -44,6 +74,7 @@ def validate_splits(train, test, ood):
                 raise ValueError(f"{place}: missing params")
             if row.get("split") != split:
                 raise ValueError(f"{place}: split mismatch")
+            validate_case_dates(row["params"], place)
             branch = row.get("branches")
             if not isinstance(branch, dict) or not isinstance(branch.get("family"), str):
                 raise ValueError(f"{place}: missing family")

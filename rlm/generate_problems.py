@@ -283,13 +283,16 @@ def _person(
     disability: int = 0,
     residence_since: str = "2018-01-01",
 ) -> dict[str, Any]:
+    born = _date_for_age(age, rng)
+    # A person's continuous residency cannot start before their birth.
+    residence_start = max(date.fromisoformat(born), date.fromisoformat(residence_since))
     return {
         "id": pid,
-        "date_of_birth": _date_for_age(age, rng),
+        "date_of_birth": born,
         "emancipated": False,
         "legal_residence_in_spain": True,
         "effective_residence_in_spain": True,
-        "continuous_legal_effective_residence_since": residence_since,
+        "continuous_legal_effective_residence_since": residence_start.isoformat(),
         "gender_violence_victim": False,
         "trafficking_victim": False,
         "homeless": False,
@@ -372,7 +375,11 @@ class IMVProblemGenerator(ProblemGenerator):
             "persons": persons,
             "domicile": {
                 "co_resident_ids": [p["id"] for p in persons],
-                "same_domicile_since": "2023-01-01",
+                # All listed residents cannot have lived together before the
+                # youngest was born; preserve the original >=6 month requirement.
+                "same_domicile_since": max(
+                    "2023-01-01", *(p["date_of_birth"] for p in persons)
+                ),
                 "caregiver_family_only": True,
             },
             "relationships": relationships,
