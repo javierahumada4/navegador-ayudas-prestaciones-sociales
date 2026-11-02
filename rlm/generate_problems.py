@@ -52,6 +52,14 @@ OOD_FAMILIES = {
 }
 
 
+def case_fingerprint(params: dict[str, Any]) -> str:
+    """Exclude private sampling metadata, which is invisible to the student."""
+    return json.dumps(
+        {key: value for key, value in params.items() if not key.startswith("_")},
+        sort_keys=True, ensure_ascii=False,
+    )
+
+
 def balanced_family_schedule(n: int, families: tuple[str, ...],
                              rng: random.Random) -> list[str]:
     """Spread families evenly, shuffling their order within each cycle."""
@@ -260,7 +268,7 @@ class ProblemGenerator(ABC):
         ...
 
     def key(self, params: dict[str, Any]) -> str:
-        return json.dumps(params, sort_keys=True, ensure_ascii=False)
+        return case_fingerprint(params)
 
     def generate(self, n: int, split: str, seed: int = 0) -> list[Problem]:
         rng = random.Random(f"{seed}-{split}")

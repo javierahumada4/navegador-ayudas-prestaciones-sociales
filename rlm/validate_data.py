@@ -63,7 +63,7 @@ def validate_case_dates(params, place="case"):
 
 
 def validate_splits(train, test, ood, extra_ood=None):
-    from rlm.generate_problems import OOD_FAMILIES
+    from rlm.generate_problems import OOD_FAMILIES, case_fingerprint
 
     seen_params, seen_questions, summary = {}, {}, {}
     paths = {"train": train, "test": test, "ood": ood}
@@ -95,7 +95,7 @@ def validate_splits(train, test, ood, extra_ood=None):
             label = expected_answer(row["params"])
             if row.get("answer") != label:
                 raise ValueError(f"{place}: stale oracle label {row.get('answer')!r} != {label!r}")
-            fingerprint = json.dumps(row["params"], sort_keys=True, ensure_ascii=False)
+            fingerprint = case_fingerprint(row["params"])
             if fingerprint in seen_params:
                 raise ValueError(f"{place}: duplicate parameters with {seen_params[fingerprint]}")
             seen_params[fingerprint] = place

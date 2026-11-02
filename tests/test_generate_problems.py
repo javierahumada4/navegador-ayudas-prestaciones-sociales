@@ -43,7 +43,9 @@ def test_templates_and_no_label_leak():
 def test_fingerprint_ignores_key_order():
     params = GEN.generate(1, "train", seed=13)[0].params
     assert GEN.key(params) == GEN.key(dict(reversed(list(params.items()))))
-    assert json.loads(GEN.key(params)) == params
+    assert json.loads(GEN.key(params)) == {
+        k: v for k, v in params.items() if not k.startswith("_")
+    }
 
 
 def test_people_and_household_dates_are_chronologically_possible():
@@ -62,3 +64,14 @@ def test_people_and_household_dates_are_chronologically_possible():
                     person["continuous_legal_effective_residence_since"]
                 )
                 assert born <= residence <= app
+
+
+def test_case_fingerprint_ignores_sampling_metadata():
+    from rlm.generate_problems import case_fingerprint
+
+    case = GEN.generate(1, "train", seed=22)[0].params
+    altered = dict(case)
+    altered["_family"] = "capi_only"
+    altered["_boundary_type"] = "imv_minimum"
+    altered["_boundary_side"] = 1
+    assert case_fingerprint(case) == case_fingerprint(altered)
