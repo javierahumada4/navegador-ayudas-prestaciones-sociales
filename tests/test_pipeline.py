@@ -86,10 +86,9 @@ def test_full_dataset_quality_gate_is_stronger():
     assert args.eval_max_new_tokens == 1536
 
 
-def test_optional_teacher_non_native_thinking_mode():
-    plan = build_plan(parse_args(["--smoke", "--teacher-no-thinking"]))
-    command = plan[1].steps[0].command
-    assert "--no-thinking" in command
+def test_non_native_thinking_is_rejected_before_spending_gpu():
+    with pytest.raises(SystemExit, match="--teacher-no-thinking disables native"):
+        parse_args(["--smoke", "--teacher-no-thinking"])
     assert "--no-thinking" not in build_plan(parse_args(["--smoke"]))[1].steps[0].command
 
 

@@ -68,20 +68,10 @@ def test_answer_tags_inside_reasoning_are_removed():
     assert trace.count("<answer>") == 1 and has_valid_format(trace)
 
 
-def test_no_thinking_prefill_recovers_answer_without_closing_thought():
-    raw = "<think>\nRazonamiento verificable.\n<answer>474,01</answer>"
-    assert _structure_trace(raw) == (None, "unclosed_think")
-    trace, status = _structure_trace(raw, allow_prefilled_think=True)
-    assert status == "repaired"
-    assert trace == CANONICAL.replace("Razonamiento.", "Razonamiento verificable.")
-
-
-def test_no_thinking_mode_does_not_repair_missing_or_ambiguous_answer():
-    incomplete = "<think>\nTodavía razono sin finalizar"
-    assert _structure_trace(incomplete, allow_prefilled_think=True) == (
-        None, "unclosed_think"
-    )
-    ambiguous = "<think>\nRazono. <answer>10.00</answer> <answer>20.00</answer>"
-    assert _structure_trace(ambiguous, allow_prefilled_think=True) == (
-        None, "unclosed_think"
-    )
+def test_distillation_rejects_non_native_thinking_before_loading_gpu():
+    from rlm.distill import generate_traces
+    with pytest.raises(ValueError, match="disables native"):
+        generate_traces(
+            [], teacher="Qwen/Qwen3-4B", samples=1, max_new_tokens=128,
+            verifier=None, thinking=False, backend="hf",
+        )

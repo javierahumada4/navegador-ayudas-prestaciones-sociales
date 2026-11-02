@@ -85,6 +85,11 @@ def parse_args(argv=None):
     parser.add_argument("--eval-batch-size", type=int, default=2)
     parser.add_argument("--eval-max-new-tokens", type=int, default=1536)
     args = parser.parse_args(argv)
+    if args.teacher_no_thinking:
+        parser.error(
+            "--teacher-no-thinking disables native Qwen3 reasoning and must not "
+            "be used to distill <think> traces. Omit this flag."
+        )
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
     if args.resume and args.force:

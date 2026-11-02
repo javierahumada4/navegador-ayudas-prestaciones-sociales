@@ -22,10 +22,14 @@ español y de forma concisa, aunque **no se puede garantizar el idioma del
 pensamiento nativo de Qwen3 solo mediante instrucciones**. **El idioma no es
 un filtro de aceptación**: se conservan las trazas inglesas cuando el formato
 y el importe final son correctos. El código ya no rechaza trazas por la
-heurística `non_spanish_reasoning`. Para contrastar
-una variante que desactiva ese pensamiento nativo y prefija `<think>`,
-se puede usar `--teacher-no-thinking` en un run independiente. El prompt genérico
-de GSM8K continúa en inglés, porque se evalúa por separado.
+heurística `non_spanish_reasoning`. Para generar trazas de razonamiento
+**debe utilizarse el thinking nativo** (`enable_thinking=True`).
+`--teacher-no-thinking` se rechaza antes de cargar la GPU porque la
+plantilla Qwen3 desactiva explícitamente la generación de `<think>` y
+`</think>`. En ejecuciones previas, añadir manualmente `<think>` al prompt
+provocó 48 generaciones sin `</think>` aunque todas terminaron en `<answer>`.
+No se insertan cierres artificiales ni se reclasifican esas trazas para SFT.
+El prompt genérico de GSM8K continúa en inglés, porque se evalúa por separado.
 
 **No mezcles checkpoints ni trazas de runs anteriores con este cambio de
 prompt.** Para comparar base/SFT/GRPO, genera un `--run-dir` nuevo y mantén
@@ -299,6 +303,7 @@ VLLM_USE_FLASHINFER_SAMPLER=0 python3 -m rlm.pipeline --smoke --run-dir runs/pha
 `VLLM_USE_FLASHINFER_SAMPLER=0` evita el muestreador FlashInfer que
 requiere compilar kernels con `nvcc` en algunas configuraciones WSL2;
 no deshabilita CUDA ni FlashAttention. Si el profesor insiste en razonar
-en inglés o genera cadenas interminables, probar `--teacher-no-thinking`
-en **otro run-dir** y contrastar aceptación y cobertura antes de SFT.
+en inglés o genera cadenas interminables, mantener el thinking nativo
+y revisar la longitud de las explicaciones y el presupuesto de generación,
+sin desactivar el modo de pensamiento.
 El cambio de prompt o modelo no debe evaluarse reusando LoRA históricos.

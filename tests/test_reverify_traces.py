@@ -64,36 +64,3 @@ def test_reverify_refuses_in_place_overwrite(tmp_path):
     }])
     with pytest.raises(ValueError, match="different"):
         reverify_language_rejections(train, source, source)
-
-
-def test_repair_no_thinking_recovers_oracle_correct_without_gpu(tmp_path):
-    from rlm.reverify_traces import reverify_unclosed_no_thinking_rejections
-
-    train, source, output = (
-        tmp_path / name for name in ("train.jsonl", "traces.jsonl", "repaired.jsonl")
-    )
-    _write(train, [{"question": "Caso A", "answer": "35.50"}])
-    def sample(index, raw, *, thinking=False):
-        return {
-            "question": "Caso A", "answer": "35.50", "sample_idx": index,
-            "format_status": "unclosed_think", "trace": None, "verified": False,
-            "thinking": thinking, "raw": raw,
-        }
-    _write(source, [
-        sample(0, "<think>\nRazono.\n<answer>35,50</answer>"),
-        sample(1, "<think>\nRazono.\n<answer>99.00</answer>"),
-        sample(2, "<think>\nNo hay respuesta final"),
-        sample(3, "<think>\nRazono.\n<answer>35.50</answer>", thinking=True),
-    ])
-    result = reverify_unclosed_no_thinking_rejections(train, source, output)
-    assert result["promoted"] == 1
-    assert result["repaired_but_incorrect"] == 1
-    assert result["unchanged"] == 2
-    rows = [json.loads(s) for s in output.read_text().splitlines()]
-    assert rows[0]["verified"] is True
-    assert rows[0]["trace"].endswith("<answer>35.50</answer>")
-    assert rows[1]["verified"] is False
-    assert rows[1]["format_status"] == "incorrect_amount"
-    assert rows[2]["trace"] is None
-    assert rows[3]["verified"] is False
-    assert [json.loads(s) for s in source.read_text().splitlines()][0]["trace"] is None

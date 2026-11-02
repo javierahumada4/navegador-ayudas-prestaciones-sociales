@@ -75,14 +75,14 @@ _ANSWER_TAG = re.compile(r"</?answer>")
 _ANSWER_BLOCK = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
 
 
-def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[str | None, str]:
+def _structure_trace(raw: str) -> tuple[str | None, str]:
     """
     Rebuild a teacher completion into the one canonical training format.
 
     The reasoning is everything before the first ``</think>`` (the end of the
     teacher's thinking) with any stray tags removed; the answer comes from the
     ``<answer>`` blocks after it. The result is always exactly
-    ``<think>\n{reasoning}\n</think>\n<answer>{amount}</answer>``, or ``None``.
+    ``<think>\\n{reasoning}\\n</think>\\n<answer>{amount}</answer>``, or ``None``.
 
     Args:
         raw (str): Teacher completion as decoded.
@@ -94,29 +94,8 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
                             was rejected: ``unclosed_think``, ``empty_reasoning``,
                             ``no_answer``, ``ambiguous_answer``.
     """
-    repaired_prefill = False
     if "</think>" not in raw:
-        # When Qwen3 native thinking is disabled, the pipeline itself has
-        # prefixed "<think>\n". The teacher can produce a proper final
-        # <answer> without writing </think>. Only this explicitly selected
-        # mode permits inserting the missing boundary. Never repair truly
-        # unfinished thinking with no final answer.
-        if allow_prefilled_think:
-            answer_pos = raw.find("<answer>")
-            valid_suffix = (
-                answer_pos >= 0
-                and re.fullmatch(r"<answer>.*?</answer>\s*", raw[answer_pos:], re.DOTALL)
-            )
-            if (raw.startswith(NO_THINKING_PREFILL)
-                    and raw.count("<think>") == 1
-                    and raw.count("<answer>") == 1
-                    and raw.count("</answer>") == 1
-                    and valid_suffix
-                    and raw[len(NO_THINKING_PREFILL):answer_pos].strip()):
-                raw = raw[:answer_pos].rstrip() + "\n</think>\n" + raw[answer_pos:]
-                repaired_prefill = True
-        if "</think>" not in raw:
-            return None, "unclosed_think"  # actual truncation / no final answer
+        return None, "unclosed_think"  # truncated, or never reasoned
     head, tail = raw.split("</think>", 1)
     reasoning = _ANSWER_TAG.sub("", _THINK_TAG.sub("", head)).strip()
     if not reasoning:
@@ -150,7 +129,7 @@ def _structure_trace(raw: str, *, allow_prefilled_think: bool = False) -> tuple[
         and "</think>" not in tail
         and not leftover
     )
-    return trace, "clean" if clean and not repaired_prefill else "repaired"
+    return trace, "clean" if clean else "repaired"
 
 def _load_model(teacher: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     """
@@ -431,6 +410,11 @@ def generate_traces(
         rows (list[dicts]): New dataset made of formated json traces.
     """
 
+    if not thinking:
+        raise ValueError(
+            "Qwen3 --no-thinking disables native <think>...</think> generation. "
+            "Distillation needs genuine reasoning traces; use enable_thinking=True."
+        )
     if batch_size is None:
         batch_size = DEFAULT_BATCH_SIZE[backend]
 
@@ -502,9 +486,7 @@ def generate_traces(
                 completion = completions[b * samples + j]
                 # The prefill is part of the prompt, not of the completion.
                 raw = ("" if thinking else NO_THINKING_PREFILL) + completion["text"]
-                trace, format_status = _structure_trace(
-                    raw, allow_prefilled_think=not thinking
-                )
+                trace, format_status = _structure_trace(raw)
                 is_correct = (
                     trace is not None
                     and verifier.verify(trace, str(example["answer"])).is_correct
@@ -677,6 +659,11 @@ def main() -> None:
         help="do not prepend row.rule_context to the teacher prompt",
     )
     args = parser.parse_args()
+    if args.no_thinking:
+        parser.error(
+            "--no-thinking is incompatible with verified Qwen3 reasoning traces. "
+            "Remove it to use the model's native thinking mode."
+        )
 
     if args.samples <= 0:
         parser.error("--samples must be positive")
