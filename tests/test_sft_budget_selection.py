@@ -77,7 +77,7 @@ def test_coverage_gate_fails_with_report_before_training(tmp_path):
 def test_context_length_gate_still_applies(tmp_path):
     data = Dataset.from_list([row("A", trace("x" * 70))])
     path = tmp_path / "context.json"
-    with pytest.raises(ValueError, match="Insufficient SFT-eligible coverage"):
+    with pytest.raises(ValueError, match="No verified complete SFT traces"):
         select_budgeted_traces(
             data, ByteTokenizer(), max_completion_tokens=130, max_length=135,
             max_per_problem=1, min_problem_coverage=1.0, min_families=1,
