@@ -168,3 +168,46 @@ def test_english_reasoning_accepted_when_format_and_amount_are_correct(tmp_path)
     stats = validate_traces(path, train)
     assert stats["verified"] == 1
     assert stats["rejected_by_reason"] == {}
+
+
+def test_insufficient_distillation_coverage_warns_but_writes_report(tmp_path):
+    from rlm.validate_data import main as validate_main
+
+    train, _, _ = _splits(tmp_path)
+    example = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    traces = tmp_path / "one_trace.jsonl"
+    report = tmp_path / "coverage.json"
+    traces.write_text(json.dumps({
+        "question": example["question"],
+        "answer": example["answer"],
+        "sample_idx": 0,
+        "verified": True,
+        "trace": f"<think>Razono.</think><answer>{example['answer']}</answer>",
+        "format_status": "clean",
+    }) + "\n", encoding="utf-8")
+    validate_main([
+        "--train", str(train), "--traces", str(traces),
+        "--min-verified-traces", "8", "--min-unique-trace-problems", "5",
+        "--min-verified-families", "3", "--warn-low-coverage",
+        "--out", str(report),
+    ])
+    stats = json.loads(report.read_text())["distillation"]
+    assert stats["verified"] == 1
+    assert "Insufficient SFT data" in stats["quality_warnings"][0]
+
+
+def test_warning_mode_still_rejects_invalid_teacher_samples(tmp_path):
+    from rlm.validate_data import main as validate_main
+
+    train, _, _ = _splits(tmp_path)
+    example = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    traces = tmp_path / "corrupt_trace.jsonl"
+    traces.write_text(json.dumps({
+        "question": example["question"], "answer": "999999.99",
+        "sample_idx": 0, "verified": True,
+        "trace": "<think>bad</think><answer>999999.99</answer>",
+    }) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="target mismatch"):
+        validate_main([
+            "--train", str(train), "--traces", str(traces), "--warn-low-coverage"
+        ])

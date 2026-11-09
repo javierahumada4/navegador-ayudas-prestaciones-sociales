@@ -86,3 +86,32 @@ def test_context_length_gate_still_applies(tmp_path):
     assert json.loads(path.read_text())["excluded_by_reason"] == {
         "over_context_budget": 1,
     }
+
+
+def test_low_coverage_can_warn_and_train_on_available_verified_traces(tmp_path):
+    short = trace("Breve.")
+    long = trace("x" * 150)
+    raw = Dataset.from_list([
+        row("A", short), row("B", long, family="two")
+    ])
+    selected, report = select_budgeted_traces(
+        raw, ByteTokenizer(), max_completion_tokens=90, max_length=600,
+        max_per_problem=2, min_problem_coverage=0.70, min_families=2,
+        report_path=tmp_path / "low_coverage.json", warn_low_coverage=True,
+    )
+    assert len(selected) == 1
+    assert selected[0]["trace"] == short
+    assert report["quality_passed"] is False
+    assert "Insufficient SFT-eligible coverage" in report["quality_warnings"][0]
+    assert json.loads((tmp_path / "low_coverage.json").read_text())["traces_selected"] == 1
+
+
+def test_warning_mode_never_allows_empty_sft_dataset(tmp_path):
+    raw = Dataset.from_list([row("A", trace("x" * 150))])
+    with pytest.raises(ValueError, match="No verified complete SFT traces"):
+        select_budgeted_traces(
+            raw, ByteTokenizer(), max_completion_tokens=90, max_length=600,
+            max_per_problem=2, min_problem_coverage=0.70, min_families=1,
+            report_path=tmp_path / "empty.json", warn_low_coverage=True,
+        )
+    assert json.loads((tmp_path / "empty.json").read_text())["traces_selected"] == 0

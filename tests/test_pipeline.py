@@ -105,7 +105,7 @@ def test_teacher_seed_and_expected_sample_count_travel_through_pipeline():
     assert validate[validate.index("--expected-trace-samples") + 1] == "2"
 
 
-def test_grpo_must_pass_sft_readiness_and_uses_qwen_thinking_sampling():
+def test_grpo_always_checks_sft_readiness_and_uses_qwen_thinking_sampling():
     args = parse_args(["--smoke", "--dry-run"])
     plan = build_plan(args)
     assert [step.title for step in plan[3].steps] == [
@@ -171,3 +171,27 @@ def test_shared_completion_budget_is_forwarded_to_all_stages():
 def test_shared_completion_budget_must_be_positive():
     with pytest.raises(SystemExit):
         parse_args(["--completion-tokens", "0"])
+
+
+def test_quality_gates_warn_by_default_without_disabling_integrity_validation():
+    args = parse_args(["--dry-run"])
+    assert args.quality_gates == "warn"
+    cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
+    assert "--warn-low-coverage" in cmds["validate traces"]
+    assert "--warn-low-coverage" in cmds["supervised LoRA"]
+    assert "--warn-low-readiness" in cmds["SFT readiness gate"]
+    assert cmds["GRPO from SFT"][
+        cmds["GRPO from SFT"].index("--zero-signal-patience") + 1
+    ] == "0"
+    assert "--warn-low-coverage" not in cmds["validate splits"]
+
+
+def test_quality_gates_strict_restores_threshold_failures():
+    args = parse_args(["--quality-gates", "strict", "--grpo-zero-signal-patience", "7"])
+    cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
+    assert "--warn-low-coverage" not in cmds["validate traces"]
+    assert "--warn-low-coverage" not in cmds["supervised LoRA"]
+    assert "--warn-low-readiness" not in cmds["SFT readiness gate"]
+    assert cmds["GRPO from SFT"][
+        cmds["GRPO from SFT"].index("--zero-signal-patience") + 1
+    ] == "7"

@@ -62,6 +62,15 @@ dos entornos aislados bajo el run, `.venv-distill` y `.venv-train`, mediante
 
 ## Comandos
 
+El pipeline usa `--quality-gates warn` **por defecto**. Esto permite
+recorrer generación, destilación, SFT, GRPO y evaluación aunque los
+mínimos de calidad no se alcancen, para observar los resultados y
+comparar etapas. Si se desea que los controles por calidad detengan
+el entrenamiento, añadir `--quality-gates strict`. Los fallos
+técnicos o los datos imposibles de entrenar siguen deteniendo la
+ejecución. No es necesario añadir `--quality-gates warn` explícitamente.
+
+
 ### Entrenamiento completo para estudiar el aprendizaje de SFT
 
 Con una carpeta nueva, sin `--smoke`:
@@ -188,14 +197,18 @@ ninguna persona puede tener residencia continuada anterior a su nacimiento,
 ni constar conviviendo desde antes del nacimiento del integrante más joven.
 
 La destilación informa `rejected_by_reason`, `hit_max_tokens`,
-`verified_unique_problems` y `verified_families`. El modo `--smoke` exige
-al menos **6 trazas de 4 problemas y 3 familias distintas**; un run normal,
-100 trazas de 50 problemas y 5 familias, como mínimos de protección
-(no garantizan razonamientos correctos). Si no se alcanzan, se guarda
-`reports/distillation_validation.json` y el flujo se detiene **antes de SFT**.
-Los límites se pueden ajustar con `--min-verified-traces`,
-`--min-unique-trace-problems` y `--min-verified-families`,
-pero no conviene reducirlos para ocultar una mala destilación.
+`verified_unique_problems` y `verified_families`. Se registran
+mínimos orientativos (smoke: 6 trazas de 4 problemas y 3 familias;
+entrenamiento completo: 100 trazas de 50 problemas y 5 familias).
+Por defecto, `--quality-gates warn` convierte el incumplimiento de
+estos mínimos en una **advertencia** en el log y en
+`reports/distillation_validation.json` (`quality_warnings`).
+El pipeline continúa a SFT si hay datos utilizables. Con
+`--quality-gates strict` se conserva el bloqueo por calidad.
+
+Los errores de integridad (etiquetas incorrectas, muestras ausentes,
+trazas marcadas como verificadas que no coinciden con el oráculo)
+siguen deteniendo el entrenamiento en ambos modos.
 
 ### Validaciones de SFT y entrada a GRPO
 
@@ -207,15 +220,18 @@ completion** o el máximo de prompt+completion (`--sft-max-length 8192`).
 El informe `reports/sft_selection.json` cuenta descartes por longitud,
 cobertura de problemas y familias. No se corta ninguna respuesta.
 
-Para preservar cobertura, el entrenamiento **completo** genera 8 muestras
-por problema (el smoke sigue usando 2). La cobertura de los problemas
-**con trazas elegibles de SFT** debe alcanzar al menos 70 % y cubrir
-un mínimo de 5 familias, antes de entrenar. Puedes configurar la
-cobertura con `--min-sft-problem-coverage`. Si no se alcanza, el run
-se detiene con el informe guardado: hay que generar más muestras,
-mejorar el profesor o usar un run nuevo, no relajar los límites sin
-justificación. Esto es un umbral de protección, no una garantía de
-obtener cobertura suficiente en cada ejecución.
+Para ampliar la cobertura, el entrenamiento completo genera
+8 muestras del profesor por problema (el smoke usa 2).
+La selección sigue usando una cobertura de referencia del 70 % de
+problemas y un mínimo de 5 familias, pero por defecto
+**no detiene el SFT** cuando no se alcancen: anota
+`quality_passed=false` y `quality_warnings` en
+`reports/sft_selection.json` y entrena con las trazas verificadas
+disponibles. `--quality-gates strict` recupera el bloqueo.
+No se aceptan trazas incorrectas, incompletas o mayores de
+1024 tokens. Si ninguna traza supera el filtro, SFT no puede
+entrenarse y el programa falla incluso en modo aviso.
+
 Las trazas finalmente seleccionadas superan además el preflight
 `reports/sft_input_validation.json` para descartar fallos de plantilla
 y de tokenización.
@@ -226,7 +242,9 @@ seleccionadas de distintas familias. Este control funcional exige al
 menos **75 % de respuestas con formato válido y como máximo 25 % truncadas**
 (`--sft-min-format-rate`, `--sft-max-truncated-rate`).
 El presupuesto del control es también `--completion-tokens 1024`. Siempre se escribe
-`reports/sft_readiness.json`, aunque GRPO sea bloqueado. Este control
+`reports/sft_readiness.json`. Por defecto, una tasa insuficiente
+solo genera una advertencia y GRPO comienza igualmente. En modo
+`--quality-gates strict` se bloquea GRPO si falla ese control. Este control
 **no es una evaluación de generalización**, pues no emplea ni test ni OOD.
 Los resultados de test y OOD siguen reservados para la fase final.
 
@@ -239,8 +257,11 @@ más GPU que dos; en la DGX es preferible `--grpo-micro-batch-size 1`.
 El smoke sigue teniendo solo **2 pasos** de GRPO: sirve para comprobar
 el flujo, no para demostrar aprendizaje.
 
-GRPO avisa al detectar recompensas sin variación y detiene un run largo
-tras 5 pasos consecutivos sin señal (`--grpo-zero-signal-patience`).
+GRPO sigue registrando avisos si los grupos de recompensas no
+presentan variación. Por defecto no aborta por ello (paciencia 0
+en modo `warn`). Con `--quality-gates strict` se recupera
+el corte tras cinco pasos consecutivos sin señal
+(`--grpo-zero-signal-patience`, configurable).
 Un smoke con 2 pasos puede acabar con recompensa nula: eso **no** demuestra
 aprendizaje, aunque se hayan generado los informes.
 
