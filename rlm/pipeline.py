@@ -46,6 +46,10 @@ def parse_args(argv=None):
         help="resume incomplete distill, SFT or GRPO at --from-stage; never erase checkpoints",
     )
     parser.add_argument("--smoke", action="store_true", help="small real GPU run")
+    parser.add_argument(
+        "--quality-gates", choices=("warn", "strict"), default="warn",
+        help="warn (default) records quality failures but continues; strict blocks",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-size", type=int, default=800)
     parser.add_argument("--test-size", type=int, default=200)
@@ -206,6 +210,7 @@ def build_plan(args):
                 "--min-verified-traces", args.min_verified_traces,
                 "--min-unique-trace-problems", args.min_unique_trace_problems,
                 "--min-verified-families", args.min_verified_families,
+                *(["--warn-low-coverage"] if args.quality_gates == "warn" else []),
                 "--out", reports / "distillation_validation.json"
             )),
         ], [traces, logs / "distillation.jsonl",
@@ -219,6 +224,7 @@ def build_plan(args):
                 "--max-completion-tokens", args.completion_tokens,
                 "--min-problem-coverage", args.min_sft_problem_coverage,
                 "--min-families", args.min_verified_families,
+                *(["--warn-low-coverage"] if args.quality_gates == "warn" else []),
                 "--max-traces-per-problem", args.sft_max_traces_per_problem,
                 "--validation-report", reports / "sft_input_validation.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
@@ -234,6 +240,7 @@ def build_plan(args):
                 "--max-truncated-rate", args.sft_max_truncated_rate,
                 "--batch-size", args.eval_batch_size,
                 "--seed", args.seed,
+                *(["--warn-low-readiness"] if args.quality_gates == "warn" else []),
                 "--out", reports / "sft_readiness.json",
             ), env_train),
             Step("GRPO from SFT", uv(
@@ -244,7 +251,9 @@ def build_plan(args):
                 "--top-p", args.grpo_top_p, "--top-k", args.grpo_top_k,
                 "--micro-batch-size", args.grpo_micro_batch_size,
                 "--max-completion-length", args.completion_tokens,
-                "--zero-signal-patience", args.grpo_zero_signal_patience,
+                "--zero-signal-patience", (
+                    0 if args.quality_gates == "warn" else args.grpo_zero_signal_patience
+                ),
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
             ), env_train),

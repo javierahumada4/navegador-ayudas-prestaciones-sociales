@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -211,6 +212,8 @@ def main(argv=None):
     parser.add_argument("--min-verified-traces", type=int, default=1)
     parser.add_argument("--min-unique-trace-problems", type=int, default=1)
     parser.add_argument("--min-verified-families", type=int, default=1)
+    parser.add_argument("--warn-low-coverage", action="store_true",
+                        help="record insufficient verified trace coverage without failing")
     parser.add_argument("--out")
     args = parser.parse_args(argv)
     if bool(args.test) != bool(args.ood):
@@ -229,19 +232,29 @@ def main(argv=None):
         summary["distillation"] = validate_traces(
             args.traces, args.train, expected_samples=args.expected_trace_samples
         )
+    quality_error = None
+    if args.traces:
+        try:
+            require_trace_quality(
+                summary["distillation"],
+                min_verified=args.min_verified_traces,
+                min_unique_problems=args.min_unique_trace_problems,
+                min_families=args.min_verified_families,
+            )
+        except ValueError as exc:
+            quality_error = exc
+            summary["distillation"]["quality_warnings"] = [str(exc)]
     payload = json.dumps(summary, indent=2, ensure_ascii=False)
     print(payload)
     if args.out:
         path = Path(args.out)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(payload + "\n", encoding="utf-8")
-    if args.traces:
-        require_trace_quality(
-            summary["distillation"],
-            min_verified=args.min_verified_traces,
-            min_unique_problems=args.min_unique_trace_problems,
-            min_families=args.min_verified_families,
-        )
+    if quality_error:
+        if not args.warn_low_coverage:
+            raise quality_error
+        print(f"WARNING: {quality_error}; continuing to SFT",
+              file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

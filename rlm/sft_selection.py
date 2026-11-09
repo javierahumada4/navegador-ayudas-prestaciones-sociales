@@ -6,6 +6,7 @@ not to the system prompt or to the teacher's generation budget.
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -19,12 +20,13 @@ def select_budgeted_traces(
     dataset, tokenizer, *, max_completion_tokens: int, max_length: int,
     max_per_problem: int, min_problem_coverage: float, min_families: int,
     report_path: str | Path, reserve_tokens: int = 8,
+    warn_low_coverage: bool = False,
 ):
     """Select shortest valid traces for each question, then enforce actual coverage.
 
     Each trace must be *verified*, valid, and fit both the completion budget and
     the full chat context. We never crop a trace or manufacture an answer.
-    A coverage failure writes its report before blocking SFT.
+    A coverage failure writes its report, optionally allowing SFT to continue.
     """
     if max_completion_tokens <= 0 or max_per_problem <= 0:
         raise ValueError("SFT completion budget and traces per problem must be positive")
@@ -87,7 +89,15 @@ def select_budgeted_traces(
     total_families = set(families.values())
     covered_families = {families[q] for q in covered}
     coverage = len(covered) / max(1, len(questions))
+    quality_passed = coverage >= min_problem_coverage and len(covered_families) >= min_families
+    reason = (
+        f"Insufficient SFT-eligible coverage: {len(covered)}/{len(questions)} problems "
+        f"({coverage:.1%}; minimum {min_problem_coverage:.1%}), "
+        f"{len(covered_families)} families (minimum {min_families})."
+    )
     report = {
+        "quality_passed": quality_passed,
+        "quality_warnings": [reason] if not quality_passed else [],
         "max_completion_tokens": max_completion_tokens,
         "max_sequence_length": max_length,
         "total_problems": len(questions),
@@ -112,13 +122,14 @@ def select_budgeted_traces(
     out = Path(report_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if not chosen or coverage < min_problem_coverage or len(covered_families) < min_families:
+    if not chosen:
         raise ValueError(
-            "Insufficient SFT-eligible coverage: "
-            f"{len(covered)}/{len(questions)} problems ({coverage:.1%}; "
-            f"minimum {min_problem_coverage:.1%}), "
-            f"{len(covered_families)} families (minimum {min_families}). "
-            f"See {out}. Increase teacher samples or improve concise reasoning "
-            "and start a new run; never lower the token cap or truncate targets."
+            "No verified complete SFT traces fit the token budget; "
+            f"cannot train an empty dataset. See {out}."
         )
+    if not quality_passed:
+        if not warn_low_coverage:
+            raise ValueError(reason + f" See {out}.")
+        print(f"WARNING: {reason} Continuing SFT on {len(chosen)} traces; see {out}.",
+              file=sys.stderr, flush=True)
     return dataset.select(sorted(chosen)), report

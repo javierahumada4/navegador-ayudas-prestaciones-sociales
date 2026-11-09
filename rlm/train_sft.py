@@ -98,6 +98,7 @@ def train(args: argparse.Namespace) -> None:
         min_problem_coverage=args.min_problem_coverage,
         min_families=args.min_families,
         report_path=report_dir / "sft_selection.json",
+        warn_low_coverage=args.warn_low_coverage,
     )
     dataset = format_sft_dataset(selected)
     print(
@@ -174,6 +175,8 @@ def main() -> None:
                         help="maximum SFT assistant completion tokens, shared with GRPO")
     parser.add_argument("--min-problem-coverage", type=float, default=0.70)
     parser.add_argument("--min-families", type=int, default=5)
+    parser.add_argument("--warn-low-coverage", action="store_true",
+                        help="continue SFT despite low problem/family coverage")
     parser.add_argument(
         "--max-traces-per-problem", type=int, default=2,
         help="maximum unique verified teacher traces used per problem in SFT",

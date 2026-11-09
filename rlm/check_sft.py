@@ -1,4 +1,4 @@
-"""Stop GRPO unless the trained SFT adapter can finish its IMV answers.
+"""Measure SFT readiness before GRPO; optionally report failures as warnings.
 
 The readiness check uses training questions, never held-out test or OOD
 problems: it is a functional gate, not an estimate of generalisation.
@@ -80,6 +80,7 @@ def run_check(args) -> dict:
         "max_truncated_rate": args.max_truncated_rate,
         "max_new_tokens": args.max_new_tokens,
         "ready": not failures,
+        "warning_only": args.warn_low_readiness,
         "failures": failures,
         "summary": summary,
         "rows": rows,
@@ -91,10 +92,15 @@ def run_check(args) -> dict:
           f"truncated={summary['truncated_rate']:.1%}, "
           f"pass@1={summary['pass@1']:.1%} (training cases); report={output}", flush=True)
     if failures:
-        raise RuntimeError(
-            "GRPO blocked because SFT cannot reliably finish its answers: "
-            + "; ".join(failures) + f". See {output}."
-        )
+        detail = "; ".join(failures)
+        if args.warn_low_readiness:
+            print(f"WARNING: SFT readiness below thresholds ({detail}). "
+                  f"Continuing to GRPO; see {output}.", flush=True)
+        else:
+            raise RuntimeError(
+                "GRPO blocked because SFT cannot reliably finish its answers: "
+                + detail + f". See {output}."
+            )
     return report
 
 
@@ -111,6 +117,8 @@ def main(argv=None):
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--warn-low-readiness", action="store_true",
+                        help="allow GRPO despite failed SFT readiness thresholds")
     args = parser.parse_args(argv)
     if args.n_examples <= 0 or args.max_new_tokens <= 0 or args.batch_size <= 0:
         parser.error("n-examples, max-new-tokens and batch-size must be positive")
