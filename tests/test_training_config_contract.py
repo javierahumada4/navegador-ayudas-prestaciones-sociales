@@ -15,7 +15,7 @@ def test_sft_arguments_supported_by_installed_trl():
     required = {
         "output_dir", "num_train_epochs", "per_device_train_batch_size",
         "gradient_accumulation_steps", "learning_rate", "max_length",
-        "model_init_kwargs", "bf16", "gradient_checkpointing", "save_steps",
+        "model_init_kwargs", "completion_only_loss", "bf16", "gradient_checkpointing", "save_steps",
         "save_strategy", "save_total_limit",
     }
     assert required <= supported
@@ -26,7 +26,7 @@ def test_grpo_arguments_supported_by_installed_trl():
     required = {
         "output_dir", "max_steps", "learning_rate", "per_device_train_batch_size",
         "gradient_accumulation_steps", "num_generations",
-        "max_completion_length", "temperature", "beta", "epsilon",
+        "max_completion_length", "temperature", "top_p", "top_k", "beta", "epsilon",
         "reward_weights", "model_init_kwargs", "log_completions",
         "num_completions_to_print",
     }

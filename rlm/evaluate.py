@@ -24,7 +24,9 @@ from pathlib import Path
 
 from rlm.data import load_gsm8k
 from rlm.imv_engine import evaluate_imv_case
-from rlm.rewards import has_valid_format, imv_money, parse_imv_decimal, thinking_length
+from rlm.rewards import (
+    has_valid_format, has_valid_imv_format, imv_money, parse_imv_decimal, thinking_length,
+)
 from rlm.verifier import Verifier, build_verifier
 
 # Answers within this distance of the expected amount are counted as near misses.
@@ -56,6 +58,7 @@ def load_problems(data: str, n_examples: int | None) -> list[dict]:
                     "answer": str(ex["answer"]),
                     "branches": ex.get("branches"),
                     "params": ex.get("params"),
+                    "rule_context": ex.get("rule_context"),
                 }
             )
     return problems[:n_examples] if n_examples else problems
@@ -125,6 +128,7 @@ def evaluate_model(
             batch = problems[start : start + batch_size]
             outputs = model.generate_batch(
                 [p["question"] for p in batch],
+                rule_contexts=[p.get("rule_context") for p in batch],
                 max_new_tokens=max_new_tokens,
                 do_sample=do_sample,
                 temperature=temperature,
@@ -145,6 +149,13 @@ def score_row(
     sample_idx: int = 0,
 ) -> dict:
     verdict = verifier.verify(raw, problem["answer"])
+    valid_format = (
+        has_valid_imv_format(raw) if verifier.name == "imv"
+        else has_valid_format(raw)
+    )
+    # IMV pass@1 means a *usable* final answer, not an accidental correct
+    # number embedded in an invalid/nested response.
+    correct = verdict.is_correct and (valid_format if verifier.name == "imv" else True)
     branches = problem.get("branches") or {}
     row = {
         "id": problem["id"],
@@ -154,8 +165,8 @@ def score_row(
         "expected": problem["answer"],
         "raw": raw,
         "predicted": verdict.predicted,
-        "is_correct": verdict.is_correct,
-        "has_valid_format": has_valid_format(raw),
+        "is_correct": correct,
+        "has_valid_format": valid_format,
         "n_tokens": n_tokens,
         "thinking_words": thinking_length(raw),
         "truncated": n_tokens >= max_new_tokens,
@@ -163,7 +174,12 @@ def score_row(
         "failure_details": {},
     }
     if not row["is_correct"]:
-        row["failure"], row["failure_details"] = diagnose_failure(row, problem.get("params"))
+        if verdict.is_correct and not valid_format and verifier.name == "imv":
+            row["failure"], row["failure_details"] = "invalid_format", {}
+        else:
+            row["failure"], row["failure_details"] = diagnose_failure(
+                row, problem.get("params")
+            )
     return row
 
 

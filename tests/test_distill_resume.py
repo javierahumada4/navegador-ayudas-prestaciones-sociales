@@ -34,7 +34,7 @@ def test_resume_drops_only_incomplete_trailing_example(tmp_path):
         + json.dumps(_row(1, 0)) + "\n" + '{"example_id":',
         encoding="utf-8",
     )
-    assert _verified_resume_offset(path, data, 2, 0, "teacher", True) == 1
+    assert _verified_resume_offset(path, data, 2, 0, "teacher") == 1
     records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 2
     assert {row["example_id"] for row in records} == {0}
@@ -46,4 +46,4 @@ def test_resume_rejects_different_teacher(tmp_path):
     path = tmp_path / "traces.jsonl"
     path.write_text(json.dumps(_row(0, 0)) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="does not match"):
-        _verified_resume_offset(path, data, 1, 0, "other", True)
+        _verified_resume_offset(path, data, 1, 0, "other")

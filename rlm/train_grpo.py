@@ -13,25 +13,28 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from rlm.chat_template import render_thinking_prompt
 from rlm.data import load_domain_dataset, load_gsm8k
 from rlm.rewards import (
     _completion_text,
     accuracy_reward,
     extract_answer,
+    extract_unique_final_answer,
     format_reward,
+    imv_format_reward,
     imv_accuracy_reward,
     parse_imv_decimal,
 )
 
-_TWO_DECIMAL_ANSWER = re.compile(r"^\d+(?:\.\d{2})$")
+_TWO_DECIMAL_ANSWER = re.compile(r"^(?:0|[1-9]\d*)\.\d{2}$")
 
 
 def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
     """Reward the clean machine-readable IMV answer contract: exactly `123.45`."""
     scores: list[float] = []
     for completion in completions:
-        answer = extract_answer(_completion_text(completion))
-        scores.append(1.0 if answer and _TWO_DECIMAL_ANSWER.fullmatch(answer.strip()) else 0.0)
+        answer = extract_unique_final_answer(_completion_text(completion))
+        scores.append(1.0 if answer and _TWO_DECIMAL_ANSWER.fullmatch(answer) else 0.0)
     return scores
 
 
@@ -85,7 +88,7 @@ class ZeroSignalMonitor:
 def train(args: argparse.Namespace) -> None:
     import torch
     from peft import LoraConfig
-    from transformers import TrainerCallback
+    from transformers import AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
     is_gsm8k = args.data == "gsm8k"
@@ -96,9 +99,17 @@ def train(args: argparse.Namespace) -> None:
         monitors = []
     else:
         dataset = load_domain_dataset(args.data)
+        # Serialize with exactly the same Qwen3 native thinking-mode assistant
+        # prefix that SFT preflight and inference use. TRL GRPO then tokenizes
+        # the already-rendered string; it cannot silently choose a different
+        # chat-template mode.
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+        dataset = dataset.map(
+            lambda ex: {"prompt": render_thinking_prompt(tokenizer, ex["prompt"])}
+        )
         # Critical: do not use generic accuracy_reward here. IMV money is rounded
         # HALF_UP to cents by the oracle and verifier.
-        reward_funcs = [format_reward, imv_accuracy_reward, domain_reward]
+        reward_funcs = [imv_format_reward, imv_accuracy_reward, domain_reward]
         default_weights = [1.0, 2.0, 0.5]
         monitors = [zero_answer_rate]
 
@@ -131,6 +142,8 @@ def train(args: argparse.Namespace) -> None:
         num_generations=args.num_generations,
         max_completion_length=args.max_completion_length,
         temperature=args.temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
         beta=args.beta,
         epsilon=args.epsilon,
         bf16=device == "cuda",
@@ -144,6 +157,7 @@ def train(args: argparse.Namespace) -> None:
         num_completions_to_print=2,
         model_init_kwargs={"dtype": torch.bfloat16 if device == "cuda" else torch.float32},
         reward_weights=reward_weights,
+
     )
 
     if args.init_adapter:
@@ -170,6 +184,7 @@ def train(args: argparse.Namespace) -> None:
         args=config,
         train_dataset=dataset,
         peft_config=peft_config,
+        **({"processing_class": tokenizer} if not is_gsm8k else {}),
     )
 
     class AbortOnZeroSignal(TrainerCallback):
@@ -227,7 +242,9 @@ def main() -> None:
         help="abort after this many GRPO logs with all groups reward-identical; 0 disables",
     )
     parser.add_argument("--learning-rate", type=float, default=5e-6)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.6)
+    parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--beta", type=float, default=0.0)
     parser.add_argument("--epsilon", type=float, default=0.2, help="PPO/GRPO clipping range")
     parser.add_argument(
@@ -246,6 +263,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.zero_signal_patience < 0:
         parser.error("--zero-signal-patience must be nonnegative")
+    if args.temperature <= 0 or not (0 < args.top_p <= 1) or args.top_k < 0:
+        parser.error("temperature > 0, top-p in (0, 1] and top-k >= 0 required")
     train(args)
 
 

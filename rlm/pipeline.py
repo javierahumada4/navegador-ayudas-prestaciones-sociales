@@ -46,17 +46,17 @@ def parse_args(argv=None):
         help="resume incomplete distill, SFT or GRPO at --from-stage; never erase checkpoints",
     )
     parser.add_argument("--smoke", action="store_true", help="small real GPU run")
+    parser.add_argument(
+        "--quality-gates", choices=("warn", "strict"), default="warn",
+        help="warn (default) records quality failures but continues; strict blocks",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-size", type=int, default=800)
     parser.add_argument("--test-size", type=int, default=200)
-    parser.add_argument("--ood-size", type=int, default=100)
+    parser.add_argument("--ood-size", type=int, default=50)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
-    parser.add_argument(
-        "--teacher-no-thinking", action="store_true",
-        help="disable native Qwen3 thinking; use the concise Spanish R1 format instead",
-    )
-    parser.add_argument("--teacher-samples", type=int, default=4)
+    parser.add_argument("--teacher-samples", type=int, default=8)
     parser.add_argument("--teacher-max-new-tokens", type=int, default=2048)
     parser.add_argument("--teacher-max-model-len", type=int, default=8192)
     parser.add_argument("--teacher-batch-size", type=int, default=16)
@@ -68,14 +68,20 @@ def parse_args(argv=None):
     parser.add_argument("--sft-epochs", type=float, default=2.0)
     parser.add_argument("--sft-batch-size", type=int, default=1)
     parser.add_argument("--sft-grad-accum", type=int, default=8)
-    parser.add_argument("--sft-max-length", type=int, default=4096)
+    parser.add_argument("--sft-max-length", type=int, default=8192)
+    parser.add_argument("--sft-max-traces-per-problem", type=int, default=2)
+    parser.add_argument("--min-sft-problem-coverage", type=float, default=0.70,
+                        help="minimum fraction of problems with complete SFT traces within the shared token budget")
     parser.add_argument("--grpo-steps", type=int, default=300)
     parser.add_argument("--grpo-generations", type=int, default=4)
+    parser.add_argument("--grpo-temperature", type=float, default=0.6)
+    parser.add_argument("--grpo-top-p", type=float, default=0.95)
+    parser.add_argument("--grpo-top-k", type=int, default=20)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)
-    parser.add_argument("--grpo-completion-length", type=int, default=1024)
+    parser.add_argument("--completion-tokens", type=int, default=1024,
+                        help="shared SFT/GRPO/evaluation completion budget")
     parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
     parser.add_argument("--eval-batch-size", type=int, default=2)
-    parser.add_argument("--eval-max-new-tokens", type=int, default=1536)
     args = parser.parse_args(argv)
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
@@ -86,7 +92,7 @@ def parse_args(argv=None):
     if args.smoke:
         args.train_size, args.test_size, args.ood_size = 24, 8, 8
         args.teacher_samples = 2
-        args.sft_epochs, args.grpo_steps, args.grpo_generations = 1.0, 2, 2
+        args.sft_epochs, args.grpo_steps = 1.0, 2
     for key, default in zip(
         ("min_verified_traces", "min_unique_trace_problems", "min_verified_families"),
         (6, 4, 3) if args.smoke else (100, 50, 5),
@@ -97,11 +103,20 @@ def parse_args(argv=None):
     for key in ("train_size", "test_size", "ood_size", "teacher_samples",
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
                 "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
-                "min_verified_traces", "min_unique_trace_problems", "min_verified_families"):
+                "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
+                "completion_tokens",
+                "sft_max_traces_per_problem"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     if args.grpo_zero_signal_patience < 0:
         parser.error("--grpo-zero-signal-patience must be >= 0")
+    if not 0 <= args.min_sft_problem_coverage <= 1:
+        parser.error("--min-sft-problem-coverage must be in [0, 1]")
+    if (args.grpo_temperature <= 0
+            or not (0 < args.grpo_top_p <= 1)
+            or args.grpo_top_k < 0):
+        parser.error("--grpo-temperature > 0, --grpo-top-p in (0, 1], "
+                     "and --grpo-top-k >= 0 are required")
     return args
 
 
@@ -137,6 +152,10 @@ def build_plan(args):
     run = (ROOT / args.run_dir).resolve()
     data, weights, reports, logs = (run / x for x in ("data", "weights", "reports", "logs"))
     train, test, ood = (data / x for x in ("train.jsonl", "test.jsonl", "test_ood.jsonl"))
+    extra_ood = {
+        split: data / f"test_{split}.jsonl"
+        for split in ("ood_threshold", "ood_wording")
+    }
     traces = data / "sft_traces.jsonl"
     sft, grpo = weights / "sft_lora", weights / "grpo_lora"
     env_distill, env_train = str(run / ".venv-distill"), str(run / ".venv-train")
@@ -155,34 +174,38 @@ def build_plan(args):
             ("train", args.train_size, train),
             ("test", args.test_size, test),
             ("ood", args.ood_size, ood),
+            *((split, args.ood_size, path) for split, path in extra_ood.items()),
         )
     ]
     generation.append(Step("validate splits", py(
         "rlm.validate_data", "--train", train, "--test", test, "--ood", ood,
+        *(flag for split, path in extra_ood.items()
+          for flag in ("--ood-extra", split, path)),
         "--out", reports / "dataset_validation.json"
     )))
     result = [
         Stage("generate", generation, [
-            train, test, ood, reports / "dataset_validation.json"
+            train, test, ood, *extra_ood.values(), reports / "dataset_validation.json"
         ]),
         Stage("distill", [
             Step("teacher traces", uv(
                 "distill", "rlm.distill", "--data", train, "--teacher", args.teacher,
                 "--backend", args.teacher_backend, "--samples", args.teacher_samples,
-                "--max-new-tokens", args.teacher_max_new_tokens,
+                "--seed", args.seed, "--max-new-tokens", args.teacher_max_new_tokens,
                 "--max-model-len", args.teacher_max_model_len,
                 "--batch-size", args.teacher_batch_size,
                 "--gpu-memory-utilization", args.teacher_gpu_memory,
-                *(["--no-thinking"] if args.teacher_no_thinking else []),
                 "--verifier", "imv", "--output", traces,
                 "--log-path", logs / "distillation.jsonl",
                 *_resume_flags(args, "distill", traces)
             ), env_distill),
             Step("validate traces", py(
                 "rlm.validate_data", "--train", train, "--traces", traces,
+                "--expected-trace-samples", args.teacher_samples,
                 "--min-verified-traces", args.min_verified_traces,
                 "--min-unique-trace-problems", args.min_unique_trace_problems,
                 "--min-verified-families", args.min_verified_families,
+                *(["--warn-low-coverage"] if args.quality_gates == "warn" else []),
                 "--out", reports / "distillation_validation.json"
             )),
         ], [traces, logs / "distillation.jsonl",
@@ -193,17 +216,27 @@ def build_plan(args):
                 "--output", sft, "--epochs", args.sft_epochs,
                 "--batch-size", args.sft_batch_size, "--grad-accum", args.sft_grad_accum,
                 "--max-length", args.sft_max_length,
+                "--max-completion-tokens", args.completion_tokens,
+                "--min-problem-coverage", args.min_sft_problem_coverage,
+                "--min-families", args.min_verified_families,
+                *(["--warn-low-coverage"] if args.quality_gates == "warn" else []),
+                "--max-traces-per-problem", args.sft_max_traces_per_problem,
+                "--selection-report", reports / "sft_selection.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
-        ], [sft]),
+        ], [sft, reports / "sft_selection.json"]),
         Stage("grpo", [
             Step("GRPO from SFT", uv(
                 "train", "rlm.train_grpo", "--data", train,
                 "--model", args.student, "--init-adapter", sft, "--output", grpo,
                 "--steps", args.grpo_steps, "--num-generations", args.grpo_generations,
+                "--temperature", args.grpo_temperature,
+                "--top-p", args.grpo_top_p, "--top-k", args.grpo_top_k,
                 "--micro-batch-size", args.grpo_micro_batch_size,
-                "--max-completion-length", args.grpo_completion_length,
-                "--zero-signal-patience", args.grpo_zero_signal_patience,
+                "--max-completion-length", args.completion_tokens,
+                "--zero-signal-patience", (
+                    0 if args.quality_gates == "warn" else args.grpo_zero_signal_patience
+                ),
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
             ), env_train),
@@ -215,10 +248,12 @@ def build_plan(args):
             "train", "rlm.evaluate", "--data", input_path, "--model", args.student,
             "--adapters", *adapters, "--verifier", "imv", "--samples", 1,
             "--batch-size", args.eval_batch_size,
-            "--max-new-tokens", args.eval_max_new_tokens,
+            "--max-new-tokens", args.completion_tokens,
             "--seed", args.seed, "--out", reports / f"eval_{name}.json"
         ), env_train)
-        for name, input_path in (("test", test), ("ood", ood))
+        for name, input_path in (
+            ("test", test), ("ood", ood), *extra_ood.items()
+        )
     ]
     evaluation.append(Step("GRPO curves", uv(
         "train", "rlm.curves", "--runs", f"grpo={grpo}",
@@ -226,6 +261,7 @@ def build_plan(args):
     ), env_train))
     result.append(Stage("evaluate", evaluation, [
         reports / "eval_test.json", reports / "eval_ood.json",
+        *(reports / f"eval_{name}.json" for name in extra_ood),
         reports / "grpo_curves.png"
     ]))
     return result[ORDER.index(args.from_stage):ORDER.index(args.through_stage) + 1]
@@ -256,21 +292,16 @@ def main(argv=None):
     record = (json.loads(manifest.read_text(encoding="utf-8"))
               if manifest.exists() else {"configuration": vars(args), "steps": []})
     # Reuse of a run must never silently change its data/model/training configuration.
-    invariant_keys = (
-        "seed", "train_size", "test_size", "ood_size", "teacher", "teacher_backend",
-        "teacher_no_thinking",
-        "teacher_samples", "teacher_max_new_tokens", "teacher_max_model_len",
-        "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
-        "student", "sft_epochs", "sft_batch_size", "sft_grad_accum", "sft_max_length",
-        "grpo_steps", "grpo_generations", "grpo_micro_batch_size",
-        "grpo_completion_length", "grpo_zero_signal_patience", "smoke",
-    )
+    # Operational flags may change between invocations; model/data parameters may not.
+    execution_options = {"run_dir", "from_stage", "through_stage", "dry_run", "force", "resume"}
     previous = record.get("configuration", {})
-    for key in invariant_keys:
-        if key in previous and previous[key] != getattr(args, key):
+    for key, value in vars(args).items():
+        if key in execution_options:
+            continue
+        if key in previous and previous[key] != value:
             raise SystemExit(
                 f"Run configuration changed: {key}={previous[key]!r}, "
-                f"requested {getattr(args, key)!r}. Start a new --run-dir."
+                f"requested {value!r}. Start a new --run-dir."
             )
     for stage in plan:
         existing = [p for p in stage.outputs if p.exists()]

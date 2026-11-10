@@ -133,3 +133,81 @@ def test_gate_saves_failure_report_if_no_teacher_trace_survives(tmp_path):
                        "--out", str(report), "--min-verified-traces", "1"])
     data = json.loads(report.read_text(encoding="utf-8"))["distillation"]
     assert data["verified"] == 0 and data["rejected_by_reason"] == {"unclosed_think": 1}
+
+
+def test_traces_cannot_silently_drop_problems_or_sample_indices(tmp_path):
+    train, _, _ = _splits(tmp_path)
+    row = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    trace_path = tmp_path / "traces.jsonl"
+    trace_path.write_text(
+        json.dumps({
+            "question": row["question"], "answer": row["answer"], "sample_idx": 0,
+            "verified": False, "format_status": "unclosed_think",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Missing .* teacher samples"):
+        validate_traces(trace_path, train, expected_samples=2)
+
+
+def test_english_reasoning_accepted_when_format_and_amount_are_correct(tmp_path):
+    train, _, _ = _splits(tmp_path)
+    row = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    # Deliberately English; language must never be a condition for verification.
+    english = " ".join(["the income is calculated and we check the monthly amount"] * 4)
+    trace = f"<think>{english}</think><answer>{row['answer']}</answer>"
+    path = tmp_path / "english_trace.jsonl"
+    path.write_text(json.dumps({
+        "question": row["question"],
+        "answer": row["answer"],
+        "sample_idx": 0,
+        "verified": True,
+        "trace": trace,
+        "format_status": "clean",
+    }) + "\n", encoding="utf-8")
+    stats = validate_traces(path, train)
+    assert stats["verified"] == 1
+    assert stats["rejected_by_reason"] == {}
+
+
+def test_insufficient_distillation_coverage_warns_but_writes_report(tmp_path):
+    from rlm.validate_data import main as validate_main
+
+    train, _, _ = _splits(tmp_path)
+    example = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    traces = tmp_path / "one_trace.jsonl"
+    report = tmp_path / "coverage.json"
+    traces.write_text(json.dumps({
+        "question": example["question"],
+        "answer": example["answer"],
+        "sample_idx": 0,
+        "verified": True,
+        "trace": f"<think>Razono.</think><answer>{example['answer']}</answer>",
+        "format_status": "clean",
+    }) + "\n", encoding="utf-8")
+    validate_main([
+        "--train", str(train), "--traces", str(traces),
+        "--min-verified-traces", "8", "--min-unique-trace-problems", "5",
+        "--min-verified-families", "3", "--warn-low-coverage",
+        "--out", str(report),
+    ])
+    stats = json.loads(report.read_text())["distillation"]
+    assert stats["verified"] == 1
+    assert "Insufficient SFT data" in stats["quality_warnings"][0]
+
+
+def test_warning_mode_still_rejects_invalid_teacher_samples(tmp_path):
+    from rlm.validate_data import main as validate_main
+
+    train, _, _ = _splits(tmp_path)
+    example = json.loads(train.read_text(encoding="utf-8").splitlines()[0])
+    traces = tmp_path / "corrupt_trace.jsonl"
+    traces.write_text(json.dumps({
+        "question": example["question"], "answer": "999999.99",
+        "sample_idx": 0, "verified": True,
+        "trace": "<think>bad</think><answer>999999.99</answer>",
+    }) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="target mismatch"):
+        validate_main([
+            "--train", str(train), "--traces", str(traces), "--warn-low-coverage"
+        ])

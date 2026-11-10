@@ -60,6 +60,9 @@ def calculator(expression: str) -> float:
     import ast
     import operator
 
+    if len(expression) > 200:
+        raise ValueError("expression is too long")
+
     allowed = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
@@ -70,14 +73,24 @@ def calculator(expression: str) -> float:
         ast.USub: operator.neg,
     }
 
-    def evaluate(node):
-        if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
-            return node.value
-        if isinstance(node, ast.BinOp) and type(node.op) in allowed:
-            return allowed[type(node.op)](evaluate(node.left), evaluate(node.right))
-        if isinstance(node, ast.UnaryOp) and type(node.op) in allowed:
-            return allowed[type(node.op)](evaluate(node.operand))
-        raise ValueError("unsupported expression")
+    def evaluate(node, depth=0):
+        if depth > 25:
+            raise ValueError("expression is too deeply nested")
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            result = node.value
+        elif isinstance(node, ast.BinOp) and type(node.op) in allowed:
+            left = evaluate(node.left, depth + 1)
+            right = evaluate(node.right, depth + 1)
+            if isinstance(node.op, ast.Pow) and (abs(right) > 12 or abs(left) > 1e6):
+                raise ValueError("exponentiation exceeds safe limits")
+            result = allowed[type(node.op)](left, right)
+        elif isinstance(node, ast.UnaryOp) and type(node.op) in allowed:
+            result = allowed[type(node.op)](evaluate(node.operand, depth + 1))
+        else:
+            raise ValueError("unsupported expression")
+        if not isinstance(result, (int, float)) or abs(result) > 1e15:
+            raise ValueError("arithmetic result exceeds safe limits")
+        return result
 
     return float(evaluate(ast.parse(expression, mode="eval").body))
 

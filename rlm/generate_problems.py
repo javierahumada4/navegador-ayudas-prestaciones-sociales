@@ -22,7 +22,7 @@ import random
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -34,9 +34,42 @@ from rlm.imv_engine import (
     expected_answer,
     guaranteed_income_monthly,
     load_ruleset,
+    add_months,
 )
 
 APP_DATE = date(2026, 9, 26)
+
+TRAIN_FAMILIES = (
+    "ordinary", "individual", "monoparental", "monoparental_institution",
+    "disability", "income_fail", "residence_fail", "patrimony_fail",
+    "director_fail", "boundary",
+)
+OOD_FAMILIES = {
+    "ood": "capi_only",
+    "ood_threshold": "threshold_ood",
+    "ood_wording": "wording_ood",
+}
+
+
+def case_fingerprint(params: dict[str, Any]) -> str:
+    """Exclude private sampling metadata, which is invisible to the student."""
+    return json.dumps(
+        {key: value for key, value in params.items() if not key.startswith("_")},
+        sort_keys=True, ensure_ascii=False,
+    )
+
+
+def balanced_family_schedule(n: int, families: tuple[str, ...],
+                             rng: random.Random) -> list[str]:
+    """Spread families evenly, shuffling their order within each cycle."""
+    if n < 0 or not families:
+        raise ValueError("need nonnegative n and nonempty family list")
+    schedule = []
+    while len(schedule) < n:
+        cycle = list(families)
+        rng.shuffle(cycle)
+        schedule.extend(cycle[:n - len(schedule)])
+    return schedule
 
 def _D(value: Any) -> Decimal:
     return Decimal(str(value))
@@ -234,7 +267,7 @@ class ProblemGenerator(ABC):
         ...
 
     def key(self, params: dict[str, Any]) -> str:
-        return json.dumps(params, sort_keys=True, ensure_ascii=False)
+        return case_fingerprint(params)
 
     def generate(self, n: int, split: str, seed: int = 0) -> list[Problem]:
         rng = random.Random(f"{seed}-{split}")
@@ -319,6 +352,35 @@ class IMVProblemGenerator(ProblemGenerator):
         self.rules = load_ruleset()
         self.rule_context = build_rule_context(self.rules)
 
+    def generate(self, n: int, split: str, seed: int = 0) -> list[Problem]:
+        """Guarantee near-equal family coverage rather than rely on random draws."""
+        if n <= 0:
+            return []
+        rng = random.Random(f"{seed}-{split}")
+        if split in OOD_FAMILIES:
+            schedule = [OOD_FAMILIES[split]] * n
+        elif split in {"train", "test"}:
+            schedule = balanced_family_schedule(n, TRAIN_FAMILIES, rng)
+        else:
+            raise ValueError(f"unknown split {split}")
+        seen: set[str] = set()
+        problems: list[Problem] = []
+        for family in schedule:
+            for _ in range(300):
+                params = self.sample_params(rng, split, forced_family=family)
+                fingerprint = self.key(params)
+                if fingerprint not in seen:
+                    seen.add(fingerprint)
+                    answer, branches = self.solve(params)
+                    question, template_id = self.render(params, rng)
+                    problems.append(Problem(
+                        question, answer, params, template_id, branches, self.rule_context
+                    ))
+                    break
+            else:
+                raise RuntimeError(f"could not generate unique {family} case in 300 attempts")
+        return problems
+
     def _base_case(
         self, rng: random.Random, adults: int, minors: int, family: str
     ) -> dict[str, Any]:
@@ -402,24 +464,12 @@ class IMVProblemGenerator(ProblemGenerator):
         }
         return case
 
-    def sample_params(self, rng: random.Random, split: str) -> dict[str, Any]:
-        if split == "ood":
-            family = "capi_only"
-        else:
-            family = rng.choices(
-                [
-                    "ordinary",
-                    "individual",
-                    "monoparental",
-                    "monoparental_institution",
-                    "disability",
-                    "income_fail",
-                    "residence_fail",
-                    "patrimony_fail",
-                    "director_fail",
-                ],
-                weights=[20, 13, 12, 7, 10, 12, 8, 12, 6],
-            )[0]
+    def sample_params(self, rng: random.Random, split: str,
+                      forced_family: str | None = None) -> dict[str, Any]:
+        family = forced_family or (
+            OOD_FAMILIES[split] if split in OOD_FAMILIES
+            else rng.choice(TRAIN_FAMILIES)
+        )
 
         if family == "individual":
             adults, minors = 1, 0
@@ -427,6 +477,8 @@ class IMVProblemGenerator(ProblemGenerator):
             adults, minors = 1, rng.randint(1, 3)
         elif family == "capi_only":
             adults, minors = rng.choice([(1, 1), (1, 2), (2, 1), (2, 2)])
+        elif family in {"boundary", "threshold_ood"}:
+            adults, minors = rng.choice([(1, 1), (1, 2), (2, 1), (3, 2)])
         else:
             adults = rng.randint(1, 3)
             minors = rng.randint(0, 3)
@@ -495,8 +547,11 @@ class IMVProblemGenerator(ProblemGenerator):
                 rng.uniform(0, max(1.0, float(limits["assets"]) * 0.45)), 2
             )
 
+        if family in {"boundary", "threshold_ood"}:
+            self._apply_boundary_case(case, limits, guaranteed, rng, ood=(family == "threshold_ood"))
+
         # Occasionally exercise pension cap without making it a held-out family.
-        if split != "ood" and family == "ordinary" and rng.random() < 0.15:
+        if split in {"train", "test"} and family == "ordinary" and rng.random() < 0.15:
             case["persons"][0]["benefits"] = [
                 {
                     "type": "pension",
@@ -507,6 +562,50 @@ class IMVProblemGenerator(ProblemGenerator):
             ]
 
         return case
+
+    def _apply_boundary_case(self, case: dict[str, Any], limits: dict[str, Decimal],
+                             guaranteed: Decimal, rng: random.Random, *, ood: bool) -> None:
+        """Sample ±1 cent around economic cutoffs or ±1 day at residence cutoff."""
+        kind = rng.choice((
+            "imv_minimum", "net_worth", "non_corporate_assets",
+            "capi_income", "capi_net_worth", "residence",
+        ))
+        delta = rng.choice((-1, 0, 1))
+        cent = Decimal(delta) / 100
+        econ = case["economic"]
+        case["_boundary_type"] = kind
+        case["_boundary_side"] = delta
+        if kind == "imv_minimum":
+            minimum = _D(self.rules["amounts"]["minimum_imv_monthly_eur"])
+            econ["countable_income_annual_eur"] = float(_money(
+                (guaranteed - minimum + cent) * Decimal(12)
+            ))
+        elif kind == "net_worth":
+            econ["net_worth_eur"] = float(_money(limits["net_worth"] + cent))
+        elif kind == "non_corporate_assets":
+            econ["non_corporate_assets_eur"] = float(_money(limits["assets"] + cent))
+        elif kind == "capi_income":
+            econ["countable_income_annual_eur"] = float(_money(limits["capi_income"] + cent))
+        elif kind == "capi_net_worth":
+            econ["net_worth_eur"] = float(_money(limits["capi_net_worth"] + cent))
+        elif kind == "residence":
+            cutoff = add_months(APP_DATE, -int(
+                self.rules["requirements"]["minimum_continuous_residence_months"]
+            ))
+            case["persons"][0]["continuous_legal_effective_residence_since"] = (
+                cutoff + timedelta(days=delta)
+            ).isoformat()
+        if ood:
+            # Held-out *interaction*: in addition to a threshold, a second
+            # economic dimension is close to its statutory cutoff.
+            if kind != "non_corporate_assets":
+                econ["non_corporate_assets_eur"] = float(
+                    _money(limits["assets"] + Decimal(rng.choice((-1, 0, 1))) / 100)
+                )
+            else:
+                econ["net_worth_eur"] = float(
+                    _money(limits["net_worth"] + Decimal(rng.choice((-1, 0, 1))) / 100)
+                )
 
     def solve(self, params: dict[str, Any]) -> tuple[str, dict[str, str]]:
         result = evaluate_imv_case(params, self.rules)
@@ -526,6 +625,9 @@ class IMVProblemGenerator(ProblemGenerator):
                 params["_family"] in {"monoparental", "monoparental_institution"}
             ),
         }
+        if params.get("_boundary_type"):
+            branches["boundary_type"] = params["_boundary_type"]
+            branches["boundary_side"] = str(params["_boundary_side"])
         return expected_answer(params, self.rules), branches
 
     def render(self, params: dict[str, Any], rng: random.Random) -> tuple[str, int]:
@@ -675,6 +777,24 @@ class IMVProblemGenerator(ProblemGenerator):
             + facts
             + "Calcula el importe mensual final (IMV + CAPI) y contesta únicamente con la cifra.",
         ]
+        if params["_family"] == "wording_ood":
+            # Lexical distribution shift: the same facts, different requests.
+            templates = [
+                "Revisa este expediente de prestaciones. " + facts
+                + "Después de comprobar todos los requisitos, ¿qué cuantía conjunta "
+                  "mensual corresponde por las dos prestaciones?",
+                "Una familia consulta su posible cobertura económica. " + facts
+                + "Expresa en euros mensuales el resultado de sumar ambas ayudas, "
+                  "incluido un total nulo cuando proceda.",
+                "Se facilita esta documentación de una solicitud. " + facts
+                + "Resuelve la concesión y el cálculo de las dos partidas y comunica "
+                  "la suma mensual final con dos decimales.",
+                "Consulta de asesoramiento social: " + facts
+                + "Determina el pago mensual conjunto aplicando los requisitos de "
+                  "renta, patrimonio, convivencia y ayuda infantil.",
+            ]
+            idx = rng.randrange(len(templates))
+            return templates[idx], 100 + idx
         idx = rng.randrange(len(templates))
         return templates[idx], idx
 
@@ -696,7 +816,11 @@ def describe(problems: list[Problem]) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n", type=int, default=800)
-    parser.add_argument("--split", choices=["train", "test", "ood"], default="train")
+    parser.add_argument(
+        "--split",
+        choices=["train", "test", *OOD_FAMILIES],
+        default="train",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default="rlm/data/train.jsonl")
     parser.add_argument(

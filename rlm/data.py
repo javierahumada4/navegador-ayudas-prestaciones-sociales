@@ -7,6 +7,7 @@ preserved so distillation/reward code can use them.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from datasets import Dataset, load_dataset
@@ -28,16 +29,30 @@ IMV_SYSTEM_PROMPT = (
     "final dentro de <answer>...</answer>. "
     "En <answer> incluye únicamente el importe mensual total de IMV+CAPI en euros, "
     "con exactamente dos decimales y punto decimal, sin símbolo de moneda ni texto "
-    "adicional, siguiendo el patrón <answer>IMPORTE</answer>. "
+    "adicional, entre las etiquetas de apertura <answer> y cierre </answer>. "
     "Escribe un razonamiento breve y pertinente, y termina con la respuesta. "
     "No añadas texto fuera de esas etiquetas."
 )
 
 
-def build_prompt(question: str, system_prompt: str = IMV_SYSTEM_PROMPT) -> list[dict]:
+@lru_cache(maxsize=1)
+def get_imv_rule_context() -> str:
+    """Same versioned rule sheet used by the deterministic oracle and teacher."""
+    from rlm.generate_problems import build_rule_context
+    from rlm.imv_engine import load_ruleset
+
+    return build_rule_context(load_ruleset())
+
+
+def build_prompt(
+    question: str, system_prompt: str = IMV_SYSTEM_PROMPT,
+    *, rule_context: str | None = None,
+) -> list[dict]:
+    """If supplied, prepend the *exact* teacher rule sheet to the user's case."""
+    user_content = f"{rule_context}\n\n{question}" if rule_context else question
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": question},
+        {"role": "user", "content": user_content},
     ]
 
 
@@ -59,14 +74,19 @@ def load_gsm8k(split: str = "train", n_examples: int | None = None, seed: int = 
 
 
 def load_domain_dataset(
-    path: str | Path, system_prompt: str = IMV_SYSTEM_PROMPT
+    path: str | Path, system_prompt: str = IMV_SYSTEM_PROMPT,
+    *, include_rules: bool = True,
 ) -> Dataset:
     dataset = load_dataset("json", data_files=str(path), split="train")
     if "question" not in dataset.column_names or "answer" not in dataset.column_names:
         raise ValueError("The domain dataset needs at least 'question' and 'answer' fields.")
     return dataset.map(
         lambda ex: {
-            "prompt": build_prompt(ex["question"], system_prompt),
+            "prompt": build_prompt(
+                ex["question"], system_prompt,
+                rule_context=(ex.get("rule_context") or get_imv_rule_context())
+                if include_rules else None,
+            ),
             "answer": str(ex["answer"]),
         },
         remove_columns=["question"],

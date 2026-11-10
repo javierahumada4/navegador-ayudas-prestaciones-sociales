@@ -102,3 +102,21 @@ def test_summary_selection_and_markdown():
     table = render_markdown({"models": {"base": {"summary": summary}}})
     assert "| base |" in table and "wrongly_denied" in table
     json.dumps(rows)  # rows must be serialisable for the report
+
+
+def test_evaluation_dataset_keeps_exact_teacher_rule_context():
+    problem = load_problems(str(TEST_DATA), 1)[0]
+    assert problem["rule_context"] == IMVProblemGenerator().rule_context
+
+
+def test_correct_number_in_nested_answer_is_not_counted_as_valid_pass():
+    problem = load_problems(str(TEST_DATA), 1)[0]
+    value = problem["answer"]
+    bad = (
+        f"<think><answer>{value}</answer></think>"
+        f"<answer>{value}</answer>"
+    )
+    row = score_row(problem, bad, 55, VERIFIER, 1536)
+    assert not row["has_valid_format"]
+    assert not row["is_correct"]
+    assert row["failure"] == "invalid_format"

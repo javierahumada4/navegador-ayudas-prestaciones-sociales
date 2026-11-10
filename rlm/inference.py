@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from api.schemas import ReasoningResponse, VerifierVerdict
-from rlm.data import build_prompt
-from rlm.rewards import extract_answer, has_valid_format
+from rlm.chat_template import render_thinking_prompt, restore_thinking_prefix
+from rlm.data import build_prompt, get_imv_rule_context
+from rlm.rewards import extract_answer, has_valid_format, has_valid_imv_format
 from rlm.verifier import build_verifier
 
 THINK_PATTERN = re.compile(r"<think>(?P<think>.*?)</think>", re.DOTALL)
@@ -113,6 +114,14 @@ class ReasoningModel:
         self.model = model.eval()
         self.verifier = build_verifier(self.verifier_name)
 
+    def _prompt(self, question: str, rule_context: str | None = None) -> list[dict]:
+        """Use the same IMV rule sheet in training, GRPO, evaluation and API."""
+        context = (
+            rule_context or get_imv_rule_context()
+            if self.verifier_name == "imv" else None
+        )
+        return build_prompt(question, rule_context=context)
+
     def generate(
         self,
         question: str,
@@ -120,12 +129,11 @@ class ReasoningModel:
         *,
         do_sample: bool = True,
         temperature: float = 0.6,
+        rule_context: str | None = None,
     ) -> tuple[str, int]:
         import torch
 
-        text = self.tokenizer.apply_chat_template(
-            build_prompt(question), tokenize=False, add_generation_prompt=True
-        )
+        text = render_thinking_prompt(self.tokenizer, self._prompt(question, rule_context))
         inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
         kwargs = {
             "max_new_tokens": max_new_tokens,
@@ -137,7 +145,12 @@ class ReasoningModel:
         with torch.no_grad():
             out = self.model.generate(**inputs, **kwargs)
         new_tokens = out[0, inputs["input_ids"].shape[1] :]
-        return self.tokenizer.decode(new_tokens, skip_special_tokens=True), int(new_tokens.numel())
+        return (
+            restore_thinking_prefix(
+                text, self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            ),
+            int(new_tokens.numel()),
+        )
 
     def generate_batch(
         self,
@@ -146,15 +159,17 @@ class ReasoningModel:
         *,
         do_sample: bool = True,
         temperature: float = 0.6,
+        rule_contexts: list[str | None] | None = None,
     ) -> list[tuple[str, int]]:
         """Batched ``generate``: same prompt and decoding, one (raw, n_tokens) per question."""
         import torch
 
+        if rule_contexts is not None and len(rule_contexts) != len(questions):
+            raise ValueError("rule_contexts must match the number of questions")
+        contexts = rule_contexts if rule_contexts is not None else [None] * len(questions)
         texts = [
-            self.tokenizer.apply_chat_template(
-                build_prompt(q), tokenize=False, add_generation_prompt=True
-            )
-            for q in questions
+            render_thinking_prompt(self.tokenizer, self._prompt(question, context))
+            for question, context in zip(questions, contexts, strict=True)
         ]
         pad_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
         # Decoder-only models must be left-padded so every prompt ends where generation starts.
@@ -172,10 +187,12 @@ class ReasoningModel:
         new_tokens = out[:, inputs["input_ids"].shape[1] :]
         return [
             (
-                self.tokenizer.decode(row, skip_special_tokens=True),
+                restore_thinking_prefix(
+                    prompt, self.tokenizer.decode(row, skip_special_tokens=True)
+                ),
                 int((row != pad_id).sum()),
             )
-            for row in new_tokens
+            for prompt, row in zip(texts, new_tokens, strict=True)
         ]
 
     def answer(
@@ -183,20 +200,29 @@ class ReasoningModel:
     ) -> ReasoningResponse:
         raw, n_tokens = self.generate(question, max_new_tokens)
         thinking, answer = split_thinking(raw)
+        valid_format = (
+            has_valid_imv_format(raw) if self.verifier_name == "imv"
+            else has_valid_format(raw)
+        )
         verdict = None
         if expected_answer is not None:
             result = self.verifier.verify(raw, expected_answer)
             verdict = VerifierVerdict(
-                is_correct=result.is_correct,
+                is_correct=result.is_correct and (
+                    valid_format if self.verifier_name == "imv" else True
+                ),
                 predicted=result.predicted,
                 expected=result.expected,
-                detail=result.detail,
+                detail=(
+                    "invalid IMV output format" if not valid_format
+                    and self.verifier_name == "imv" else result.detail
+                ),
             )
         return ReasoningResponse(
             thinking=thinking,
             answer=answer,
             raw=raw,
-            has_valid_format=has_valid_format(raw),
+            has_valid_format=valid_format,
             verifier=verdict,
             tokens_generated=n_tokens,
             truncated=n_tokens >= max_new_tokens,

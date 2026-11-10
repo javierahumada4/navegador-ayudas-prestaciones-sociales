@@ -36,9 +36,11 @@ las incorrectas; lo que sobrevive es vuestro dataset de SFT. Apuntad en `EXPERIM
 cuántas generasteis, cuántas descartasteis y por qué. Ese porcentaje es la primera medida de
 lo difícil que es vuestro dominio.
 
-**3. SFT.** Con `rlm/train_sft.py` entrenáis un adaptador LoRA sobre las trazas verificadas.
-Es el mismo `SFTTrainer` de siempre; lo único nuevo es que el objetivo incluye la cadena de
-razonamiento.
+**3. SFT.** Con `rlm/train_sft.py` entrenáis un adaptador LoRA sobre trazas verificadas.
+El pipeline selecciona objetivos completos de como máximo 1024 tokens (tokenizador del
+alumno) y exige al menos 70 % de problemas cubiertos por trazas elegibles. El contexto
+completo sigue pudiendo ocupar hasta 8192 tokens. El informe de cobertura se guarda en
+`reports/sft_selection.json` dentro de cada ejecución.
 
 **4. GRPO.** Con `rlm/train_grpo.py`, partiendo del adaptador de SFT (o del modelo base, si
 queréis reproducir el experimento de R1-Zero y ver qué pasa sin arranque en frío). Como
@@ -57,6 +59,10 @@ delante.
 base, tras SFT y tras GRPO. Curvas de recompensa y de longitud del razonamiento durante el
 entrenamiento (el histórico se guarda en JSON). Y un análisis de al menos cinco fallos
 concretos: ¿por qué se equivoca el modelo ahí?
+
+**Resultados definitivos.** Conservad los informes, figuras y metadatos de la
+última ejecución en [`results/rlm_final/`](../results/rlm_final/README.md).
+Los adaptadores LoRA deben almacenarse por separado, no en Git.
 
 **7. El endpoint.** `rlm/inference.py` ya sabe cargar base + adaptador y separar
 pensamiento de respuesta. Solo tenéis que apuntar `ARCA_RLM_ADAPTER` a vuestro adaptador

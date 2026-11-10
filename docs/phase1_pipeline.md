@@ -1,7 +1,6 @@
 # Fase 1 reproducible — IMV + CAPI
 
-Esta guía corresponde a la rama `fix/rlm-reproducible-pipeline`, derivada de
-`feat/ngrok`. Genera **desde cero** problemas, trazas verificadas y adaptadores,
+Esta guía describe cómo generar **desde cero** problemas, trazas verificadas y adaptadores,
 sin incorporar trazas ni checkpoints históricos. No publica datos personales.
 
 ## Requisitos
@@ -19,14 +18,42 @@ enunciados. El formato de salida mantiene las etiquetas `<think>` y
 `<answer>`, así como el punto decimal. Los prompts no incluyen un importe
 de ejemplo fijo que el modelo pueda copiar. El profesor debe razonar en
 español y de forma concisa, aunque **no se puede garantizar el idioma del
-pensamiento nativo de Qwen3 solo mediante instrucciones**. Para contrastar
-una variante que desactiva ese pensamiento nativo y prefija `<think>`,
-se puede usar `--teacher-no-thinking` en un run independiente. El prompt genérico
-de GSM8K continúa en inglés, porque se evalúa por separado.
+pensamiento nativo de Qwen3 solo mediante instrucciones**. **El idioma no es
+un filtro de aceptación**: se conservan las trazas inglesas cuando el formato
+y el importe final son correctos. El código ya no rechaza trazas por la
+heurística `non_spanish_reasoning`. Para generar trazas de razonamiento
+**debe utilizarse el thinking nativo** (`enable_thinking=True`).
+El pipeline utiliza exclusivamente thinking nativo, sin una alternativa que lo desactive.
+No se añaden etiquetas de cierre artificiales a las trazas truncadas.
+El prompt genérico de GSM8K continúa en inglés, porque se evalúa por separado.
 
 **No mezcles checkpoints ni trazas de runs anteriores con este cambio de
 prompt.** Para comparar base/SFT/GRPO, genera un `--run-dir` nuevo y mantén
 el mismo prompt durante toda la ejecución.
+
+### Misma hoja de reglas en profesor y alumno
+
+Por defecto, el **profesor** y el **alumno** reciben el mismo texto
+`rule_context` generado por `build_rule_context(load_ruleset())`, delante
+del enunciado del caso. El alumno lo usa en **SFT, GRPO, evaluación y
+`/reasoning`**. Las trazas nuevas almacenan una copia exacta de esa hoja de
+reglas, que SFT reutiliza; para trazas antiguas sin `rule_context`, se
+reconstruye desde las reglas actuales del repositorio. La destilación
+sigue añadiendo las reglas **una sola vez**, antes de generar la respuesta
+del profesor. El dominio GSM8K no recibe las reglas IMV.
+
+Se ha eliminado el marcador literal `IMPORTE` de ambos prompts, pues
+los modelos podían reproducirlo como respuesta. Ahora se indica que el
+número debe escribirse entre las etiquetas de apertura y cierre
+`<answer>` y `</answer>`, sin ejemplo numérico.
+
+Como los prompts IMV incluyen reglas legales largas, `--sft-max-length 8192`
+limita el **prompt más la respuesta**; no debe ponerse a 1024. El
+argumento único `--completion-tokens 1024` limita las **respuestas** del
+SFT, GRPO y la evaluación usando el tokenizador del
+alumno. No se recortan trazas ni se fabrican cierres de etiquetas.
+Este cambio invalida los LoRA anteriores: inicia un `--run-dir` nuevo.
+Que los modelos vean las reglas no garantiza por sí solo una mejora en pass@1.
 
 Los extras `distill` (vLLM y su versión de torch) y `train`
 (TRL/Transformers/PEFT) tienen dependencias incompatibles. El lanzador prepara
@@ -34,6 +61,39 @@ dos entornos aislados bajo el run, `.venv-distill` y `.venv-train`, mediante
 `UV_PROJECT_ENVIRONMENT`. No instalar ambos extras en un mismo entorno.
 
 ## Comandos
+
+El pipeline usa `--quality-gates warn` **por defecto**. Esto permite
+recorrer generación, destilación, SFT, GRPO y evaluación aunque los
+mínimos de calidad no se alcancen, para observar los resultados y
+comparar etapas. Si se desea que los controles por calidad detengan
+el entrenamiento, añadir `--quality-gates strict`. Los fallos
+técnicos o los datos imposibles de entrenar siguen deteniendo la
+ejecución. No es necesario añadir `--quality-gates warn` explícitamente.
+
+
+### Entrenamiento completo para estudiar el aprendizaje de SFT
+
+Con una carpeta nueva, sin `--smoke`:
+
+```bash
+python -u -m rlm.pipeline \
+  --run-dir runs/phase1-dgx-1024-full \
+  --seed 42 \
+  --teacher Qwen/Qwen3-4B --teacher-backend vllm \
+  --teacher-samples 8 --teacher-batch-size 1 --teacher-gpu-memory 0.75 \
+  --student Qwen/Qwen3-1.7B \
+  --completion-tokens 1024 --sft-max-length 8192 \
+  --sft-epochs 2 --sft-batch-size 1 --sft-grad-accum 8 \
+  --min-sft-problem-coverage 0.70 \
+  --grpo-micro-batch-size 1 --eval-batch-size 1
+```
+
+El profesor mantiene `--teacher-max-new-tokens 2048` para poder completar
+una traza; **SFT solo acepta completions de hasta 1024 tokens**
+según el tokenizador del alumno. No se mezclan datasets ni adaptadores
+de ensayos anteriores. El entrenamiento puede superar una sesión de
+24 h de DGX; conserva los checkpoints y los informes por etapas.
+
 
 Inspeccionar el plan sin escribir ni usar GPU:
 
@@ -60,20 +120,71 @@ python -m rlm.pipeline \
   --student Qwen/Qwen3-0.6B
 ```
 
-De forma predeterminada genera 800 casos de entrenamiento, 200 de test
-y 100 OOD, reservados para la familia `capi_only`. Produce cuatro muestras
-del profesor por caso, filtra con el oracle, entrena LoRA SFT sobre las
-trazas válidas y luego GRPO **inicializado con el adaptador SFT**. Evalúa
-base/SFT/GRPO separadamente en test y OOD.
+De forma predeterminada genera 800 casos de entrenamiento y 200 de
+test, con cobertura casi uniforme de **10 familias** (incluida
+`boundary`, que sitúa renta, patrimonio, activos o residencia a un
+céntimo/día del umbral). Los casos se calculan con el mismo oracle
+determinista; el control de splits verifica etiquetas y ausencia de
+duplicados. No es una muestra representativa de la población española.
+
+Además, genera **tres suites OOD independientes de 50 casos cada una**
+(`--ood-size 50` por defecto): `ood` (CAPI sin IMV, familia ausente
+de train/test), `ood_threshold` (interacciones de dos condiciones próximas
+al límite) y `ood_wording` (formulaciones alternativas de los enunciados;
+es un cambio léxico, no una población independiente).
+`ood_composition` se ha retirado de generación, validación y evaluación.
+Se comprueban los duplicados *entre las suites activas* y se evalúan
+base/SFT/GRPO por separado. Un smoke genera 8 casos por suite.
+El test ordinario se mantiene en 200 casos; con tres modelos se realizan
+1050 generaciones de evaluación por defecto (200 + 3 × 50, por modelo).
+
+El profesor produce cuatro muestras por caso (dos en smoke), filtradas
+por importe contra el oráculo. **SFT utiliza como máximo 2 trazas
+verificadas, diferentes y preferentemente breves, por problema**
+(`--sft-max-traces-per-problem`). Las trazas antiguas se limpian de
+las etiquetas `<imv>` y `<capi>` cuando aparezcan: ya no forman parte
+del contrato del estudiante y nunca se añaden de nuevo.
+
+El **único formato IMV admitido** es
+`<think>razonamiento</think><answer>123.45</answer>`, con un único
+`<answer>` final fuera de `<think>`, sin anidamientos y con dos
+decimales exactos (sin símbolos ni separadores). El detector genérico
+para GSM8K sigue permitiendo respuestas enteras. La evaluación,
+el validador de trazas, la inferencia y la recompensa
+IMV usan el contrato estricto. Esto puede disminuir la tasa de formato
+publicada respecto de los runs anteriores, que aceptaban erróneamente
+`<answer>` dentro del razonamiento.
+
+En **GRPO hay solo tres recompensas**: formato estricto (1.0),
+importe total correcto contra el oráculo (2.0) y respuesta final
+única con dos decimales (0.5). Se ha eliminado toda recompensa
+por cantidades intermedias IMV/CAPI. Se mantiene el monitor de
+recompensas sin variación.
+
+La plantilla de **Qwen3 thinking** se aplica en SFT, GRPO e inferencia
+a partir del tokenizer, con `enable_thinking=True`. Nunca se añade
+manualmente `<think>` al prefijo de generación del alumno. Antes de
+SFT se comprueba que el ejemplo conversacional tokenizado tiene
+**exactamente el mismo prefijo de asistente** que se usa para
+generación, y que su final supervisado está intacto. GRPO utiliza
+ese prefijo ya renderizado en sus prompts para evitar discrepancias
+entre plantillas. El EOS se toma del tokenizer (`<|im_end|>` en
+Qwen3). No se han validado todavía los pesos en DGX con el nuevo
+contrato; las comprobaciones de CPU no sustituyen a un smoke GPU.
+
+**Los nuevos formatos de trazas, recompensas y splits requieren un
+`--run-dir` nuevo** y no deben combinarse con adaptadores anteriores.
 
 Los artefactos se guardan en el directorio indicado con `--run-dir`:
 
-- `data/train.jsonl`, `data/test.jsonl` y `data/test_ood.jsonl`;
+- `data/train.jsonl`, `data/test.jsonl`, `data/test_ood.jsonl`,
+  `data/test_ood_threshold.jsonl` y `data/test_ood_wording.jsonl`;
 - `data/sft_traces.jsonl` con muestras aceptadas y rechazadas;
 - `logs/distillation.jsonl` y `reports/distillation_validation.json`
   con la tasa de aceptación por familia;
 - `weights/sft_lora/` y `weights/grpo_lora/`;
-- `reports/eval_test.json` y `reports/eval_ood.json`;
+- `reports/eval_test.json`, `reports/eval_ood.json` y los informes
+  `eval_ood_threshold.json` y `eval_ood_wording.json`;
 - `reports/grpo_curves.png`;
 - `manifest.json` con configuración, comandos, resultados y fechas.
 
@@ -86,17 +197,69 @@ ninguna persona puede tener residencia continuada anterior a su nacimiento,
 ni constar conviviendo desde antes del nacimiento del integrante más joven.
 
 La destilación informa `rejected_by_reason`, `hit_max_tokens`,
-`verified_unique_problems` y `verified_families`. El modo `--smoke` exige
-al menos **6 trazas de 4 problemas y 3 familias distintas**; un run normal,
-100 trazas de 50 problemas y 5 familias, como mínimos de protección
-(no garantizan razonamientos correctos). Si no se alcanzan, se guarda
-`reports/distillation_validation.json` y el flujo se detiene **antes de SFT**.
-Los límites se pueden ajustar con `--min-verified-traces`,
-`--min-unique-trace-problems` y `--min-verified-families`,
-pero no conviene reducirlos para ocultar una mala destilación.
+`verified_unique_problems` y `verified_families`. Se registran
+mínimos orientativos (smoke: 6 trazas de 4 problemas y 3 familias;
+entrenamiento completo: 100 trazas de 50 problemas y 5 familias).
+Por defecto, `--quality-gates warn` convierte el incumplimiento de
+estos mínimos en una **advertencia** en el log y en
+`reports/distillation_validation.json` (`quality_warnings`).
+El pipeline continúa a SFT si hay datos utilizables. Con
+`--quality-gates strict` se conserva el bloqueo por calidad.
 
-GRPO avisa al detectar recompensas sin variación y detiene un run largo
-tras 5 pasos consecutivos sin señal (`--grpo-zero-signal-patience`).
+Los errores de integridad (etiquetas incorrectas, muestras ausentes,
+trazas marcadas como verificadas que no coinciden con el oráculo)
+siguen deteniendo el entrenamiento en ambos modos.
+
+### Validaciones de SFT y entrada a GRPO
+
+Antes de cargar los pesos del alumno, `rlm.train_sft` examina todas las
+trazas **verificadas** con el tokenizador y la plantilla de chat reales.
+Selecciona hasta dos trazas distintas y cortas por problema, siempre con
+respuesta final completa, descartando las que superen **1024 tokens de
+completion** o el máximo de prompt+completion (`--sft-max-length 8192`).
+El informe `reports/sft_selection.json` cuenta descartes por longitud,
+cobertura de problemas y familias. No se corta ninguna respuesta.
+
+Para ampliar la cobertura, el entrenamiento completo genera
+8 muestras del profesor por problema (el smoke usa 2).
+La selección sigue usando una cobertura de referencia del 70 % de
+problemas y un mínimo de 5 familias, pero por defecto
+**no detiene el SFT** cuando no se alcancen: anota
+`quality_passed=false` y `quality_warnings` en
+`reports/sft_selection.json` y entrena con las trazas verificadas
+disponibles. `--quality-gates strict` recupera el bloqueo.
+No se aceptan trazas incorrectas, incompletas o mayores de
+1024 tokens. Si ninguna traza supera el filtro, SFT no puede
+entrenarse y el programa falla incluso en modo aviso.
+
+`rlm.sft_selection` realiza toda la selección y comprobación previa:
+verifica el formato de la respuesta, la plantilla de chat de Qwen3 y el
+presupuesto de tokens de prompt y completion. Solo las trazas completas
+seleccionadas pasan al entrenador; los descartes y la cobertura quedan
+registrados en `reports/sft_selection.json`. No se ejecuta un preflight
+independiente ni se genera `reports/sft_input_validation.json`.
+
+**GRPO comienza directamente al finalizar SFT**, sin generar respuestas
+de prueba ni aplicar controles de formato/truncamiento entre ambas etapas.
+Se mantiene la selección y la validación integrada de las trazas
+anteriores al entrenamiento SFT. Las métricas de exactitud, formato y truncamiento del
+modelo SFT se miden en la evaluación final, junto a base y GRPO, usando
+test y OOD. El pipeline ya no genera un informe de preparación de SFT.
+
+GRPO ahora utiliza **4 generaciones por problema incluso en smoke**;
+la temperatura predeterminada es **0.6**, `top_p=0.95` y
+`top_k=20`, recomendados para Qwen3 en modo thinking. Se pueden
+ajustar con `--grpo-generations`, `--grpo-temperature`,
+`--grpo-top-p` y `--grpo-top-k`. Cuatro generaciones consumen
+más GPU que dos; en la DGX es preferible `--grpo-micro-batch-size 1`.
+El smoke sigue teniendo solo **2 pasos** de GRPO: sirve para comprobar
+el flujo, no para demostrar aprendizaje.
+
+GRPO sigue registrando avisos si los grupos de recompensas no
+presentan variación. Por defecto no aborta por ello (paciencia 0
+en modo `warn`). Con `--quality-gates strict` se recupera
+el corte tras cinco pasos consecutivos sin señal
+(`--grpo-zero-signal-patience`, configurable).
 Un smoke con 2 pasos puede acabar con recompensa nula: eso **no** demuestra
 aprendizaje, aunque se hayan generado los informes.
 
@@ -167,18 +330,9 @@ resultados. Para desplegar `/reasoning`, configurar `ARCA_RLM_ADAPTER` con
 los servicios `smoke`, `train` y `check-gpu` sí requieren runtime NVIDIA.
 
 
-## Ejemplo local en WSL2 (GPU NVIDIA de 12 GB)
+## Adaptación a GPU locales
 
-Una vez comprobado `nvidia-smi` en Ubuntu/WSL2, ejecutar el ensayo con
-**un nuevo directorio**, sin mezclar las trazas y adaptadores anteriores:
-
-```bash
-VLLM_USE_FLASHINFER_SAMPLER=0 python3 -m rlm.pipeline --smoke --run-dir runs/phase1-smoke-v2 --teacher Qwen/Qwen3-1.7B --teacher-batch-size 1 --teacher-gpu-memory 0.75 --grpo-micro-batch-size 1 --eval-batch-size 1
-```
-
-`VLLM_USE_FLASHINFER_SAMPLER=0` evita el muestreador FlashInfer que
-requiere compilar kernels con `nvcc` en algunas configuraciones WSL2;
-no deshabilita CUDA ni FlashAttention. Si el profesor insiste en razonar
-en inglés o genera cadenas interminables, probar `--teacher-no-thinking`
-en **otro run-dir** y contrastar aceptación y cobertura antes de SFT.
-El cambio de prompt o modelo no debe evaluarse reusando LoRA históricos.
+Si el ensayo no cabe en memoria, ajusta `--teacher-batch-size`,
+`--teacher-gpu-memory`, `--grpo-micro-batch-size` y `--eval-batch-size`.
+Utiliza otro `--run-dir` al cambiar modelos o prompts y conserva el modo
+thinking nativo. Documenta las variables específicas de CUDA/vLLM que necesites.

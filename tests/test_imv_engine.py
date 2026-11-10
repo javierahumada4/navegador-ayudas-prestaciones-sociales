@@ -373,3 +373,14 @@ def test_parent_in_prison_or_hospital_meets_12_month_monoparental_rule():
     case["other_parent_institution"]["kind"] = "hospital"
     case["other_parent_institution"]["continuous_months"] = 15
     assert is_monoparental(case, unit, generator.rules)
+
+def test_overlapping_social_security_periods_count_only_once():
+    from datetime import date
+    from rlm.imv_engine import _registration_months
+
+    case = reference_case()
+    case["social_security_registration_periods"] = [
+        {"person_id": "p1", "from": "2025-01-01", "to": "2025-07-01"},
+        {"person_id": "p1", "from": "2025-01-01", "to": "2025-07-01"},
+    ]
+    assert _registration_months(case, "p1", date(2024, 9, 26), date(2026, 9, 26)) == 6

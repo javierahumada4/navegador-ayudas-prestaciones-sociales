@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from datetime import date
 from pathlib import Path
 
 from rlm.imv_engine import expected_answer
-from rlm.rewards import has_valid_format
+from rlm.rewards import has_valid_imv_format
 from rlm.verifier import IMVAmountVerifier
 
 
@@ -61,9 +62,16 @@ def validate_case_dates(params, place="case"):
         raise ValueError(f"{place}: invalid chronology: {exc}") from exc
 
 
-def validate_splits(train, test, ood):
+def validate_splits(train, test, ood, extra_ood=None):
+    from rlm.generate_problems import OOD_FAMILIES, case_fingerprint
+
     seen_params, seen_questions, summary = {}, {}, {}
-    for split, path in {"train": train, "test": test, "ood": ood}.items():
+    paths = {"train": train, "test": test, "ood": ood}
+    for split, path in (extra_ood or {}).items():
+        if split not in OOD_FAMILIES or split == "ood":
+            raise ValueError(f"unknown or duplicate OOD split: {split}")
+        paths[split] = path
+    for split, path in paths.items():
         rows = read_jsonl(path)
         families = Counter()
         for n, row in enumerate(rows, 1):
@@ -79,12 +87,15 @@ def validate_splits(train, test, ood):
             if not isinstance(branch, dict) or not isinstance(branch.get("family"), str):
                 raise ValueError(f"{place}: missing family")
             family = branch["family"]
-            if (split == "ood") != (family == "capi_only"):
-                raise ValueError(f"{place}: capi_only must be held out in OOD")
+            if split in OOD_FAMILIES:
+                if family != OOD_FAMILIES[split]:
+                    raise ValueError(f"{place}: wrong family for split {split}: {family}")
+            elif family in OOD_FAMILIES.values():
+                raise ValueError(f"{place}: OOD family {family} leaked into {split}")
             label = expected_answer(row["params"])
             if row.get("answer") != label:
                 raise ValueError(f"{place}: stale oracle label {row.get('answer')!r} != {label!r}")
-            fingerprint = json.dumps(row["params"], sort_keys=True, ensure_ascii=False)
+            fingerprint = case_fingerprint(row["params"])
             if fingerprint in seen_params:
                 raise ValueError(f"{place}: duplicate parameters with {seen_params[fingerprint]}")
             seen_params[fingerprint] = place
@@ -97,7 +108,7 @@ def validate_splits(train, test, ood):
     return summary
 
 
-def validate_traces(path, train):
+def validate_traces(path, train, expected_samples=None):
     training = read_jsonl(train)
     answers = {x["question"]: x["answer"] for x in training}
     family = {x["question"]: x["branches"]["family"] for x in training}
@@ -112,7 +123,12 @@ def validate_traces(path, train):
         question = row.get("question")
         if question not in answers or row.get("answer") != answers[question]:
             raise ValueError(f"{place}: not a training question or target mismatch")
-        key = (question, row.get("sample_idx"))
+        index = row.get("sample_idx")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise ValueError(f"{place}: invalid sample_idx")
+        if expected_samples is not None and index >= expected_samples:
+            raise ValueError(f"{place}: sample_idx exceeds expected samples")
+        key = (question, index)
         if key in seen:
             raise ValueError(f"{place}: repeated sample index")
         seen.add(key)
@@ -120,7 +136,7 @@ def validate_traces(path, train):
         counts[bucket] += 1
         if row.get("verified") is True:
             trace = row.get("trace")
-            if not isinstance(trace, str) or not has_valid_format(trace):
+            if not isinstance(trace, str) or not has_valid_imv_format(trace):
                 raise ValueError(f"{place}: malformed verified trace")
             if not verifier.verify(trace, answers[question]).is_correct:
                 raise ValueError(f"{place}: verified trace disagrees with oracle")
@@ -134,6 +150,17 @@ def validate_traces(path, train):
             rejection_reasons[reason] += 1
         if row.get("hit_max_tokens"):
             max_token_count += 1
+    if expected_samples is not None:
+        missing = [
+            (question, index)
+            for question in answers
+            for index in range(expected_samples)
+            if (question, index) not in seen
+        ]
+        if missing:
+            raise ValueError(
+                f"Missing {len(missing)} teacher samples; first missing: {missing[0]}"
+            )
     kept = sum(accepted.values())
     return {
         "generated": len(rows), "verified": kept,
@@ -176,10 +203,17 @@ def main(argv=None):
     parser.add_argument("--train", required=True)
     parser.add_argument("--test")
     parser.add_argument("--ood")
+    parser.add_argument(
+        "--ood-extra", nargs=2, action="append", metavar=("SPLIT", "PATH"),
+        help="additional held-out suites: ood_threshold, ood_wording",
+    )
     parser.add_argument("--traces")
+    parser.add_argument("--expected-trace-samples", type=int)
     parser.add_argument("--min-verified-traces", type=int, default=1)
     parser.add_argument("--min-unique-trace-problems", type=int, default=1)
     parser.add_argument("--min-verified-families", type=int, default=1)
+    parser.add_argument("--warn-low-coverage", action="store_true",
+                        help="record insufficient verified trace coverage without failing")
     parser.add_argument("--out")
     args = parser.parse_args(argv)
     if bool(args.test) != bool(args.ood):
@@ -188,22 +222,39 @@ def main(argv=None):
         parser.error("provide --test and --ood and/or --traces")
     summary = {}
     if args.test:
-        summary["splits"] = validate_splits(args.train, args.test, args.ood)
+        extras = dict(args.ood_extra or [])
+        if len(extras) != len(args.ood_extra or []):
+            parser.error("duplicate --ood-extra split")
+        summary["splits"] = validate_splits(
+            args.train, args.test, args.ood, extra_ood=extras
+        )
     if args.traces:
-        summary["distillation"] = validate_traces(args.traces, args.train)
+        summary["distillation"] = validate_traces(
+            args.traces, args.train, expected_samples=args.expected_trace_samples
+        )
+    quality_error = None
+    if args.traces:
+        try:
+            require_trace_quality(
+                summary["distillation"],
+                min_verified=args.min_verified_traces,
+                min_unique_problems=args.min_unique_trace_problems,
+                min_families=args.min_verified_families,
+            )
+        except ValueError as exc:
+            quality_error = exc
+            summary["distillation"]["quality_warnings"] = [str(exc)]
     payload = json.dumps(summary, indent=2, ensure_ascii=False)
     print(payload)
     if args.out:
         path = Path(args.out)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(payload + "\n", encoding="utf-8")
-    if args.traces:
-        require_trace_quality(
-            summary["distillation"],
-            min_verified=args.min_verified_traces,
-            min_unique_problems=args.min_unique_trace_problems,
-            min_families=args.min_verified_families,
-        )
+    if quality_error:
+        if not args.warn_low_coverage:
+            raise quality_error
+        print(f"WARNING: {quality_error}; continuing to SFT",
+              file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

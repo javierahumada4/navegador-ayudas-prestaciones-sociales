@@ -44,3 +44,9 @@ def test_calculator_is_safe_and_correct():
         ToolRegistry().register(calculator).call("calculator", {"expression": "__import__('os')"})
     )
     assert not record.ok
+
+def test_calculator_rejects_resource_exhaustion():
+    registry = ToolRegistry().register(calculator)
+    for expression in ("9**999999999", "2**100", "1" * 201, "(2**12)**12"):
+        record = registry.call("calculator", {"expression": expression})
+        assert not record.ok, expression
