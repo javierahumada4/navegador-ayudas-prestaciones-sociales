@@ -3,6 +3,7 @@ name: IMV phase 1 logic checks
 on:
   push:
     branches:
+      - main
       - 'fix/**'
       - 'refactor/**'
   pull_request:
