@@ -60,6 +60,10 @@ base, tras SFT y tras GRPO. Curvas de recompensa y de longitud del razonamiento 
 entrenamiento (el histórico se guarda en JSON). Y un análisis de al menos cinco fallos
 concretos: ¿por qué se equivoca el modelo ahí?
 
+**Resultados definitivos.** Conservad los informes, figuras y metadatos de la
+última ejecución en [`results/rlm_final/`](../results/rlm_final/README.md).
+Los adaptadores LoRA deben almacenarse por separado, no en Git.
+
 **7. El endpoint.** `rlm/inference.py` ya sabe cargar base + adaptador y separar
 pensamiento de respuesta. Solo tenéis que apuntar `ARCA_RLM_ADAPTER` a vuestro adaptador
 final y registrar vuestro verificador en `VERIFIERS`.
