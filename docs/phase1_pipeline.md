@@ -50,7 +50,7 @@ número debe escribirse entre las etiquetas de apertura y cierre
 Como los prompts IMV incluyen reglas legales largas, `--sft-max-length 8192`
 limita el **prompt más la respuesta**; no debe ponerse a 1024. El
 argumento único `--completion-tokens 1024` limita las **respuestas** del
-SFT, el readiness gate, GRPO y la evaluación usando el tokenizador del
+SFT, GRPO y la evaluación usando el tokenizador del
 alumno. No se recortan trazas ni se fabrican cierres de etiquetas.
 Este cambio invalida los LoRA anteriores: inicia un `--run-dir` nuevo.
 Que los modelos vean las reglas no garantiza por sí solo una mejora en pass@1.
@@ -150,7 +150,7 @@ El **único formato IMV admitido** es
 `<answer>` final fuera de `<think>`, sin anidamientos y con dos
 decimales exactos (sin símbolos ni separadores). El detector genérico
 para GSM8K sigue permitiendo respuestas enteras. La evaluación,
-`SFT readiness`, el validador de trazas, la inferencia y la recompensa
+el validador de trazas, la inferencia y la recompensa
 IMV usan el contrato estricto. Esto puede disminuir la tasa de formato
 publicada respecto de los runs anteriores, que aceptaban erróneamente
 `<answer>` dentro del razonamiento.
@@ -236,17 +236,12 @@ Las trazas finalmente seleccionadas superan además el preflight
 `reports/sft_input_validation.json` para descartar fallos de plantilla
 y de tokenización.
 
-Una vez entrenado SFT, el pipeline ejecuta **`SFT readiness gate` antes
-de iniciar GRPO**, con hasta ocho preguntas del conjunto de *entrenamiento*
-seleccionadas de distintas familias. Este control funcional exige al
-menos **75 % de respuestas con formato válido y como máximo 25 % truncadas**
-(`--sft-min-format-rate`, `--sft-max-truncated-rate`).
-El presupuesto del control es también `--completion-tokens 1024`. Siempre se escribe
-`reports/sft_readiness.json`. Por defecto, una tasa insuficiente
-solo genera una advertencia y GRPO comienza igualmente. En modo
-`--quality-gates strict` se bloquea GRPO si falla ese control. Este control
-**no es una evaluación de generalización**, pues no emplea ni test ni OOD.
-Los resultados de test y OOD siguen reservados para la fase final.
+**GRPO comienza directamente al finalizar SFT**, sin generar respuestas
+de prueba ni aplicar controles de formato/truncamiento entre ambas etapas.
+Se mantienen la selección y la validación de las trazas anteriores al
+entrenamiento SFT. Las métricas de exactitud, formato y truncamiento del
+modelo SFT se miden en la evaluación final, junto a base y GRPO, usando
+test y OOD. El pipeline ya no genera un informe de preparación de SFT.
 
 GRPO ahora utiliza **4 generaciones por problema incluso en smoke**;
 la temperatura predeterminada es **0.6**, `top_p=0.95` y

@@ -14,7 +14,7 @@ def test_plan_wires_all_stages_and_isolates_uv_extras():
     assert "--adapters" in commands["evaluate test"]
     assert "--runs" in commands["GRPO curves"]
     assert "--validation-report" in commands["supervised LoRA"]
-    assert "--adapter" in commands["SFT readiness gate"]
+    assert [step.title for step in plan[3].steps] == ["GRPO from SFT"]
     assert plan[1].steps[0].env_path != plan[2].steps[0].env_path
 
 
@@ -61,9 +61,7 @@ def test_resume_grpo_picks_checkpoint_and_preserves_earlier_stages(tmp_path):
     (output / "trainer_state.json").write_text("{}", encoding="utf-8")
     plan = build_plan(args)
     assert len(plan) == 1
-    assert [step.title for step in plan[0].steps] == [
-        "SFT readiness gate", "GRPO from SFT"
-    ]
+    assert [step.title for step in plan[0].steps] == ["GRPO from SFT"]
     command = plan[0].steps[-1].command
     assert command[command.index("--resume-from-checkpoint") + 1] == str(output)
 
@@ -105,22 +103,18 @@ def test_teacher_seed_and_expected_sample_count_travel_through_pipeline():
     assert validate[validate.index("--expected-trace-samples") + 1] == "2"
 
 
-def test_grpo_always_checks_sft_readiness_and_uses_qwen_thinking_sampling():
+def test_grpo_runs_directly_after_sft_with_qwen_thinking_sampling():
     args = parse_args(["--smoke", "--dry-run"])
     plan = build_plan(args)
-    assert [step.title for step in plan[3].steps] == [
-        "SFT readiness gate", "GRPO from SFT"
-    ]
-    cmds = {step.title: step.command for stage in plan for step in stage.steps}
-    readiness = cmds["SFT readiness gate"]
-    assert readiness[readiness.index("--data") + 1].endswith("data/train.jsonl")
-    assert "--min-format-rate" in readiness
-    assert "--max-truncated-rate" in readiness
-    grpo = cmds["GRPO from SFT"]
+    assert [step.title for step in plan[3].steps] == ["GRPO from SFT"]
+    assert not any("sft_readiness" in str(path) for path in plan[3].outputs)
+    commands = {step.title: step.command for stage in plan for step in stage.steps}
+    assert not any("check_sft" in " ".join(cmd) for cmd in commands.values())
+    grpo = commands["GRPO from SFT"]
+    assert grpo[grpo.index("--init-adapter") + 1].endswith("/weights/sft_lora")
     for flag, expected in (("--num-generations", "4"), ("--temperature", "0.6"),
                            ("--top-p", "0.95"), ("--top-k", "20")):
         assert grpo[grpo.index(flag) + 1] == expected
-    assert any(str(path).endswith("sft_readiness.json") for path in plan[3].outputs)
 
 
 def test_explicit_grpo_sampling_options_forwarded():
@@ -158,7 +152,6 @@ def test_shared_completion_budget_is_forwarded_to_all_stages():
     cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
     for title, flag in (
         ("supervised LoRA", "--max-completion-tokens"),
-        ("SFT readiness gate", "--max-new-tokens"),
         ("GRPO from SFT", "--max-completion-length"),
         ("evaluate test", "--max-new-tokens"),
     ):
@@ -182,7 +175,6 @@ def test_quality_gates_warn_by_default_without_disabling_integrity_validation():
     cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
     assert "--warn-low-coverage" in cmds["validate traces"]
     assert "--warn-low-coverage" in cmds["supervised LoRA"]
-    assert "--warn-low-readiness" in cmds["SFT readiness gate"]
     assert cmds["GRPO from SFT"][
         cmds["GRPO from SFT"].index("--zero-signal-patience") + 1
     ] == "0"
@@ -194,7 +186,6 @@ def test_quality_gates_strict_restores_threshold_failures():
     cmds = {step.title: step.command for stage in build_plan(args) for step in stage.steps}
     assert "--warn-low-coverage" not in cmds["validate traces"]
     assert "--warn-low-coverage" not in cmds["supervised LoRA"]
-    assert "--warn-low-readiness" not in cmds["SFT readiness gate"]
     assert cmds["GRPO from SFT"][
         cmds["GRPO from SFT"].index("--zero-signal-patience") + 1
     ] == "7"
@@ -216,3 +207,10 @@ def test_full_pipeline_defaults_to_50_examples_per_remaining_ood():
 def test_smoke_ood_size_and_override_remain_available():
     assert parse_args(["--smoke"]).ood_size == 8
     assert parse_args(["--ood-size", "20"]).ood_size == 20
+
+
+def test_removed_sft_readiness_flags_are_rejected():
+    for flag in ("--sft-check-examples", "--sft-min-format-rate",
+                 "--sft-max-truncated-rate"):
+        with pytest.raises(SystemExit):
+            parse_args([flag, "1"])

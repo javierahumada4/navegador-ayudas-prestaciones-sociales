@@ -77,12 +77,9 @@ def parse_args(argv=None):
     parser.add_argument("--grpo-temperature", type=float, default=0.6)
     parser.add_argument("--grpo-top-p", type=float, default=0.95)
     parser.add_argument("--grpo-top-k", type=int, default=20)
-    parser.add_argument("--sft-check-examples", type=int, default=8)
-    parser.add_argument("--sft-min-format-rate", type=float, default=0.75)
-    parser.add_argument("--sft-max-truncated-rate", type=float, default=0.25)
     parser.add_argument("--grpo-micro-batch-size", type=int, default=1)
     parser.add_argument("--completion-tokens", type=int, default=1024,
-                        help="shared SFT/GRPO/readiness/evaluation completion budget")
+                        help="shared SFT/GRPO/evaluation completion budget")
     parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
     parser.add_argument("--eval-batch-size", type=int, default=2)
     args = parser.parse_args(argv)
@@ -107,16 +104,14 @@ def parse_args(argv=None):
                 "teacher_max_new_tokens", "grpo_steps", "grpo_generations",
                 "sft_batch_size", "sft_grad_accum", "grpo_micro_batch_size",
                 "min_verified_traces", "min_unique_trace_problems", "min_verified_families",
-                "sft_check_examples", "completion_tokens",
+                "completion_tokens",
                 "sft_max_traces_per_problem"):
         if getattr(args, key) <= 0:
             parser.error(f"--{key.replace('_', '-')} must be positive")
     if args.grpo_zero_signal_patience < 0:
         parser.error("--grpo-zero-signal-patience must be >= 0")
-    if not (0 <= args.sft_min_format_rate <= 1
-            and 0 <= args.sft_max_truncated_rate <= 1
-            and 0 <= args.min_sft_problem_coverage <= 1):
-        parser.error("SFT readiness rates and minimum problem coverage must be in [0, 1]")
+    if not 0 <= args.min_sft_problem_coverage <= 1:
+        parser.error("--min-sft-problem-coverage must be in [0, 1]")
     if (args.grpo_temperature <= 0
             or not (0 < args.grpo_top_p <= 1)
             or args.grpo_top_k < 0):
@@ -231,18 +226,6 @@ def build_plan(args):
             ), env_train),
         ], [sft, reports / "sft_input_validation.json", reports / "sft_selection.json"]),
         Stage("grpo", [
-            Step("SFT readiness gate", uv(
-                "train", "rlm.check_sft", "--data", train,
-                "--model", args.student, "--adapter", sft,
-                "--n-examples", args.sft_check_examples,
-                "--max-new-tokens", args.completion_tokens,
-                "--min-format-rate", args.sft_min_format_rate,
-                "--max-truncated-rate", args.sft_max_truncated_rate,
-                "--batch-size", args.eval_batch_size,
-                "--seed", args.seed,
-                *(["--warn-low-readiness"] if args.quality_gates == "warn" else []),
-                "--out", reports / "sft_readiness.json",
-            ), env_train),
             Step("GRPO from SFT", uv(
                 "train", "rlm.train_grpo", "--data", train,
                 "--model", args.student, "--init-adapter", sft, "--output", grpo,
@@ -257,7 +240,7 @@ def build_plan(args):
                 "--seed", args.seed,
                 *_resume_flags(args, "grpo", grpo)
             ), env_train),
-        ], [grpo, reports / "sft_readiness.json"]),
+        ], [grpo]),
     ]
     adapters = ["base=none", f"sft={sft}", f"grpo={grpo}"]
     evaluation = [
