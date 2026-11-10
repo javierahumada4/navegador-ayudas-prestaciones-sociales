@@ -79,7 +79,7 @@ Con una carpeta nueva, sin `--smoke`:
 python -u -m rlm.pipeline \
   --run-dir runs/phase1-dgx-1024-full \
   --seed 42 \
-  --teacher Qwen/Qwen3-4B --teacher-backend vllm \
+  --teacher Qwen/Qwen3-4B --teacher-backend hf \
   --teacher-samples 8 --teacher-batch-size 1 --teacher-gpu-memory 0.75 \
   --student Qwen/Qwen3-1.7B \
   --completion-tokens 1024 --sft-max-length 8192 \
@@ -88,11 +88,14 @@ python -u -m rlm.pipeline \
   --grpo-micro-batch-size 1 --eval-batch-size 1
 ```
 
-El profesor mantiene `--teacher-max-new-tokens 2048` para poder completar
-una traza; **SFT solo acepta completions de hasta 1024 tokens**
-según el tokenizador del alumno. No se mezclan datasets ni adaptadores
-de ensayos anteriores. El entrenamiento puede superar una sesión de
-24 h de DGX; conserva los checkpoints y los informes por etapas.
+Por defecto el profesor Qwen3-4B usa el backend `hf` y genera un máximo de
+**1024 tokens por muestra**, igual que el presupuesto de respuesta del alumno
+Qwen3-1.7B. Las trazas que no cierren su respuesta antes del límite se
+rechazan; una longitud idéntica no garantiza la misma cantidad de tokens con
+tokenizadores distintos. Con HF se utiliza un batch de **1 problema** por
+defecto, para limitar la memoria de las 8 muestras por problema. No se mezclan
+datasets ni adaptadores de ensayos anteriores. El entrenamiento puede superar
+una sesión de 24 h de DGX; conserva los checkpoints y los informes por etapas.
 
 
 Inspeccionar el plan sin escribir ni usar GPU:
@@ -116,8 +119,10 @@ python -m rlm.pipeline \
   --run-dir runs/phase1-2026-01 \
   --seed 42 \
   --teacher Qwen/Qwen3-4B \
-  --teacher-backend vllm \
-  --student Qwen/Qwen3-0.6B
+  --teacher-backend hf \
+  --teacher-max-new-tokens 1024 \
+  --teacher-batch-size 1 \
+  --student Qwen/Qwen3-1.7B
 ```
 
 De forma predeterminada genera 800 casos de entrenamiento y 200 de
@@ -297,11 +302,12 @@ En caso de memoria insuficiente, reducir `--teacher-batch-size`,
 `--sft-batch-size`, `--grpo-generations`,
 `--grpo-micro-batch-size` y `--eval-batch-size`. El teacher incluye
 reglas detalladas de 2026 que pueden alargar mucho los prompts; por ello el
-pipeline reserva `--teacher-max-model-len 8192` y
-`--teacher-max-new-tokens 2048` por defecto, **también en smoke**.
-Si aún se truncan muchas trazas, se puede probar `--teacher-max-new-tokens
-3072` en un run nuevo, sin exceder el contexto máximo y con el coste de
-más tiempo de generación.
+pipeline utiliza `--teacher-max-new-tokens 1024` por defecto,
+**también en smoke**, y el backend `hf` genera un problema por lote.
+El parámetro `--teacher-max-model-len 8192` solo se aplica con vLLM.
+Si se truncan demasiadas trazas, se puede probar un límite mayor, como
+`--teacher-max-new-tokens 1536`, en un run nuevo, con el coste de más
+tiempo de generación.
 
 ## Pruebas
 

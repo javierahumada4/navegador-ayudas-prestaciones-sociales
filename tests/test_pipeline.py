@@ -21,6 +21,30 @@ def test_plan_wires_all_stages_and_isolates_uv_extras():
     assert plan[1].steps[0].env_path != plan[2].steps[0].env_path
 
 
+def test_default_teacher_student_and_hf_distillation_budget():
+    args = parse_args(["--dry-run"])
+    assert args.teacher == "Qwen/Qwen3-4B"
+    assert args.student == "Qwen/Qwen3-1.7B"
+    assert args.teacher_backend == "hf"
+    assert args.teacher_max_new_tokens == 1024
+    assert args.teacher_batch_size == 1
+    assert args.completion_tokens == 1024
+
+    cmd = {step.title: step.command
+           for stage in build_plan(args) for step in stage.steps}["teacher traces"]
+    for flag, value in (
+        ("--teacher", "Qwen/Qwen3-4B"),
+        ("--backend", "hf"),
+        ("--max-new-tokens", "1024"),
+        ("--batch-size", "1"),
+    ):
+        assert cmd[cmd.index(flag) + 1] == value
+
+    sft = {step.title: step.command
+           for stage in build_plan(args) for step in stage.steps}["supervised LoRA"]
+    assert sft[sft.index("--model") + 1] == "Qwen/Qwen3-1.7B"
+
+
 def test_smoke_has_small_datasets_and_short_training():
     args = parse_args(["--smoke", "--dry-run"])
     assert (args.train_size, args.test_size, args.ood_size) == (24, 8, 8)

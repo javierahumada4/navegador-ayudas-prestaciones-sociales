@@ -150,7 +150,7 @@ def main() -> None:
     parser.add_argument(
         "--data", required=True, help="JSONL with question / trace / answer / verified"
     )
-    parser.add_argument("--model", default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--model", default="Qwen/Qwen3-1.7B")
     parser.add_argument("--output", default="rlm/weights/sft_lora")
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--learning-rate", type=float, default=2e-4)

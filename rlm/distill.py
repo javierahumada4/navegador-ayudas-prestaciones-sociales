@@ -11,7 +11,7 @@
         uv run --extra distill python -m rlm.distill --data rlm/data/train.jsonl \
             --teacher Qwen/Qwen3-4B --samples 4 --output rlm/data/sft_traces.jsonl
 
-    Backends: ``vllm`` (default, CUDA graphs + paged KV cache, much faster) or ``hf``
+    Backends: ``vllm`` (CUDA graphs + paged KV cache, much faster) or ``hf`` (default)
     (plain ``transformers.generate``, kept as a fallback).
 
     Output: one JSON line per generated trace with 
@@ -47,8 +47,8 @@ if TYPE_CHECKING:
 
 # Problems per generate call when --batch-size is not given. vLLM schedules the
 # sequences itself, so it takes big batches; HF keeps every sequence's KV cache
-# in memory at once, so 4 problems (16 sequences) is its ceiling on 16 GB.
-DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 4}
+# in memory at once; prefer one problem per batch for eight samples.
+DEFAULT_BATCH_SIZE = {"vllm": 64, "hf": 1}
 
 # Teacher-only system prompt for Qwen3 thinking mode. The student's R1-Zero prompt
 # asks the model to write <think>/<answer> tags itself; a thinking model then opens
@@ -594,13 +594,13 @@ def main() -> None:
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--samples", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-new-tokens", type=int, default=2048)
-    parser.add_argument("--backend", choices=["vllm", "hf"], default="vllm")
+    parser.add_argument("--max-new-tokens", type=int, default=1024)
+    parser.add_argument("--backend", choices=["vllm", "hf"], default="hf")
     parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
-        help="problems per generate call (default: 64 for vllm, 4 for hf)",
+        help="problems per generate call (default: 64 for vllm, 1 for hf)",
     )
     parser.add_argument(
         "--gpu-memory-utilization",

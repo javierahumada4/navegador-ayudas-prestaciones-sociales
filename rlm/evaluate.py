@@ -272,7 +272,7 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("--data", default="rlm/data/test.jsonl", help="'gsm8k' or a JSONL path")
-    parser.add_argument("--model", default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--model", default="Qwen/Qwen3-1.7B")
     parser.add_argument(
         "--adapters",
         nargs="+",

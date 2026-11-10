@@ -222,7 +222,7 @@ def train(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default="gsm8k", help="'gsm8k' or path to domain JSONL")
-    parser.add_argument("--model", default="Qwen/Qwen3-0.6B")
+    parser.add_argument("--model", default="Qwen/Qwen3-1.7B")
     parser.add_argument("--init-adapter", default=None)
     parser.add_argument("--output", default="rlm/weights/final_rlm_lora")
     parser.add_argument("--steps", type=int, default=300)
