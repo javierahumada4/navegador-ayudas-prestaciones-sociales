@@ -205,7 +205,7 @@ def main(argv=None):
     parser.add_argument("--ood")
     parser.add_argument(
         "--ood-extra", nargs=2, action="append", metavar=("SPLIT", "PATH"),
-        help="additional held-out suites: ood_threshold, ood_composition, ood_wording",
+        help="additional held-out suites: ood_threshold, ood_wording",
     )
     parser.add_argument("--traces")
     parser.add_argument("--expected-trace-samples", type=int)

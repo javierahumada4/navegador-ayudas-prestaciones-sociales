@@ -75,3 +75,20 @@ def test_case_fingerprint_ignores_sampling_metadata():
     altered["_boundary_type"] = "imv_minimum"
     altered["_boundary_side"] = 1
     assert case_fingerprint(case) == case_fingerprint(altered)
+
+
+def test_supported_ood_suites_exclude_composition():
+    import pytest
+
+    from rlm.generate_problems import OOD_FAMILIES
+
+    assert OOD_FAMILIES == {
+        "ood": "capi_only",
+        "ood_threshold": "threshold_ood",
+        "ood_wording": "wording_ood",
+    }
+    for split, family in OOD_FAMILIES.items():
+        assert all(p.branches["family"] == family
+                   for p in GEN.generate(5, split, seed=19))
+    with pytest.raises(ValueError, match="unknown split"):
+        GEN.generate(5, "ood_composition", seed=19)

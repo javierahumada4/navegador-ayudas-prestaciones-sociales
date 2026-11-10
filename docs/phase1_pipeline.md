@@ -127,14 +127,16 @@ céntimo/día del umbral). Los casos se calculan con el mismo oracle
 determinista; el control de splits verifica etiquetas y ausencia de
 duplicados. No es una muestra representativa de la población española.
 
-Además, genera **cuatro suites OOD independientes** de 100 casos cada
-una: `ood` (CAPI sin IMV, familia ausente de train/test),
-`ood_threshold` (interacciones de dos condiciones próximas al límite),
-`ood_composition` (unidades con **4 adultos**, fuera del rango de
-train/test) y `ood_wording` (formulaciones alternativas de los
-enunciados; es un cambio léxico, no una población independiente).
-Se comprueban los duplicados *entre todas las suites* y se evalúan
+Además, genera **tres suites OOD independientes de 50 casos cada una**
+(`--ood-size 50` por defecto): `ood` (CAPI sin IMV, familia ausente
+de train/test), `ood_threshold` (interacciones de dos condiciones próximas
+al límite) y `ood_wording` (formulaciones alternativas de los enunciados;
+es un cambio léxico, no una población independiente).
+`ood_composition` se ha retirado de generación, validación y evaluación.
+Se comprueban los duplicados *entre las suites activas* y se evalúan
 base/SFT/GRPO por separado. Un smoke genera 8 casos por suite.
+El test ordinario se mantiene en 200 casos; con tres modelos se realizan
+1050 generaciones de evaluación por defecto (200 + 3 × 50, por modelo).
 
 El profesor produce cuatro muestras por caso (dos en smoke), filtradas
 por importe contra el oráculo. **SFT utiliza como máximo 2 trazas
@@ -176,15 +178,13 @@ contrato; las comprobaciones de CPU no sustituyen a un smoke GPU.
 Los artefactos se guardan en el directorio indicado con `--run-dir`:
 
 - `data/train.jsonl`, `data/test.jsonl`, `data/test_ood.jsonl`,
-  `data/test_ood_threshold.jsonl`, `data/test_ood_composition.jsonl`
-  y `data/test_ood_wording.jsonl`;
+  `data/test_ood_threshold.jsonl` y `data/test_ood_wording.jsonl`;
 - `data/sft_traces.jsonl` con muestras aceptadas y rechazadas;
 - `logs/distillation.jsonl` y `reports/distillation_validation.json`
   con la tasa de aceptación por familia;
 - `weights/sft_lora/` y `weights/grpo_lora/`;
 - `reports/eval_test.json`, `reports/eval_ood.json` y los informes
-  `eval_ood_threshold.json`, `eval_ood_composition.json`,
-  `eval_ood_wording.json`;
+  `eval_ood_threshold.json` y `eval_ood_wording.json`;
 - `reports/grpo_curves.png`;
 - `manifest.json` con configuración, comandos, resultados y fechas.
 

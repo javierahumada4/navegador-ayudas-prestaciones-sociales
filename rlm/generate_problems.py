@@ -47,7 +47,6 @@ TRAIN_FAMILIES = (
 OOD_FAMILIES = {
     "ood": "capi_only",
     "ood_threshold": "threshold_ood",
-    "ood_composition": "composition_ood",
     "ood_wording": "wording_ood",
 }
 
@@ -478,9 +477,6 @@ class IMVProblemGenerator(ProblemGenerator):
             adults, minors = 1, rng.randint(1, 3)
         elif family == "capi_only":
             adults, minors = rng.choice([(1, 1), (1, 2), (2, 1), (2, 2)])
-        elif family == "composition_ood":
-            # Four adults never appear in train/test; test larger mixed units.
-            adults, minors = 4, rng.randint(1, 3)
         elif family in {"boundary", "threshold_ood"}:
             adults, minors = rng.choice([(1, 1), (1, 2), (2, 1), (3, 2)])
         else:

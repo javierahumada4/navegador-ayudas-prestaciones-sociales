@@ -140,15 +140,18 @@ def test_sft_caps_teacher_traces_and_evaluates_each_ood_axis():
     sft = commands["supervised LoRA"]
     assert sft[sft.index("--max-traces-per-problem") + 1] == "1"
     assert {"generate ood", "generate ood_threshold",
-            "generate ood_composition", "generate ood_wording"} <= set(commands)
+            "generate ood_wording"} <= set(commands)
     assert {"evaluate ood", "evaluate ood_threshold",
-            "evaluate ood_composition", "evaluate ood_wording"} <= set(commands)
+            "evaluate ood_wording"} <= set(commands)
+    assert not any("ood_composition" in title for title in commands)
     validation = commands["validate splits"]
-    assert validation.count("--ood-extra") == 3
-    for axis in ("ood_threshold", "ood_composition", "ood_wording"):
+    assert validation.count("--ood-extra") == 2
+    for axis in ("ood_threshold", "ood_wording"):
         assert axis in validation
         assert any(str(p).endswith("eval_" + axis + ".json")
                    for p in plan[-1].outputs)
+    assert not any("ood_composition" in str(p)
+                   for stage in plan for p in stage.outputs)
 
 def test_shared_completion_budget_is_forwarded_to_all_stages():
     args = parse_args(["--completion-tokens", "1024"])
@@ -195,3 +198,21 @@ def test_quality_gates_strict_restores_threshold_failures():
     assert cmds["GRPO from SFT"][
         cmds["GRPO from SFT"].index("--zero-signal-patience") + 1
     ] == "7"
+
+
+def test_full_pipeline_defaults_to_50_examples_per_remaining_ood():
+    args = parse_args(["--dry-run"])
+    assert (args.train_size, args.test_size, args.ood_size) == (800, 200, 50)
+    plan = build_plan(args)
+    commands = {step.title: step.command for stage in plan for step in stage.steps}
+    for split in ("ood", "ood_threshold", "ood_wording"):
+        generate = commands["generate " + split]
+        assert generate[generate.index("--n") + 1] == "50"
+        assert "evaluate " + split in commands
+    assert len([title for title in commands if title.startswith("evaluate ")]) == 4
+    assert len([title for title in commands if title.startswith("generate ")]) == 5
+
+
+def test_smoke_ood_size_and_override_remain_available():
+    assert parse_args(["--smoke"]).ood_size == 8
+    assert parse_args(["--ood-size", "20"]).ood_size == 20

@@ -53,7 +53,7 @@ def parse_args(argv=None):
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-size", type=int, default=800)
     parser.add_argument("--test-size", type=int, default=200)
-    parser.add_argument("--ood-size", type=int, default=100)
+    parser.add_argument("--ood-size", type=int, default=50)
     parser.add_argument("--teacher", default="Qwen/Qwen3-4B")
     parser.add_argument("--teacher-backend", choices=["vllm", "hf"], default="vllm")
     parser.add_argument("--teacher-samples", type=int, default=8)
@@ -159,7 +159,7 @@ def build_plan(args):
     train, test, ood = (data / x for x in ("train.jsonl", "test.jsonl", "test_ood.jsonl"))
     extra_ood = {
         split: data / f"test_{split}.jsonl"
-        for split in ("ood_threshold", "ood_composition", "ood_wording")
+        for split in ("ood_threshold", "ood_wording")
     }
     traces = data / "sft_traces.jsonl"
     sft, grpo = weights / "sft_lora", weights / "grpo_lora"
