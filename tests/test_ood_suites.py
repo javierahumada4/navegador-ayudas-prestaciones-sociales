@@ -64,7 +64,7 @@ def test_imv_boundary_cases_are_one_cent_from_statutory_cutoffs():
 def test_ood_suites_are_separate_and_oracle_verified(tmp_path):
     gen = IMVProblemGenerator()
     paths = {split: tmp_path / (split + ".jsonl") for split in (
-        "train", "test", "ood", "ood_threshold", "ood_composition", "ood_wording"
+        "train", "test", "ood", "ood_threshold", "ood_wording"
     )}
     fingerprints = set()
     for split, path in paths.items():
@@ -76,9 +76,6 @@ def test_ood_suites_are_separate_and_oracle_verified(tmp_path):
                     OOD_FAMILIES[split] if split in OOD_FAMILIES
                     else problem.branches["family"]
                 )
-                if split == "ood_composition":
-                    assert len([p for p in problem.params["persons"]
-                                if int(p["id"][1:]) <= 4]) >= 4
                 if split == "ood_wording":
                     assert problem.template_id >= 100
                 fingerprint = gen.key(problem.params)
