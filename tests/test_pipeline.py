@@ -13,7 +13,10 @@ def test_plan_wires_all_stages_and_isolates_uv_extras():
     assert "--traces" in commands["validate traces"]
     assert "--adapters" in commands["evaluate test"]
     assert "--runs" in commands["GRPO curves"]
-    assert "--validation-report" in commands["supervised LoRA"]
+    assert "--selection-report" in commands["supervised LoRA"]
+    assert "--validation-report" not in commands["supervised LoRA"]
+    assert not any("sft_input_validation.json" in str(p)
+                   for stage in plan for p in stage.outputs)
     assert [step.title for step in plan[3].steps] == ["GRPO from SFT"]
     assert plan[1].steps[0].env_path != plan[2].steps[0].env_path
 

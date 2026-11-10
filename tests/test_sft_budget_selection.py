@@ -115,3 +115,47 @@ def test_warning_mode_never_allows_empty_sft_dataset(tmp_path):
             report_path=tmp_path / "empty.json", warn_low_coverage=True,
         )
     assert json.loads((tmp_path / "empty.json").read_text())["traces_selected"] == 0
+
+
+def test_selection_itself_rejects_invalid_raw_tags(tmp_path):
+    raw = Dataset.from_list([
+        row("A", "<think>Sin cierre."),
+        row("A", "<think><answer>57.50</answer></think><answer>57.50</answer>"),
+        row("A", trace("Válido.")),
+    ])
+    selected, report = select_budgeted_traces(
+        raw, ByteTokenizer(), max_completion_tokens=150, max_length=600,
+        max_per_problem=2, min_problem_coverage=1.0, min_families=1,
+        report_path=tmp_path / "selection.json",
+    )
+    assert list(selected["trace"]) == [trace("Válido.")]
+    assert report["excluded_by_reason"] == {"invalid_trace": 2}
+
+
+def test_selection_itself_rejects_corrupted_rendered_assistant(tmp_path):
+    class CorruptRenderedTokenizer(ByteTokenizer):
+        def apply_chat_template(
+            self, messages, tokenize=False, add_generation_prompt=False,
+            enable_thinking=True,
+        ):
+            rendered = super().apply_chat_template(
+                messages, tokenize=tokenize,
+                add_generation_prompt=add_generation_prompt,
+                enable_thinking=enable_thinking,
+            )
+            if add_generation_prompt:
+                return rendered
+            return rendered.replace("</answer>", "</wrong>")
+
+    path = tmp_path / "selection.json"
+    with pytest.raises(ValueError, match="No verified complete SFT traces"):
+        select_budgeted_traces(
+            Dataset.from_list([row("A", trace("Breve."))]),
+            CorruptRenderedTokenizer(),
+            max_completion_tokens=150, max_length=600,
+            max_per_problem=1, min_problem_coverage=1.0, min_families=1,
+            report_path=path, warn_low_coverage=True,
+        )
+    assert json.loads(path.read_text())["excluded_by_reason"] == {
+        "invalid_rendered_trace": 1,
+    }

@@ -2,7 +2,7 @@
 
 We ask the tokenizer to format the assistant prefix, never hand-prefill a
 second <think> in training or inference. TRL's conversational SFT path uses
-the tokenizer's default chat template; preflight verifies that its default
+the tokenizer's default chat template; SFT selection verifies that its default
 and explicit thinking renders agree before training.
 """
 from __future__ import annotations

@@ -221,10 +221,10 @@ def build_plan(args):
                 "--min-families", args.min_verified_families,
                 *(["--warn-low-coverage"] if args.quality_gates == "warn" else []),
                 "--max-traces-per-problem", args.sft_max_traces_per_problem,
-                "--validation-report", reports / "sft_input_validation.json",
+                "--selection-report", reports / "sft_selection.json",
                 "--save-steps", 50, *_resume_flags(args, "sft", sft)
             ), env_train),
-        ], [sft, reports / "sft_input_validation.json", reports / "sft_selection.json"]),
+        ], [sft, reports / "sft_selection.json"]),
         Stage("grpo", [
             Step("GRPO from SFT", uv(
                 "train", "rlm.train_grpo", "--data", train,

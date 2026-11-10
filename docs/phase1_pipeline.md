@@ -232,14 +232,17 @@ No se aceptan trazas incorrectas, incompletas o mayores de
 1024 tokens. Si ninguna traza supera el filtro, SFT no puede
 entrenarse y el programa falla incluso en modo aviso.
 
-Las trazas finalmente seleccionadas superan además el preflight
-`reports/sft_input_validation.json` para descartar fallos de plantilla
-y de tokenización.
+`rlm.sft_selection` realiza toda la selección y comprobación previa:
+verifica el formato de la respuesta, la plantilla de chat de Qwen3 y el
+presupuesto de tokens de prompt y completion. Solo las trazas completas
+seleccionadas pasan al entrenador; los descartes y la cobertura quedan
+registrados en `reports/sft_selection.json`. No se ejecuta un preflight
+independiente ni se genera `reports/sft_input_validation.json`.
 
 **GRPO comienza directamente al finalizar SFT**, sin generar respuestas
 de prueba ni aplicar controles de formato/truncamiento entre ambas etapas.
-Se mantienen la selección y la validación de las trazas anteriores al
-entrenamiento SFT. Las métricas de exactitud, formato y truncamiento del
+Se mantiene la selección y la validación integrada de las trazas
+anteriores al entrenamiento SFT. Las métricas de exactitud, formato y truncamiento del
 modelo SFT se miden en la evaluación final, junto a base y GRPO, usando
 test y OOD. El pipeline ya no genera un informe de preparación de SFT.
 

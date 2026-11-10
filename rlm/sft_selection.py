@@ -13,7 +13,30 @@ from pathlib import Path
 from rlm.chat_template import render_supervised_exchange
 from rlm.data import build_prompt, get_imv_rule_context
 from rlm.rewards import has_valid_imv_format
-from rlm.sft_preflight import _token_ids
+
+def _token_ids(tokenizer, text: str) -> list[int]:
+    """Count tokens from the actual rendered conversation."""
+    ids = tokenizer(text, add_special_tokens=False)["input_ids"]
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return list(ids)
+
+
+def _rendered_assistant_text(full: str, prefix: str) -> str:
+    """Extract the assistant turn, including the native Qwen3 thinking prefix."""
+    if "<|im_start|>assistant" in full:
+        text = full.rsplit("<|im_start|>assistant", 1)[-1]
+    elif "<assistant>" in full:
+        text = full.rsplit("<assistant>", 1)[-1]
+    else:
+        text = full[len(prefix):]
+    text = text.strip()
+    for suffix in ("<|im_end|>", "</assistant>", "</>"):
+        if text.endswith(suffix):
+            text = text.removesuffix(suffix).strip()
+            break
+    return text
+
 
 
 def select_budgeted_traces(
@@ -62,6 +85,10 @@ def select_budgeted_traces(
             raise ValueError(f"SFT tokenizer/chat template failed at trace {index}: {exc}") from exc
         if full_ids[:len(prefix_ids)] != prefix_ids:
             raise ValueError(f"SFT tokenization prefix mismatch at trace {index}")
+        # Validate the full assistant turn as TRL actually renders it.
+        if not has_valid_imv_format(_rendered_assistant_text(full, prefix)):
+            excluded["invalid_rendered_trace"] += 1
+            continue
         completion_tokens = len(full_ids) - len(prefix_ids)
         if completion_tokens <= 0:
             excluded["empty_completion"] += 1

@@ -84,12 +84,9 @@ def train(args: argparse.Namespace) -> None:
     from transformers import AutoTokenizer
     from trl import SFTConfig, SFTTrainer
 
-    from rlm.sft_preflight import validate_sft_sequences
-
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     raw = load_dataset("json", data_files=str(args.data), split="train")
-    report_file = Path(args.validation_report or Path(args.output).parent / "sft_input_validation.json")
-    report_dir = report_file.parent
+    report_file = Path(args.selection_report or Path(args.output).parent / "sft_selection.json")
     selected, coverage = select_budgeted_traces(
         raw, tokenizer,
         max_completion_tokens=args.max_completion_tokens,
@@ -97,7 +94,7 @@ def train(args: argparse.Namespace) -> None:
         max_per_problem=args.max_traces_per_problem,
         min_problem_coverage=args.min_problem_coverage,
         min_families=args.min_families,
-        report_path=report_dir / "sft_selection.json",
+        report_path=report_file,
         warn_low_coverage=args.warn_low_coverage,
     )
     dataset = format_sft_dataset(selected)
@@ -107,16 +104,6 @@ def train(args: argparse.Namespace) -> None:
         f"({coverage['problem_coverage']:.1%}); "
         f"excluded={coverage['excluded_by_reason']}", flush=True,
     )
-    report = validate_sft_sequences(
-        dataset, tokenizer, args.max_length,
-        report_file,
-    )
-    print(
-        f"SFT preflight: {report['accepted']} complete tokenized sequences, "
-        f"max {report['max_observed_tokens']}/{args.max_length} tokens",
-        flush=True,
-    )
-
     peft_config = LoraConfig(
         r=args.lora_rank,
         lora_alpha=2 * args.lora_rank,
@@ -182,8 +169,8 @@ def main() -> None:
         help="maximum unique verified teacher traces used per problem in SFT",
     )
     parser.add_argument(
-        "--validation-report", default=None,
-        help="JSON report of the pre-training token and answer tag audit",
+        "--selection-report", default=None,
+        help="JSON report of verified, complete traces selected for SFT",
     )
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--save-steps", type=int, default=50)

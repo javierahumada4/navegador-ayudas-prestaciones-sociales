@@ -5,7 +5,7 @@ from rlm.chat_template import (
     render_supervised_exchange, render_thinking_prompt, restore_thinking_prefix,
 )
 from rlm.rewards import has_valid_imv_format
-from rlm.sft_preflight import validate_sft_sequences
+from rlm.sft_selection import select_budgeted_traces
 
 
 class NativeQwenTemplate:
@@ -43,20 +43,35 @@ def test_sft_and_generation_have_identical_native_prefix(tmp_path):
     assert prefix == render_thinking_prompt(tokenizer, question)
     assert full.startswith(prefix)
     assert has_valid_imv_format(full[len(prefix):].replace("<|im_end|>", "").strip())
-    row = {"prompt": question, "completion": [{"role": "assistant", "content": trace}]}
-    report = validate_sft_sequences([row], tokenizer, 1024, tmp_path / "valid.json")
-    assert report["accepted"] == 1
+    from datasets import Dataset
+
+    raw = Dataset.from_list([{
+        "question": "Caso de prueba", "trace": trace, "verified": True,
+        "rule_context": "Reglas", "branches": {"family": "ordinary"},
+    }])
+    selected, report = select_budgeted_traces(
+        raw, tokenizer, max_completion_tokens=1024, max_length=8192,
+        max_per_problem=2, min_problem_coverage=1.0, min_families=1,
+        report_path=tmp_path / "valid.json",
+    )
+    assert len(selected) == 1
+    assert report["traces_selected"] == 1
 
 
-def test_preflight_rejects_nested_final_in_qwen_template(tmp_path):
-    tok = NativeQwenTemplate()
+def test_selection_rejects_nested_final_in_qwen_template(tmp_path):
+    from datasets import Dataset
+
     bad = "<think><answer>0.00</answer> R.</think><answer>0.00</answer>"
-    row = {
-        "prompt": [{"role": "user", "content": "Caso"}],
-        "completion": [{"role": "assistant", "content": bad}],
-    }
-    with pytest.raises(ValueError, match="SFT preflight rejected"):
-        validate_sft_sequences([row], tok, 1024, tmp_path / "invalid.json")
+    raw = Dataset.from_list([{
+        "question": "Caso", "trace": bad, "verified": True,
+        "rule_context": "Reglas", "branches": {"family": "ordinary"},
+    }])
+    with pytest.raises(ValueError, match="No verified complete SFT traces"):
+        select_budgeted_traces(
+            raw, NativeQwenTemplate(), max_completion_tokens=1024, max_length=8192,
+            max_per_problem=2, min_problem_coverage=1.0, min_families=1,
+            report_path=tmp_path / "invalid.json",
+        )
 
 
 def test_prefix_recovery_only_when_native_template_already_started_thinking():
