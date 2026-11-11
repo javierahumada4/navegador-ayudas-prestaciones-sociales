@@ -1,0 +1,52 @@
+{
+  "splits": {
+    "train": {
+      "count": 800,
+      "families": {
+        "director_fail": 80,
+        "individual": 80,
+        "ordinary": 80,
+        "disability": 80,
+        "monoparental_institution": 80,
+        "income_fail": 80,
+        "monoparental": 80,
+        "patrimony_fail": 80,
+        "residence_fail": 80,
+        "boundary": 80
+      }
+    },
+    "test": {
+      "count": 200,
+      "families": {
+        "disability": 20,
+        "patrimony_fail": 20,
+        "income_fail": 20,
+        "director_fail": 20,
+        "boundary": 20,
+        "monoparental": 20,
+        "ordinary": 20,
+        "individual": 20,
+        "residence_fail": 20,
+        "monoparental_institution": 20
+      }
+    },
+    "ood": {
+      "count": 50,
+      "families": {
+        "capi_only": 50
+      }
+    },
+    "ood_threshold": {
+      "count": 50,
+      "families": {
+        "threshold_ood": 50
+      }
+    },
+    "ood_wording": {
+      "count": 50,
+      "families": {
+        "wording_ood": 50
+      }
+    }
+  }
+}

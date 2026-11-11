@@ -1,0 +1,63 @@
+{
+  "quality_passed": false,
+  "quality_warnings": [
+    "Insufficient SFT-eligible coverage: 418/800 problems (52.2%; minimum 70.0%), 10 families (minimum 5)."
+  ],
+  "max_completion_tokens": 1024,
+  "max_sequence_length": 8192,
+  "total_problems": 800,
+  "covered_problems": 418,
+  "problem_coverage": 0.5225,
+  "minimum_problem_coverage": 0.7,
+  "total_families": 10,
+  "covered_families": 10,
+  "minimum_families": 5,
+  "traces_selected": 708,
+  "verified_traces_available": 1430,
+  "excluded_by_reason": {
+    "over_completion_budget": 8
+  },
+  "duplicate_traces_skipped": 0,
+  "by_family": {
+    "boundary": {
+      "problems": 80,
+      "covered": 35
+    },
+    "director_fail": {
+      "problems": 80,
+      "covered": 80
+    },
+    "disability": {
+      "problems": 80,
+      "covered": 37
+    },
+    "income_fail": {
+      "problems": 80,
+      "covered": 39
+    },
+    "individual": {
+      "problems": 80,
+      "covered": 80
+    },
+    "monoparental": {
+      "problems": 80,
+      "covered": 36
+    },
+    "monoparental_institution": {
+      "problems": 80,
+      "covered": 34
+    },
+    "ordinary": {
+      "problems": 80,
+      "covered": 43
+    },
+    "patrimony_fail": {
+      "problems": 80,
+      "covered": 29
+    },
+    "residence_fail": {
+      "problems": 80,
+      "covered": 5
+    }
+  }
+}

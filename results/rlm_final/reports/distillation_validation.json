@@ -1,0 +1,67 @@
+{
+  "distillation": {
+    "generated": 6400,
+    "verified": 1430,
+    "verified_unique_problems": 420,
+    "verified_families": 10,
+    "rejected_by_reason": {
+      "no_answer": 131,
+      "unclosed_think": 3971,
+      "incorrect_amount": 868
+    },
+    "hit_max_tokens": 4028,
+    "acceptance_rate": 0.223438,
+    "by_family": {
+      "boundary": {
+        "generated": 640,
+        "verified": 56,
+        "acceptance_rate": 0.0875
+      },
+      "director_fail": {
+        "generated": 640,
+        "verified": 359,
+        "acceptance_rate": 0.560937
+      },
+      "disability": {
+        "generated": 640,
+        "verified": 88,
+        "acceptance_rate": 0.1375
+      },
+      "income_fail": {
+        "generated": 640,
+        "verified": 112,
+        "acceptance_rate": 0.175
+      },
+      "individual": {
+        "generated": 640,
+        "verified": 490,
+        "acceptance_rate": 0.765625
+      },
+      "monoparental": {
+        "generated": 640,
+        "verified": 61,
+        "acceptance_rate": 0.095312
+      },
+      "monoparental_institution": {
+        "generated": 640,
+        "verified": 57,
+        "acceptance_rate": 0.089063
+      },
+      "ordinary": {
+        "generated": 640,
+        "verified": 114,
+        "acceptance_rate": 0.178125
+      },
+      "patrimony_fail": {
+        "generated": 640,
+        "verified": 88,
+        "acceptance_rate": 0.1375
+      },
+      "residence_fail": {
+        "generated": 640,
+        "verified": 5,
+        "acceptance_rate": 0.007812
+      }
+    }
+  }
+}
