@@ -48,13 +48,21 @@ La herramienta de dominio vive en [`imv_tools.py`](imv_tools.py) y está registr
 como `calcular_imv` en `default_registry()` de `tools.py`. Reutiliza sin duplicar
 reglas `rlm.imv_engine.evaluate_imv_case` y el fichero de reglas de 2026.
 
-**Contrato:** argumento `case` con un caso IMV normalizado. El esquema Pydantic
-`IMVCase` exige identificación y fechas de todas las personas, situación de
-residencia, parentescos y custodia, convivencia, historial y datos económicos.
-Los datos que afectan a la cuantía (ingresos, patrimonio, prestaciones, etc.)
-**no tienen valores por defecto inventados**. Una llamada sin algún dato
-obligatorio devuelve un error de validación a través del registro, no un cálculo
-sobre supuestos. El LLM debe solicitar esos datos antes de llamar a la herramienta.
+**Contrato experimental:** `calcular_imv(case)` calcula la cuantía de las
+mismas preguntas sintéticas de IMV/CAPI utilizadas para comparar **Qwen3 base,
+Qwen3 + SFT, Qwen3 + GRPO y Qwen3 + tool** (y, opcionalmente, GRPO + tool).
+No es un asistente de recogida de datos: **el modelo no tiene que preguntar ni
+verificar una lista exhaustiva de requisitos personales antes de llamar**.
+Las condiciones opcionales que no figuran en el problema utilizan los valores
+neutros definidos por el simulador (por ejemplo, sin discapacidad o pensión).
+Sí deben trasladarse exactamente los datos proporcionados, sin sobrescribirlos.
+
+El esquema Pydantic conserva los tipos, la consistencia interna y **únicamente
+los campos imprescindibles para ejecutar el motor**: fecha de solicitud,
+personas, convivencia, residencia e importes económicos. Si faltan estos datos
+mínimos no se calcula una cifra ficticia; el motor devuelve error. Esta
+restricción técnica no constituye una entrevista ni una comprobación de
+procedencia de hechos, que se abordarán en la **Fase 4**.
 
 La salida contiene `status`, `imv_eligible`, `imv_monthly_eur`,
 `capi_eligible`, `capi_monthly_eur`, `total_monthly_eur`,
@@ -151,12 +159,20 @@ Para verificar la lógica sin descargar modelos:
 uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
 ```
 
-**Pendiente en la fase 2:** `consultar_boe`, `preparar_solicitud`, un
-benchmark de ~30 casos de dominio y la evaluación GPU real de ambos modelos.
-El bucle no gestiona historial entre peticiones HTTP: preguntar y recopilar
-datos del usuario a lo largo de varias peticiones corresponde a la fase 4.
-Detectar los datos ausentes depende todavía de la calidad del modelo; el
-schema evita la omisión de campos, no que el modelo invente un dato plausible.
+**Alcance acordado para este proyecto:** `calcular_imv` es la **única
+herramienta expuesta al modelo**. Los ejemplos `get_weather` y `calculator`
+de la plantilla no se registran. Se prioriza comparar cuatro variantes
+(base, SFT, GRPO y base + `calcular_imv`), con una quinta variante opcional
+(GRPO entrenado para tool use). La evaluación de respuesta numérica debe
+utilizar **las mismas preguntas y respuestas de referencia** del test de IMV
+para todos los modelos, además de métricas diagnósticas de llamadas para
+la variante con herramienta. La ejecución GPU real sigue pendiente.
+
+Recopilar datos que falten, comprobar su procedencia y mantener una
+conversación de seguimiento se reserva para la Fase 4. Este alcance
+experimental de una sola tool no cubre los tres tipos de herramientas
+que exige el enunciado original de la Fase 2; habrá que justificarlo
+como una adaptación deliberada del proyecto.
 
 ## Para ir más allá
 
