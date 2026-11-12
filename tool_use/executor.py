@@ -14,7 +14,7 @@ from pathlib import Path
 
 from api.schemas import ToolCallRecord, ToolsResponse
 from rlm.chat_template import restore_thinking_prefix
-from tool_use.parser import format_tool_result, parse_tool_calls
+from tool_use.parser import ToolCall, format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
 
@@ -217,11 +217,7 @@ class ToolLoop:
             messages.append({"role": "assistant", "content": raw})
             if not parsed.tool_calls:
                 parsed.tool_calls.append(
-                    type("_MalformedCall", (), {
-                        "name": "tool_parser",
-                        "arguments": {},
-                        "error": "Incomplete <tool_call> block",
-                    })()
+                    ToolCall(name="tool_parser", error="Incomplete <tool_call> block")
                 )
 
             for call in parsed.tool_calls:
