@@ -318,3 +318,20 @@ def test_raw_generation_trace_is_available_for_benchmark_diagnostics():
     assert trace[0].startswith("<tool_call>")
     assert trace[1] == "Resultado: 5"
     assert result.tool_calls[0].result == 5
+
+
+def test_recovered_json_executes_but_is_transparently_marked():
+    loop = ScriptedLoop(
+        [
+            '<tool_call>{"name":"add","arguments":{"a":2,"b":3}}}</tool_call>',
+            "Resultado: 5",
+        ],
+        ToolRegistry().register(add),
+    )
+    trace = []
+    response = loop.run("Suma", trace=trace)
+    assert response.answer == "Resultado: 5"
+    assert response.tool_calls[0].ok
+    assert response.tool_calls[0].repaired is True
+    assert response.tool_calls[0].result == 5
+    assert trace[0].endswith("}}}</tool_call>")  # raw output is unchanged
