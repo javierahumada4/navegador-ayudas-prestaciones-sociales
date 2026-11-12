@@ -63,6 +63,7 @@ def case():
 def test_tool_is_registered_with_nested_json_schema():
     registry = default_registry()
     assert "calcular_imv" in registry.tools
+    assert set(registry.tools) == {"calcular_imv"}
     definition = registry.tools["calcular_imv"].definition["function"]
     assert definition["parameters"]["required"] == ["case"]
     assert "IMVCase" in str(definition["parameters"])
@@ -162,3 +163,27 @@ def test_tool_cannot_mutate_user_case(case):
     record = default_registry().call("calcular_imv", {"case": case})
     assert record.ok, record.error
     assert case == original
+
+
+
+def test_minimal_benchmark_case_does_not_require_full_personal_checklist(case):
+    """An incomplete *optional* questionnaire still yields the benchmark result."""
+    reduced = deepcopy(case)
+    reduced.pop("applicant_history")
+    reduced.pop("social_security_registration_periods")
+    reduced.pop("relationships")
+    reduced["domicile"].pop("caregiver_family_only")
+    for person in reduced["persons"]:
+        for field in (
+            "emancipated", "gender_violence_victim", "trafficking_victim",
+            "homeless", "parents_or_guardians_deceased", "disability_percent",
+            "dependency_grade", "permanent_disability_degree",
+            "active_company_director", "residential_service", "benefits",
+        ):
+            person.pop(field)
+    # A household with no declared legal relationships means separate units:
+    # keep the original relationship facts to test only optional omissions.
+    reduced["relationships"] = deepcopy(case["relationships"])
+    result = default_registry().call("calcular_imv", {"case": reduced})
+    assert result.ok, result.error
+    assert result.result["total_monthly_eur"] == 431.26
