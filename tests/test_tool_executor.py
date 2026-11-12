@@ -302,3 +302,19 @@ def test_http_tools_endpoint_returns_actual_tool_records(monkeypatch):
     assert data["tool_calls"][0]["result"] == 5
     assert data["tool_calls"][0]["ok"] is True
     assert data["tool_calls"][0]["latency_ms"] >= 0
+
+
+def test_raw_generation_trace_is_available_for_benchmark_diagnostics():
+    loop = ScriptedLoop(
+        [
+            '<tool_call>{"name":"add","arguments":{"a":2,"b":3}}</tool_call>',
+            "Resultado: 5",
+        ],
+        ToolRegistry().register(add),
+    )
+    trace = []
+    result = loop.run("Suma", trace=trace)
+    assert len(trace) == 2
+    assert trace[0].startswith("<tool_call>")
+    assert trace[1] == "Resultado: 5"
+    assert result.tool_calls[0].result == 5
