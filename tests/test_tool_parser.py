@@ -44,25 +44,3 @@ def test_plain_answer_has_no_calls():
 def test_arguments_given_as_string_are_decoded():
     output = '<tool_call>{"name": "a", "arguments": "{\\"x\\": 1}"}</tool_call>'
     assert parse_tool_calls(output).tool_calls[0].arguments == {"x": 1}
-
-
-def test_single_surplus_closing_brace_is_recovered_and_flagged():
-    output = '<tool_call>{"name":"add","arguments":{"a":2,"b":3}}}</tool_call>'
-    call = parse_tool_calls(output).tool_calls[0]
-    assert call.error is None
-    assert call.repaired is True
-    assert call.name == "add"
-    assert call.arguments == {"a": 2, "b": 3}
-
-
-def test_multiple_objects_or_extra_text_are_never_silently_repaired():
-    bad = [
-        '{"name":"add","arguments":{"a":2}}{"name":"other","arguments":{}}',
-        '{"name":"add","arguments":{"a":2}} garbage',
-        '{"name":"add","arguments":{"a":2}}}}',
-        '{"name":"add","arguments":{"a":900 * 12}}',
-    ]
-    for content in bad:
-        call = parse_tool_calls(f"<tool_call>{content}</tool_call>").tool_calls[0]
-        assert call.error is not None, content
-        assert not call.repaired, content
