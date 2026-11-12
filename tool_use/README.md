@@ -158,6 +158,30 @@ datos del usuario a lo largo de varias peticiones corresponde a la fase 4.
 Detectar los datos ausentes depende todavía de la calidad del modelo; el
 schema evita la omisión de campos, no que el modelo invente un dato plausible.
 
+### Recuperación limitada de JSON
+
+En el diagnóstico con Qwen3-1.7B (modelo base y GRPO), el segundo caso de
+`imv_smoke_cases.jsonl` reproducía el mismo error: generaba el caso
+completo y **una sola llave `}` adicional** después del JSON. El parser
+recupera únicamente este error inequívoco, y marca la llamada como
+`repaired: true`. No corrige expresiones, llaves interiores, varios objetos
+JSON concatenados ni campos inventados. El JSON original queda en
+`raw_generations`, para su inspección.
+
+**Interpretación experimental:** `tool_selection_accuracy`,
+`argument_accuracy` y `tool_execution_accuracy` reflejan el comportamiento
+*con* la recuperación controlada; los nuevos
+`native_tool_selection_accuracy`, `native_argument_accuracy` y
+`native_tool_execution_accuracy` cuentan sólo llamadas nativamente válidas,
+sin reparación. **No mezclar** ambas métricas al comparar base vs GRPO.
+
+**Alerta de dominio:** cuando faltan datos del usuario, Qwen3 puede intentar
+generar entradas sintéticas (por ejemplo patrimonio = 0 o residencia = true).
+Pydantic sólo valida tipos e integridad, no la procedencia de los hechos.
+Este problema sigue pendiente; hasta contar con una normalización auditada y
+preguntas de aclaración, no se deben utilizar los resultados de casos
+incompletos para orientación real a ciudadanos.
+
 ## Para ir más allá
 
 - La "opción 2" de las diapositivas: **SFT para tool use**. Generad un dataset sintético de
