@@ -102,16 +102,6 @@ def main() -> None:
             any(call["name"] == expected_tool and call["ok"] for call in calls)
             if case.get("needs_tool", True) else None
         )
-        scores = score_case(case, calls)
-        first_repaired = bool(calls and calls[0].get("repaired", False))
-        native_execution_ok = (
-            any(
-                call["name"] == expected_tool and call["ok"]
-                and not call.get("repaired", False)
-                for call in calls
-            )
-            if case.get("needs_tool", True) else None
-        )
         expected_phrases = case.get("expected_answer_contains")
         answer_check_ok = (
             all(phrase.casefold() in response.answer.casefold()
@@ -124,29 +114,14 @@ def main() -> None:
             "raw_generations": raw_generations,
             "answer": response.answer,
             "tool_execution_ok": execution_ok,
-            "native_tool_execution_ok": native_execution_ok,
             "answer_check_ok": answer_check_ok,
-            "native_selection_ok": scores["selection_ok"] and not first_repaired,
-            "native_arguments_ok": scores["arguments_ok"] and not first_repaired,
-            "repaired_calls": sum(call.get("repaired", False) for call in calls),
-            **scores,
+            **score_case(case, calls),
         })
         print(f"{'✓' if rows[-1]['selection_ok'] else '✗'} {case['query'][:70]}")
 
     summary = summarise(rows)
     requiring_tool = [r for r in rows if r.get("needs_tool", True)]
     with_answer_checks = [r for r in rows if r["answer_check_ok"] is not None]
-    summary["native_tool_selection_accuracy"] = (
-        sum(r["native_selection_ok"] for r in rows) / len(rows) if rows else None
-    )
-    summary["native_argument_accuracy"] = (
-        sum(r["native_arguments_ok"] for r in rows) / len(rows) if rows else None
-    )
-    summary["native_tool_execution_accuracy"] = (
-        sum(r["native_tool_execution_ok"] for r in requiring_tool) / len(requiring_tool)
-        if requiring_tool else None
-    )
-    summary["repaired_tool_calls"] = sum(r["repaired_calls"] for r in rows)
     summary["tool_execution_accuracy"] = (
         sum(r["tool_execution_ok"] for r in requiring_tool) / len(requiring_tool)
         if requiring_tool else None
