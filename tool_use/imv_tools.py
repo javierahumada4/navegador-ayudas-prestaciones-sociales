@@ -1,10 +1,11 @@
-"""IMV/CAPI calculation tool backed by the existing deterministic 2026 oracle.
+"""Deterministic IMV/CAPI calculator for the shared phase-1 numerical benchmark.
 
-The tool accepts a *complete normalized case*, not an unstructured user message.
-Pydantic rejects missing facts instead of silently assuming zero income, no
-disability, no pensions, no company directorship, or a valid residence history.
-Extraction/normalization and asking the user for missing facts belong to the
-model's tool-use workflow, not to this numerical tool.
+The model maps the provided synthetic problem to an IMV case; the tool does not
+interview the user or check whether every real-life fact was supplied. Optional
+conditions not mentioned in these generated cases use the simulator's neutral
+defaults. A real-world intake/verification workflow belongs to phase 4.
+Core dates, residence, household and economic figures remain required to run
+the oracle; Pydantic retains basic type and consistency validation.
 """
 
 from datetime import date
@@ -30,28 +31,29 @@ class Benefit(CaseFacts):
 class Person(CaseFacts):
     id: str = Field(min_length=1)
     date_of_birth: date
-    emancipated: StrictBool
+    emancipated: StrictBool = False
     legal_residence_in_spain: StrictBool
     effective_residence_in_spain: StrictBool
     continuous_legal_effective_residence_since: date
-    gender_violence_victim: StrictBool
-    trafficking_victim: StrictBool
-    homeless: StrictBool
-    parents_or_guardians_deceased: StrictBool
-    disability_percent: float = Field(ge=0, le=100, allow_inf_nan=False)
-    dependency_grade: int = Field(ge=0, le=3)
-    permanent_disability_degree: Literal["none", "absolute", "great_disability"]
-    active_company_director: StrictBool
-    residential_service: Literal["none", "temporary", "permanent"]
+    gender_violence_victim: StrictBool = False
+    trafficking_victim: StrictBool = False
+    homeless: StrictBool = False
+    parents_or_guardians_deceased: StrictBool = False
+    disability_percent: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    dependency_grade: int = Field(default=0, ge=0, le=3)
+    permanent_disability_degree: Literal["none", "absolute", "great_disability"] = "none"
+    active_company_director: StrictBool = False
+    residential_service: Literal["none", "temporary", "permanent"] = "none"
     benefits: list[Benefit] = Field(
-        description="Known pensions/subsidies. Explicitly provide [] when there are none."
+        default_factory=list,
+        description="Pensions/subsidies mentioned in the synthetic problem.",
     )
 
 
 class Domicile(CaseFacts):
     co_resident_ids: list[str] = Field(min_length=1)
     same_domicile_since: date
-    caregiver_family_only: StrictBool
+    caregiver_family_only: StrictBool = False
 
 
 class Relationship(CaseFacts):
@@ -68,21 +70,12 @@ class Relationship(CaseFacts):
         "permanent_foster_care",
         "unrelated",
     ]
-    degree: int | None = Field(default=None, ge=1)
-    custody: Literal["exclusive", "shared", "none"] | None = None
-
-    @model_validator(mode="after")
-    def check_relationship_facts(self):
-        if self.type == "parent_child" and self.custody is None:
-            raise ValueError("parent_child relationships require explicit custody")
-        if self.type in {"consanguinity", "affinity"} and self.degree is None:
-            raise ValueError("consanguinity/affinity relationships require degree")
-        return self
-
+    degree: int = Field(default=99, ge=1)
+    custody: Literal["exclusive", "shared", "none"] = "none"
 
 class ApplicantHistory(CaseFacts):
     independent_from_parents_since: date | None = Field(
-        description="Known independence date, or null if the applicant has not been independent."
+        default=None, description="Independence date when mentioned in the problem."
     )
 
 
@@ -116,9 +109,11 @@ class IMVCase(CaseFacts):
     applicant_id: str = Field(min_length=1)
     persons: list[Person] = Field(min_length=1)
     domicile: Domicile
-    relationships: list[Relationship]
-    applicant_history: ApplicantHistory
-    social_security_registration_periods: list[SocialSecurityPeriod]
+    relationships: list[Relationship] = Field(default_factory=list)
+    applicant_history: ApplicantHistory = Field(default_factory=ApplicantHistory)
+    social_security_registration_periods: list[SocialSecurityPeriod] = Field(
+        default_factory=list
+    )
     economic: EconomicFacts
     other_parent_institution: OtherParentInstitution | None = None
 
@@ -157,19 +152,19 @@ class IMVCase(CaseFacts):
 
 @tool
 def calcular_imv(case: IMVCase) -> dict:
-    """Calculate estimated monthly IMV and CAPI for a complete normalized 2026 case.
+    """Calculate IMV+CAPI from synthetic 2026 benchmark facts.
 
-    Use this tool ONLY when the user's facts are sufficient to fill every required
-    field of the case schema. Never guess missing income, patrimony, dates,
-    residence status, disability, pensions, benefits, or other eligibility facts.
-    If any required fact is unknown, ask the user rather than calling this tool.
-    This is an orientation estimate for new 2026 applications, NOT an official
-    eligibility decision or a general-purpose simulator for other years.
+    Use for numerical IMV/CAPI problems. Translate the facts in the question
+    into the structured case; omitted *optional* exceptions use the benchmark
+    simulator defaults (e.g. no disability or pension). The tool does not
+    perform a data-completeness interview. Keep the provided household, dates,
+    income, patrimony, residence and custody exact. This is an orientation
+    calculation and not an official eligibility decision.
 
     Args:
-        case: Normalized facts about the applicant, household members,
-            relationships/custody, residence, economic situation and history.
-            Values and dates must reflect user-provided facts, not assumptions.
+        case: Structured facts from the IMV problem: people, dates, residence,
+            economic values, relevant family relationships, and mentioned
+            exceptions. Numeric calculations are performed by the engine.
 
     Returns:
         Engine-produced status, member IDs, IMV and CAPI eligibility and monthly
