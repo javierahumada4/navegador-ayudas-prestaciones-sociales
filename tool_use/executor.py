@@ -19,6 +19,8 @@ from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
 
 SYSTEM_PROMPT_TEMPLATE = """Eres un asistente de orientación sobre IMV y CAPI en España.
+IMV significa Ingreso Mínimo Vital; CAPI significa Complemento de Ayuda
+para la Infancia. Son prestaciones distintas; no inventes sus definiciones.
 Dispones de herramientas cuya definición y JSON Schema se incluyen en el
 formato nativo de Qwen3. Debes responder en español.
 
@@ -32,6 +34,9 @@ REGLAS:
 - No confundas ausencia de información con el valor cero o con false.
 - Si la pregunta es conceptual y no requiere datos externos, responde sin herramientas.
 - Una llamada usa <tool_call>{"name": "...", "arguments": {...}}</tool_call>.
+  Dentro de cada bloque escribe UN único objeto JSON completo; no añadas
+  ejemplos, comentarios, texto adicional ni un segundo objeto JSON.
+  Si recibes un JSON normalizado, copia sus campos literalmente en arguments.case.
   Puedes emitir varias llamadas independientes en un mismo mensaje y realizar
   otras llamadas después de recibir observaciones con el rol tool.
 - Si una herramienta devuelve error de validación, corrige únicamente lo que
@@ -191,7 +196,9 @@ class ToolLoop:
         decoded = self.tokenizer.decode(completion, skip_special_tokens=True)
         return restore_thinking_prefix(prompt, decoded)
 
-    def run(self, query: str, max_turns: int = 5) -> ToolsResponse:
+    def run(
+        self, query: str, max_turns: int = 5, *, trace: list[str] | None = None
+    ) -> ToolsResponse:
         """Choose, validate, execute and observe tool calls until final answer."""
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
@@ -204,6 +211,8 @@ class ToolLoop:
 
         for turn in range(1, max_turns + 1):
             raw = self.generate(messages)
+            if trace is not None:
+                trace.append(raw)
             parsed = parse_tool_calls(raw)
             # A truncated <tool_call> must not be treated as a final answer.
             if not parsed.tool_calls and "<tool_call>" not in raw:
