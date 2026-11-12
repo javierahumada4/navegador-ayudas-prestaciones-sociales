@@ -62,7 +62,17 @@ def add_months(d: date, months: int) -> date:
     return date(year, month, day)
 
 
-def load_ruleset(path: str | Path | None = None) -> dict[str, Any]:
+def load_ruleset(
+    path: str | Path | None = None, *, on_date: str | date | None = None
+) -> dict[str, Any]:
+    """Without a date retain the phase-1 2026 oracle; with a date select strictly."""
+    if path is not None and on_date is not None:
+        raise ValueError("Specify either path or on_date, not both")
+    if on_date is not None:
+        from rlm.ruleset_catalog import ruleset_for_date
+
+        when = parse_date(on_date) if isinstance(on_date, str) else on_date
+        return ruleset_for_date(when)
     if path is None:
         path = Path(__file__).with_name("rulesets") / "imv_2026.json"
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -438,8 +448,14 @@ def evaluate_imv_case(
     case: dict[str, Any], rules: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Return the deterministic reference result for one normalized IMV case."""
-    rules = rules or load_ruleset()
     app_date = parse_date(case["application_date"])
+    if rules is None:
+        try:
+            rules = load_ruleset(on_date=app_date)
+        except ValueError as exc:
+            raise IMVInputError(
+                f"application_date is outside the loaded ruleset: {exc}"
+            ) from exc
     if not (parse_date(rules["effective_from"]) <= app_date <= parse_date(rules["effective_to"])):
         raise IMVInputError("application_date is outside the loaded ruleset")
 
