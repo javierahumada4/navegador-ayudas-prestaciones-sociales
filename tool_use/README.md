@@ -99,6 +99,21 @@ uv run --extra train python -m tool_use.evaluate \
   --out reports/imv_smoke_rlm.json
 ```
 
+**Diagnóstico de llamadas mal formadas:** el evaluador guarda ahora
+`raw_generations` (texto completo que produjo el modelo en cada turno),
+`tool_execution_ok` y `answer_check_ok` en cada fila. El resumen añade
+`tool_execution_accuracy` (sobre casos que necesitan herramienta) y
+`answer_check_accuracy` (sólo sobre casos con `expected_answer_contains`).
+Esto permite distinguir entre *selección de herramienta*, *JSON válido*,
+*ejecución real* y *respuesta factual*. Los primeros resultados del smoke test
+mostraron llamadas inválidas por JSON `Extra data`; no se puede determinar
+si falta longitud de generación o si se ha emitido texto extra sin revisar
+los nuevos traces. Los JSON de evaluación pueden contener datos personales,
+por lo que no deben publicarse sin revisarlos.
+
+Para probar si la longitud de salida influye, repetir los smoke tests con
+`--max-new-tokens 4096` en **ambos** cerebros, manteniendo el resto idéntico.
+
 **Comparación controlada base + tools frente a RLM + tools:** usar exactamente
 el mismo modelo Qwen3-1.7B, prompt, herramientas y banco de pruebas. Sólo cambian
 los pesos del adaptador. Primero instalar dependencias y seleccionar la rama.
