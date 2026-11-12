@@ -163,6 +163,12 @@ uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
 herramienta expuesta al modelo**. Los ejemplos `get_weather` y `calculator`
 de la plantilla no se registran.
 
+**Evaluador implementado:** `python -m tool_use.compare_variants`. Ejecuta los
+12 brazos sobre el mismo test de Fase 1, con puntuación numérica común,
+trazas por problema y exportación JSON/CSV; los checkpoints no disponibles
+quedan como pendientes. **Instrucciones completas en
+[`bench/README_12_VARIANTS.md`](bench/README_12_VARIANTS.md).**
+
 ### Diseño experimental factorial: 12 variantes
 
 Hay **cuatro checkpoints de razonamiento**, cada uno probado en **tres modos
