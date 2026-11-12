@@ -111,8 +111,14 @@ class ToolLoop:
         if self.model is not None:
             return
 
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as exc:
+            raise NotImplementedError(
+                "Phase 2 inference dependencies are missing. "
+                "Install them with 'uv sync --extra train'."
+            ) from exc
 
         adapter = None
         if self.brain == "rlm":
