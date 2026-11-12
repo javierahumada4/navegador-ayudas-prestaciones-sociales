@@ -29,6 +29,7 @@ class ToolCall:
     name: str
     arguments: dict[str, Any] = field(default_factory=dict)
     error: str | None = None  # set when the block could not be parsed
+    repaired: bool = False  # one terminal unmatched closing brace removed
 
 
 @dataclass
@@ -50,11 +51,27 @@ def parse_tool_calls(output: str) -> ParsedOutput:
     calls: list[ToolCall] = []
     for match in TOOL_CALL_PATTERN.finditer(output):
         body = match.group("body")
+        repaired = False
         try:
             payload = json.loads(body)
         except json.JSONDecodeError as exc:
-            calls.append(ToolCall(name="", error=f"tool_call is not valid JSON: {exc.msg}"))
-            continue
+            # Qwen3-1.7B sometimes adds a single extra final brace to an
+            # otherwise valid call. Recover only that one unambiguous typo;
+            # all other invalid JSON remains a parse error.
+            if exc.msg == "Extra data":
+                try:
+                    candidate, consumed = json.JSONDecoder().raw_decode(body.lstrip())
+                except json.JSONDecodeError:
+                    candidate, consumed = None, 0
+                if isinstance(candidate, dict) and body.lstrip()[consumed:].strip() == "}":
+                    payload = candidate
+                    repaired = True
+                else:
+                    calls.append(ToolCall(name="", error=f"tool_call is not valid JSON: {exc.msg}"))
+                    continue
+            else:
+                calls.append(ToolCall(name="", error=f"tool_call is not valid JSON: {exc.msg}"))
+                continue
         name = payload.get("name") if isinstance(payload, dict) else None
         if not isinstance(name, str) or not name:
             calls.append(ToolCall(name="", error="tool_call JSON has no 'name' field"))
@@ -68,7 +85,7 @@ def parse_tool_calls(output: str) -> ParsedOutput:
         if not isinstance(arguments, dict):
             calls.append(ToolCall(name=name, error="'arguments' must be a JSON object"))
             continue
-        calls.append(ToolCall(name=name, arguments=arguments))
+        calls.append(ToolCall(name=name, arguments=arguments, repaired=repaired))
 
     text = TOOL_CALL_PATTERN.sub("", THINK_PATTERN.sub("", output)).strip()
     return ParsedOutput(thinking=thinking, text=text, tool_calls=calls)
