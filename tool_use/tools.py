@@ -101,5 +101,5 @@ def default_registry() -> ToolRegistry:
     # Only expose domain tools to the IMV assistant. The weather and calculator
     # functions above are template examples and stay importable for teaching/tests.
     registry = ToolRegistry().register(calcular_imv)
-    # TODO (phase 2): add consultar_boe and preparar_solicitud when implemented.
+    # Phase-2 BOE lookup and application draft tools will be added separately.
     return registry
