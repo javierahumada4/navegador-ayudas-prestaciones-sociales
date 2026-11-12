@@ -13,10 +13,8 @@ in phase 4 you decide what the agent does with that flag.
 
 from __future__ import annotations
 
-import requests
-
-from tool_use.registry import ToolRegistry, tool
 from tool_use.imv_tools import calcular_imv
+from tool_use.registry import ToolRegistry, tool
 
 OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
@@ -29,6 +27,8 @@ def get_weather(location: str) -> float:
     Args:
         location: City and country, for example 'Madrid, Spain'.
     """
+    import requests
+
     geo = requests.get(OPEN_METEO_GEOCODING, params={"name": location, "count": 1}, timeout=15)
     geo.raise_for_status()
     results = geo.json().get("results") or []
@@ -98,6 +98,8 @@ def calculator(expression: str) -> float:
 
 def default_registry() -> ToolRegistry:
     """The registry the executor and the agent use. Register your tools here."""
-    registry = ToolRegistry().register(get_weather, calculator, calcular_imv)
-    # Other domain tools (consultar_boe, preparar_solicitud) remain for phase 2.
+    # Only expose domain tools to the IMV assistant. The weather and calculator
+    # functions above are template examples and stay importable for teaching/tests.
+    registry = ToolRegistry().register(calcular_imv)
+    # TODO (phase 2): add consultar_boe and preparar_solicitud when implemented.
     return registry
