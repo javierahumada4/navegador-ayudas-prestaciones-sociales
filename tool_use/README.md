@@ -42,11 +42,78 @@ todo no las está usando bien. `tool_use/evaluate.py` calcula la precisión de s
 de argumentos. Y comparad el mismo modelo con y sin herramientas, como en el notebook de
 clase.
 
+## Flujo de rulesets y BOE (herramientas de dominio)
+
+La Fase 2 dispone de **cinco tools** en `default_registry()`:
+
+| Tool | Tipo | Funcion |
+|---|---|---|
+| `fecha_actual()` | lectura | Fecha actual en Europe/Madrid, solo si no se proporciona fecha de solicitud |
+| `comprobar_ruleset(fecha_solicitud)` | lectura local | Inspecciona `rlm/rulesets/imv_*.json` y sus intervalos `effective_from/effective_to` |
+| `consultar_boe(boe_id, seccion)` | red HTTP | Consulta **de verdad** la API oficial de legislación consolidada del BOE |
+| `crear_ruleset(ruleset, confirmacion_humana)` | escritura local | Publica fichero JSON completo **solo con revisión y aprobación humana** |
+| `calcular_imv(case)` | calculo | Selecciona el ruleset según `case.application_date` y ejecuta el motor |
+
+**Orden recomendado:** fecha de solicitud conocida (o `fecha_actual` si de verdad
+se pregunta por hoy) → `comprobar_ruleset` → si hay un único fichero aplicable,
+`calcular_imv` con datos completos; si no lo hay, `consultar_boe` y
+**parar hasta disponer de una propuesta completa y revisada**. El simple
+intervalo del JSON no demuestra que no haya reformas legales posteriores.
+
+El endpoint del BOE es
+`https://www.boe.es/datosabiertos/api/legislacion-consolidada/id/BOE-A-2021-21007/metadatos`
+y ofrece también `analisis` y `texto`. Se usa `httpx` con timeout y
+un `boe_id` validado; no se permite una URL arbitraria.
+El texto consolidado tiene carácter **informativo** y puede contener varias
+versiones según fecha. La API **no entrega automáticamente** la estructura
+numérica completa (`amounts`, `patrimony`, `capi`, etc.) del motor.
+Las cuantías anuales también requieren contrastarse con la información
+oficial de Seguridad Social. No reutilizar valores del año anterior.
+
+`crear_ruleset` comprueba estructura, fechas, secciones numéricas y fuentes
+oficiales, impide solapamientos y nunca sobrescribe archivos. Está registrada
+con `requires_confirmation=True`: el bucle de la Fase 2 **la bloquea**.
+La publicación queda preparada para una confirmación supervisada en la Fase 4;
+no es una generación desatendida de normas legales a partir de texto libre.
+El único ruleset de producción actualmente presente sigue siendo
+`rlm/rulesets/imv_2026.json`.
+
+El motor `evaluate_imv_case` selecciona automáticamente un fichero que cubra
+la **fecha de solicitud**, nunca usa 2026 como fallback de 2027, y rechaza
+intervalos ambiguos o catálogos corruptos. `load_ruleset()` sin fecha
+mantiene el comportamiento de la Fase 1 para generación de datasets.
+
+**Prueba sin modelo ni red** (la consulta al BOE está simulada en tests):
+
+```bash
+uv run pytest -q tests/test_ruleset_tools.py tests/test_calcular_imv_tool.py
+uv run python - <<'PY'
+from tool_use.tools import default_registry
+tools = default_registry()
+print(tools.call("fecha_actual", {}).result)
+print(tools.call("comprobar_ruleset", {"fecha_solicitud": "2026-11-12"}).result)
+PY
+```
+
+**Consulta HTTP en vivo** (requiere conectividad desde la DGX):
+
+```bash
+uv run python - <<'PY'
+from tool_use.tools import default_registry
+result = default_registry().call("consultar_boe", {"boe_id": "BOE-A-2021-21007"})
+print(result.result if result.ok else result.error)
+PY
+```
+
+Para el benchmark de base frente a RLM, evaluar esta **nueva secuencia**
+por separado: el smoke antiguo esperaba `calcular_imv` como primera llamada;
+ahora el flujo de consulta puede empezar con `comprobar_ruleset`.
+
 ## Herramienta implementada: `calcular_imv`
 
 La herramienta de dominio vive en [`imv_tools.py`](imv_tools.py) y está registrada
 como `calcular_imv` en `default_registry()` de `tools.py`. Reutiliza sin duplicar
-reglas `rlm.imv_engine.evaluate_imv_case` y el fichero de reglas de 2026.
+reglas `rlm.imv_engine.evaluate_imv_case` y el catálogo de rulesets por fecha.
 
 **Contrato:** argumento `case` con un caso IMV normalizado. El esquema Pydantic
 `IMVCase` exige identificación y fechas de todas las personas, situación de
@@ -59,8 +126,8 @@ sobre supuestos. El LLM debe solicitar esos datos antes de llamar a la herramien
 La salida contiene `status`, `imv_eligible`, `imv_monthly_eur`,
 `capi_eligible`, `capi_monthly_eur`, `total_monthly_eur`,
 `failed_requirements` y más información generada por el motor. Su alcance son
-**nuevas solicitudes de 2026**, no resoluciones oficiales; los casos de otros
-años se rechazan. No se efectúa acceso a la red ni se modifican archivos.
+**solicitudes cubiertas por un ruleset revisado**, no resoluciones oficiales;
+las fechas sin reglas se rechazan. No se efectúa acceso a la red ni se modifican archivos.
 
 Prueba local sin GPU ni modelo de lenguaje:
 
@@ -151,8 +218,9 @@ Para verificar la lógica sin descargar modelos:
 uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
 ```
 
-**Pendiente en la fase 2:** `consultar_boe`, `preparar_solicitud`, un
-benchmark de ~30 casos de dominio y la evaluación GPU real de ambos modelos.
+**Pendiente en la fase 2:** benchmark de ~30 casos de dominio, evaluación GPU real
+con las nuevas herramientas y flujo de aprobación de efectos secundarios.
+La creación de rulesets está implementada, pero requiere revisión humana.
 El bucle no gestiona historial entre peticiones HTTP: preguntar y recopilar
 datos del usuario a lo largo de varias peticiones corresponde a la fase 4.
 Detectar los datos ausentes depende todavía de la calidad del modelo; el
