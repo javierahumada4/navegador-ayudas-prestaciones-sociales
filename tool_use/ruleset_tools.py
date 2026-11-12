@@ -5,8 +5,6 @@ A proposal must be checked against primary BOE and Social Security sources
 before an approved operator can publish it for the deterministic engine.
 """
 
-from __future__ import annotations
-
 import json
 import re
 from datetime import date, datetime
