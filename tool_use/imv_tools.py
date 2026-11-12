@@ -4,8 +4,9 @@ The model maps the provided synthetic problem to an IMV case; the tool does not
 interview the user or check whether every real-life fact was supplied. Optional
 conditions not mentioned in these generated cases use the simulator's neutral
 defaults. A real-world intake/verification workflow belongs to phase 4.
-Core dates, residence, household and economic figures remain required to run
-the oracle; Pydantic retains basic type and consistency validation.
+Only the fields mathematically required by the oracle remain mandatory;
+Pydantic checks types and internal consistency, not whether the model has
+verified every fact with a user. This tool is for synthetic benchmark cases.
 """
 
 from datetime import date
@@ -103,7 +104,7 @@ class OtherParentInstitution(CaseFacts):
 
 
 class IMVCase(CaseFacts):
-    """Input format already used by rlm.imv_engine.evaluate_imv_case."""
+    """Synthetic-benchmark input; omit optional facts with neutral defaults."""
 
     application_date: date = Field(description="Application date within the 2026 ruleset.")
     applicant_id: str = Field(min_length=1)
@@ -154,12 +155,14 @@ class IMVCase(CaseFacts):
 def calcular_imv(case: IMVCase) -> dict:
     """Calculate IMV+CAPI from synthetic 2026 benchmark facts.
 
-    Use for numerical IMV/CAPI problems. Translate the facts in the question
-    into the structured case; omitted *optional* exceptions use the benchmark
-    simulator defaults (e.g. no disability or pension). The tool does not
-    perform a data-completeness interview. Keep the provided household, dates,
-    income, patrimony, residence and custody exact. This is an orientation
-    calculation and not an official eligibility decision.
+    Use this tool for the same numerical IMV/CAPI questions used to evaluate
+    the base, SFT and GRPO models. Do not ask the user to confirm a checklist
+    of all real-world eligibility conditions. Optional facts not stated in
+    the synthetic problem use the simulator defaults (e.g. no disability,
+    company directorship or pension). Convert the given facts into a case
+    and let the deterministic engine calculate. Keep explicitly given dates,
+    income, patrimony, household and exceptions exact. Fields indispensable
+    to the engine must still be provided. Not an official eligibility decision.
 
     Args:
         case: Structured facts from the IMV problem: people, dates, residence,
