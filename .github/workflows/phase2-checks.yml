@@ -36,7 +36,6 @@ jobs:
             tests/test_calcular_imv_tool.py \
             tests/test_compare_variants.py \
             tests/test_tool_evaluate_shared.py \
-            tests/test_tool_evaluate_shared.py \
             tests/test_tool_executor.py \
             tests/test_tool_registry.py \
             tests/test_tool_parser.py \
