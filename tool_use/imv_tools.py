@@ -1,4 +1,4 @@
-"""IMV/CAPI calculation tool backed by the existing deterministic IMV/CAPI oracle and dated rulesets.
+"""IMV/CAPI calculation tool backed by the existing deterministic 2026 oracle.
 
 The tool accepts a *complete normalized case*, not an unstructured user message.
 Pydantic rejects missing facts instead of silently assuming zero income, no
@@ -112,7 +112,7 @@ class OtherParentInstitution(CaseFacts):
 class IMVCase(CaseFacts):
     """Input format already used by rlm.imv_engine.evaluate_imv_case."""
 
-    application_date: date = Field(description="Application date: a reviewed ruleset must cover this date.")
+    application_date: date = Field(description="Application date within the 2026 ruleset.")
     applicant_id: str = Field(min_length=1)
     persons: list[Person] = Field(min_length=1)
     domicile: Domicile
@@ -157,15 +157,14 @@ class IMVCase(CaseFacts):
 
 @tool
 def calcular_imv(case: IMVCase) -> dict:
-    """Calculate estimated monthly IMV and CAPI for a complete normalized case covered by a ruleset.
+    """Calculate estimated monthly IMV and CAPI for a complete normalized 2026 case.
 
     Use this tool ONLY when the user's facts are sufficient to fill every required
     field of the case schema. Never guess missing income, patrimony, dates,
     residence status, disability, pensions, benefits, or other eligibility facts.
     If any required fact is unknown, ask the user rather than calling this tool.
-    This is an orientation estimate, NOT an official eligibility decision.
-    Cases outside an installed dated ruleset are rejected rather than assuming
-    another year's legal amounts.
+    This is an orientation estimate for new 2026 applications, NOT an official
+    eligibility decision or a general-purpose simulator for other years.
 
     Args:
         case: Normalized facts about the applicant, household members,
