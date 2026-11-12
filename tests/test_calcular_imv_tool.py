@@ -171,7 +171,6 @@ def test_minimal_benchmark_case_does_not_require_full_personal_checklist(case):
     reduced = deepcopy(case)
     reduced.pop("applicant_history")
     reduced.pop("social_security_registration_periods")
-    reduced.pop("relationships")
     reduced["domicile"].pop("caregiver_family_only")
     for person in reduced["persons"]:
         for field in (
@@ -181,9 +180,6 @@ def test_minimal_benchmark_case_does_not_require_full_personal_checklist(case):
             "active_company_director", "residential_service", "benefits",
         ):
             person.pop(field)
-    # A household with no declared legal relationships means separate units:
-    # keep the original relationship facts to test only optional omissions.
-    reduced["relationships"] = deepcopy(case["relationships"])
     result = default_registry().call("calcular_imv", {"case": reduced})
     assert result.ok, result.error
     assert result.result["total_monthly_eur"] == 431.26
