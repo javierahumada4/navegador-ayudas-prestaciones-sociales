@@ -94,10 +94,7 @@ def test_capi_only_case(case):
     ("edit", "expected_error"),
     [
         (lambda c: c["economic"].pop("net_worth_eur"), "net_worth_eur"),
-        (lambda c: c["persons"][0].pop("active_company_director"), "active_company_director"),
-        (lambda c: c["persons"][0].pop("benefits"), "benefits"),
         (lambda c: c["persons"][0].pop("legal_residence_in_spain"), "legal_residence_in_spain"),
-        (lambda c: c["relationships"][1].pop("custody"), "custody"),
         (lambda c: c["economic"].update({"countable_income_annual_eur": -5}), "countable_income_annual_eur"),
         (lambda c: c.update({"applicant_id": "unknown"}), "applicant_id"),
         (lambda c: c["domicile"].update({"co_resident_ids": ["p1", "unknown"]}), "co_resident_ids"),
@@ -109,6 +106,41 @@ def test_missing_or_inconsistent_facts_are_rejected(case, edit, expected_error):
     record = default_registry().call("calcular_imv", {"case": case})
     assert not record.ok
     assert expected_error in record.error
+
+
+def test_optional_benchmark_facts_are_not_required(case):
+    """Phase-1 questions omit many neutral conditions; the tool does not demand them."""
+    simplified = deepcopy(case)
+    for person in simplified["persons"]:
+        for name in (
+            "emancipated", "gender_violence_victim", "trafficking_victim",
+            "homeless", "parents_or_guardians_deceased", "disability_percent",
+            "dependency_grade", "permanent_disability_degree",
+            "active_company_director", "residential_service", "benefits",
+        ):
+            person.pop(name)
+    simplified["domicile"].pop("caregiver_family_only")
+    simplified.pop("applicant_history")
+    simplified.pop("social_security_registration_periods")
+    for relation in simplified["relationships"]:
+        relation.pop("degree", None)
+        relation.pop("custody", None)
+    result = default_registry().call("calcular_imv", {"case": simplified})
+    assert result.ok, result.error
+    assert result.result["total_monthly_eur"] == 431.26
+
+
+def test_explicit_pension_and_director_still_change_result(case):
+    case["persons"][0]["benefits"] = [
+        {"type": "pension", "monthly_eur_with_extra_payments": 1000.0}
+    ]
+    pension = default_registry().call("calcular_imv", {"case": case})
+    assert pension.ok, pension.error
+    assert pension.result["total_monthly_eur"] == 231.26
+    case["persons"][0]["active_company_director"] = True
+    director = default_registry().call("calcular_imv", {"case": case})
+    assert director.ok, director.error
+    assert director.result["total_monthly_eur"] == 0.0
 
 
 def test_unsupported_year_is_rejected_by_engine(case):
