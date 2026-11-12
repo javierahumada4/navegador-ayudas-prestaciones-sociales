@@ -81,6 +81,24 @@ manual, inserta nombres, descripciones y JSON Schema. Se usa generación greedy
 en ambos cerebros. Por defecto `enable_thinking=False`; puede activarse para
 comparar el efecto en los experimentos.
 
+**Smoke test inicial (4 casos, NO sustituye al benchmark de 30):**
+
+El fichero `tool_use/bench/imv_smoke_cases.jsonl` contiene dos casos IMV
+normalizados completos (incluido CAPI sin IMV), una consulta con datos
+insuficientes y una pregunta conceptual sin herramienta. El benchmark completo
+de la fase debe incluir también peticiones en lenguaje natural y herramientas
+encadenadas.
+
+```bash
+uv run --extra train python -m tool_use.evaluate \
+  --brain base --bench tool_use/bench/imv_smoke_cases.jsonl \
+  --out reports/imv_smoke_base.json
+uv run --extra train python -m tool_use.evaluate \
+  --brain rlm --adapter /ruta/al/adaptador/grpo_lora \
+  --bench tool_use/bench/imv_smoke_cases.jsonl \
+  --out reports/imv_smoke_rlm.json
+```
+
 **Comparación controlada base + tools frente a RLM + tools:** usar exactamente
 el mismo modelo Qwen3-1.7B, prompt, herramientas y banco de pruebas. Sólo cambian
 los pesos del adaptador. Primero instalar dependencias y seleccionar la rama.
