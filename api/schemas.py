@@ -77,6 +77,7 @@ class ToolCallRecord(BaseModel):
     ok: bool = True
     error: str | None = None
     latency_ms: float = 0.0
+    repaired: bool = False  # JSON was syntactically recovered; not a native valid call
 
 
 class ToolsResponse(BaseModel):
