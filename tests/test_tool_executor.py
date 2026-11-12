@@ -273,3 +273,31 @@ def test_cache_factory_does_not_load_weights(monkeypatch):
     assert a is b
     assert a.model is None
     monkeypatch.setattr(executor, "_loop", None)
+
+
+def test_http_tools_endpoint_returns_actual_tool_records(monkeypatch):
+    """Verify the public API contract without downloading model weights."""
+    from fastapi.testclient import TestClient
+
+    from api.app import app, backends
+
+    scripted = ScriptedLoop(
+        [
+            '<tool_call>{"name":"add","arguments":{"a":2,"b":3}}</tool_call>',
+            "El resultado es 5.",
+        ],
+        ToolRegistry().register(add),
+    )
+    monkeypatch.setattr(backends, "tools", lambda: scripted)
+    response = TestClient(app).post(
+        "/tools", json={"query": "Suma 2 y 3", "max_turns": 3}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["answer"] == "El resultado es 5."
+    assert data["turns"] == 2
+    assert data["model"] == "fake-model"
+    assert data["tool_calls"][0]["name"] == "add"
+    assert data["tool_calls"][0]["result"] == 5
+    assert data["tool_calls"][0]["ok"] is True
+    assert data["tool_calls"][0]["latency_ms"] >= 0
