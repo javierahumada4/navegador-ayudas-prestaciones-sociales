@@ -161,12 +161,39 @@ uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
 
 **Alcance acordado para este proyecto:** `calcular_imv` es la **única
 herramienta expuesta al modelo**. Los ejemplos `get_weather` y `calculator`
-de la plantilla no se registran. Se prioriza comparar cuatro variantes
-(base, SFT, GRPO y base + `calcular_imv`), con una quinta variante opcional
-(GRPO entrenado para tool use). La evaluación de respuesta numérica debe
-utilizar **las mismas preguntas y respuestas de referencia** del test de IMV
-para todos los modelos, además de métricas diagnósticas de llamadas para
-la variante con herramienta. La ejecución GPU real sigue pendiente.
+de la plantilla no se registran.
+
+### Diseño experimental factorial: 12 variantes
+
+Hay **cuatro checkpoints de razonamiento**, cada uno probado en **tres modos
+de uso de herramientas**:
+
+| Checkpoint de razonamiento IMV | Sin herramientas | Con `calcular_imv`, sin GRPO de tool use | Con `calcular_imv` y GRPO de tool use |
+|---|---|---|---|
+| Qwen3 base | 1. Base | 5. Base + tool | 9. Base + GRPO-tool + tool |
+| Qwen3 + SFT | 2. SFT | 6. SFT + tool | 10. SFT + GRPO-tool + tool |
+| Qwen3 + GRPO de razonamiento, **sin SFT** | 3. GRPO-solo | 7. GRPO-solo + tool | 11. GRPO-solo + GRPO-tool + tool |
+| Qwen3 + SFT + GRPO de razonamiento **ya entrenado** | 4. SFT+GRPO | 8. SFT+GRPO + tool | 12. SFT+GRPO + GRPO-tool + tool |
+
+**Distinción entre entrenamientos:** el GRPO de razonamiento IMV optimiza la
+respuesta numérica y no está orientado a usar herramientas. El GRPO de **tool
+use** es un ajuste adicional para aprender a invocar `calcular_imv`.
+La variante `GRPO-solo` necesita un entrenamiento desde el modelo base, sin
+pasar por SFT: no es el adaptador SFT+GRPO existente. Las cuatro variantes
+GRPO-tool representan **cuatro entrenamientos/evaluaciones de continuación**
+sobre checkpoints diferentes, no un único adaptador reutilizado sin comprobar
+su compatibilidad. Actualmente estas variantes son **plan experimental**, no
+modelos adicionales ya entrenados.
+
+**Protocolo comparativo:** usar las **mismas preguntas de test IMV y respuestas
+de referencia** para los 12 sistemas, con una partición de test no utilizada
+en ninguno de los entrenamientos. Comparar la **exactitud de la cifra final**,
+y, de forma secundaria, JSON válido, selección/ejecución de `calcular_imv`,
+latencia y tokens. Mantener los parámetros de generación y la política de
+contexto tan controlados como permita cada modalidad; solo las variantes
+con tool disponen del esquema y del bucle de herramienta. No corregir JSON
+automáticamente para maquillar la precisión nativa. La evaluación GPU real
+de las nuevas variantes aún está pendiente.
 
 Recopilar datos que falten, comprobar su procedencia y mantener una
 conversación de seguimiento se reserva para la Fase 4. Este alcance
