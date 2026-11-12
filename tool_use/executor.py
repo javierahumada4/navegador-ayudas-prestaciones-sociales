@@ -267,6 +267,7 @@ class ToolLoop:
                         seen_calls.add(fingerprint)
                         record = self.registry.call(call.name, call.arguments)
 
+                record.repaired = call.repaired
                 records.append(record)
                 observation = (
                     {"ok": True, "result": record.result}
