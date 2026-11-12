@@ -9,6 +9,7 @@ on:
       - 'rlm/ruleset_catalog.py'
       - 'rlm/imv_engine.py'
       - 'tests/test_ruleset_tools.py'
+      - 'tests/test_imv_engine.py'
       - 'tests/test_tool_*.py'
       - 'tests/test_calcular_imv_tool.py'
       - 'tests/test_api.py'
@@ -36,6 +37,7 @@ jobs:
           python -m pytest -q \
             tests/test_calcular_imv_tool.py \
             tests/test_ruleset_tools.py \
+            tests/test_imv_engine.py \
             tests/test_tool_executor.py \
             tests/test_tool_registry.py \
             tests/test_tool_parser.py \
