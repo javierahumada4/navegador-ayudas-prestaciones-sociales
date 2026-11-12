@@ -76,14 +76,23 @@ def main() -> None:
     parser.add_argument("--bench", default="tool_use/bench/example_cases.jsonl")
     parser.add_argument("--out", default="reports/phase2_eval.json")
     parser.add_argument("--max-turns", type=int, default=3)
+    parser.add_argument("--brain", choices=["base", "rlm"], default=None)
+    parser.add_argument("--model-id", default=None)
+    parser.add_argument("--adapter", default=None)
+    parser.add_argument("--max-new-tokens", type=int, default=None)
     args = parser.parse_args()
 
-    from tool_use.executor import run_tool_loop
+    from tool_use.executor import ToolLoop
+
+    loop = ToolLoop(
+        brain=args.brain, model_id=args.model_id, adapter_path=args.adapter,
+        max_new_tokens=args.max_new_tokens,
+    )
 
     cases = load_bench(args.bench)
     rows = []
     for case in cases:
-        response = run_tool_loop(case["query"], max_turns=args.max_turns)
+        response = loop.run(case["query"], max_turns=args.max_turns)
         calls = [c.model_dump() for c in response.tool_calls]
         rows.append(
             {**case, "tool_calls": calls, "answer": response.answer, **score_case(case, calls)}
@@ -94,7 +103,23 @@ def main() -> None:
     print(json.dumps(summary, indent=2))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False))
+    out.write_text(
+        json.dumps(
+            {
+                "configuration": {
+                    "brain": loop.brain,
+                    "model": loop.model_label,
+                    "max_turns": args.max_turns,
+                    "max_new_tokens": loop.max_new_tokens,
+                },
+                "summary": summary,
+                "rows": rows,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
