@@ -42,6 +42,36 @@ todo no las está usando bien. `tool_use/evaluate.py` calcula la precisión de s
 de argumentos. Y comparad el mismo modelo con y sin herramientas, como en el notebook de
 clase.
 
+## Herramienta implementada: `calcular_imv`
+
+La herramienta de dominio vive en [`imv_tools.py`](imv_tools.py) y está registrada
+como `calcular_imv` en `default_registry()` de `tools.py`. Reutiliza sin duplicar
+reglas `rlm.imv_engine.evaluate_imv_case` y el fichero de reglas de 2026.
+
+**Contrato:** argumento `case` con un caso IMV normalizado. El esquema Pydantic
+`IMVCase` exige identificación y fechas de todas las personas, situación de
+residencia, parentescos y custodia, convivencia, historial y datos económicos.
+Los datos que afectan a la cuantía (ingresos, patrimonio, prestaciones, etc.)
+**no tienen valores por defecto inventados**. Una llamada sin algún dato
+obligatorio devuelve un error de validación a través del registro, no un cálculo
+sobre supuestos. El LLM debe solicitar esos datos antes de llamar a la herramienta.
+
+La salida contiene `status`, `imv_eligible`, `imv_monthly_eur`,
+`capi_eligible`, `capi_monthly_eur`, `total_monthly_eur`,
+`failed_requirements` y más información generada por el motor. Su alcance son
+**nuevas solicitudes de 2026**, no resoluciones oficiales; los casos de otros
+años se rechazan. No se efectúa acceso a la red ni se modifican archivos.
+
+Prueba local sin GPU ni modelo de lenguaje:
+
+```bash
+uv run pytest -q tests/test_calcular_imv_tool.py tests/test_tool_registry.py
+```
+
+**Pendiente en la fase 2:** `consultar_boe`, `preparar_solicitud`,
+el bucle del modelo en `executor.py` y la evaluación comparativa base/RLM.
+El endpoint `POST /tools` no funciona todavía hasta completar el ejecutor.
+
 ## Para ir más allá
 
 - La "opción 2" de las diapositivas: **SFT para tool use**. Generad un dataset sintético de
