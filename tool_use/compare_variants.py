@@ -285,7 +285,7 @@ def summary_csv(path: Path, outputs: dict[str, dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for variant in VARIANTS:
-            item = outputs[variant.name]
+            item = outputs.get(variant.name, {"status": "not_started"})
             writer.writerow({
                 "variant": variant.name, "checkpoint": variant.checkpoint,
                 "with_tool": variant.with_tool, "tool_grpo": variant.tool_grpo,
