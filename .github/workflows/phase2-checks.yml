@@ -28,7 +28,7 @@ jobs:
             'httpx>=0.28' 'pytest>=8.3' 'requests>=2.32' \
             'uvicorn>=0.34' 'python-dotenv>=1.1' 'ruff>=0.11'
       - name: Verify syntax
-        run: python -m compileall -q tool_use tests/test_tool_executor.py tests/test_calcular_imv_tool.py tests/test_tool_evaluate_shared.py tests/test_tool_evaluate_shared.py
+        run: python -m compileall -q tool_use tests/test_tool_executor.py tests/test_calcular_imv_tool.py tests/test_tool_evaluate_shared.py
       - name: Run tool-use and API unit tests
         run: |
           python -m pytest -q \
@@ -39,4 +39,4 @@ jobs:
             tests/test_tool_parser.py \
             tests/test_api.py
       - name: Verify basic lint
-        run: python -m ruff check --select E4,E7,E9,F tool_use tests/test_tool_executor.py tests/test_calcular_imv_tool.py
+        run: python -m ruff check --select E4,E7,E9,F tool_use tests/test_tool_executor.py tests/test_calcular_imv_tool.py tests/test_tool_evaluate_shared.py
