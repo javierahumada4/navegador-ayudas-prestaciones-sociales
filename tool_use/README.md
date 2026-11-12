@@ -68,24 +68,24 @@ Prueba local sin GPU ni modelo de lenguaje:
 uv run pytest -q tests/test_calcular_imv_tool.py tests/test_tool_registry.py
 ```
 
-**Implementado en \`executor.py\`:** bucle de herramientas con prompt, llamadas
-nativas Qwen3 \`<tool_call>\`, Pydantic, observaciones \`tool\`, varias llamadas
-por respuesta, llamadas encadenadas y control del límite \`max_turns\`.
-La aplicación intercepta llamadas con \`requires_confirmation=True\` sin ejecutar
+**Implementado en `executor.py`:** bucle de herramientas con prompt, llamadas
+nativas Qwen3 `<tool_call>`, Pydantic, observaciones `tool`, varias llamadas
+por respuesta, llamadas encadenadas y control del límite `max_turns`.
+La aplicación intercepta llamadas con `requires_confirmation=True` sin ejecutar
 sus efectos secundarios (el contrato de fase 2 no contempla confirmaciones
 interactivas). Las llamadas mal formadas y los errores vuelven al modelo.
 
-El tokenizer de Qwen3 recibe \`tools=registry.definitions()\` directamente en
-\`apply_chat_template\`; por tanto, **la plantilla nativa**, y no una concatenación
+El tokenizer de Qwen3 recibe `tools=registry.definitions()` directamente en
+`apply_chat_template`; por tanto, **la plantilla nativa**, y no una concatenación
 manual, inserta nombres, descripciones y JSON Schema. Se usa generación greedy
-en ambos cerebros. Por defecto \`enable_thinking=False\`; puede activarse para
+en ambos cerebros. Por defecto `enable_thinking=False`; puede activarse para
 comparar el efecto en los experimentos.
 
 **Comparación controlada base + tools frente a RLM + tools:** usar exactamente
 el mismo modelo Qwen3-1.7B, prompt, herramientas y banco de pruebas. Sólo cambian
 los pesos del adaptador. Primero instalar dependencias y seleccionar la rama.
 
-\`\`\`bash
+```bash
 uv sync --extra train
 # Con un banco IMV/CAPI creado en tool_use/bench/cases.jsonl:
 ARCA_TOOLS_BRAIN=base uv run --extra train python -m tool_use.evaluate \
@@ -95,30 +95,30 @@ ARCA_TOOLS_BRAIN=rlm ARCA_TOOLS_ADAPTER=runs/phase1-rebuild/weights/grpo_lora \
   uv run --extra train python -m tool_use.evaluate \
   --brain rlm --bench tool_use/bench/cases.jsonl \
   --out reports/phase2_rlm.json
-\`\`\`
+```
 
 Puede indicarse el adaptador en Hugging Face Hub mediante
-\`ARCA_TOOLS_ADAPTER\` o \`ARCA_RLM_ADAPTER\`. El modelo base predeterminado
-es \`Qwen/Qwen3-1.7B\`; si el adaptador fue entrenado con otro, el ejecutor
+`ARCA_TOOLS_ADAPTER` o `ARCA_RLM_ADAPTER`. El modelo base predeterminado
+es `Qwen/Qwen3-1.7B`; si el adaptador fue entrenado con otro, el ejecutor
 rechaza la combinación. Ambas ejecuciones tienen que usar las mismas preguntas.
-Los pesos se cargan de manera diferida al recibir la primera petición; \`/health\`
+Los pesos se cargan de manera diferida al recibir la primera petición; `/health`
 sólo verifica que el bucle está configurado.
 
-\`\`\`bash
+```bash
 uv run --extra train arca-api
 # En otra terminal:
 curl -X POST http://localhost:8000/tools \
   -H 'Content-Type: application/json' \
   -d '{"query":"¿Qué datos necesitas para calcularme el IMV?", "max_turns":3}'
-\`\`\`
+```
 
 Para verificar la lógica sin descargar modelos:
 
-\`\`\`bash
+```bash
 uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
-\`\`\`
+```
 
-**Pendiente en la fase 2:** \`consultar_boe\`, \`preparar_solicitud\`, un
+**Pendiente en la fase 2:** `consultar_boe`, `preparar_solicitud`, un
 benchmark de ~30 casos de dominio y la evaluación GPU real de ambos modelos.
 El bucle no gestiona historial entre peticiones HTTP: preguntar y recopilar
 datos del usuario a lo largo de varias peticiones corresponde a la fase 4.
