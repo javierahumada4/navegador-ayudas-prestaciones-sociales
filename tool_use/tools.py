@@ -15,12 +15,6 @@ from __future__ import annotations
 
 from tool_use.imv_tools import calcular_imv
 from tool_use.registry import ToolRegistry, tool
-from tool_use.ruleset_tools import (
-    comprobar_ruleset,
-    consultar_boe,
-    crear_ruleset,
-    fecha_actual,
-)
 
 OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
@@ -106,9 +100,6 @@ def default_registry() -> ToolRegistry:
     """The registry the executor and the agent use. Register your tools here."""
     # Only expose domain tools to the IMV assistant. The weather and calculator
     # functions above are template examples and stay importable for teaching/tests.
-    registry = ToolRegistry().register(
-        fecha_actual, comprobar_ruleset, consultar_boe, crear_ruleset, calcular_imv
-    )
-    # crear_ruleset has a write side-effect and is blocked by the phase-2 loop
-    # until a future human-confirmation workflow explicitly authorizes it.
+    registry = ToolRegistry().register(calcular_imv)
+    # Phase-2 BOE lookup and application draft tools will be added separately.
     return registry
