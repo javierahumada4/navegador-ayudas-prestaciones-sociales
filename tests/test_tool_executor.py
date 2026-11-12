@@ -267,6 +267,7 @@ def test_cache_factory_does_not_load_weights(monkeypatch):
     import tool_use.executor as executor
 
     monkeypatch.setattr(executor, "_loop", None)
+    monkeypatch.setattr(executor, "_check_inference_dependencies", lambda: None)
     monkeypatch.setenv("ARCA_TOOLS_BRAIN", "base")
     a = executor.build_tool_loop()
     b = executor.build_tool_loop()
