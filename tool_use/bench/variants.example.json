@@ -1,0 +1,19 @@
+{
+  "base_model": "Qwen/Qwen3-1.7B",
+  "adapters": {
+    "sft": "${HOME}/clusters/dgx/arca-runs/rlm-final-v3/weights/sft_lora",
+    "grpo_zero": null,
+    "sft_grpo": "${HOME}/clusters/dgx/arca-runs/rlm-final-v3/weights/grpo_lora",
+    "tool_grpo_base": null,
+    "tool_grpo_sft": null,
+    "tool_grpo_grpo_zero": null,
+    "tool_grpo_sft_grpo": null
+  },
+  "notes": {
+    "sft": "Former phase-1 SFT checkpoint; confirm it exists on the DGX",
+    "sft_grpo": "Former phase-1 SFT followed by numerical IMV GRPO checkpoint",
+    "grpo_zero": "Train reasoning GRPO directly from Qwen base, without SFT",
+    "tool_grpo_*": "Future final, cumulative checkpoints after GRPO optimizing tool calling; NOT trained yet",
+    "fairness": "Same frozen evaluation file for all 12; do not train on test questions"
+  }
+}
