@@ -160,3 +160,60 @@ def test_ruleset_writer_rejects_incomplete_or_unofficial_numbers(tmp_path, monke
     )
     assert not untrusted.ok
     assert not list(tmp_path.glob("imv_*.json"))
+
+
+def test_model_can_chain_ruleset_check_then_boe_without_publishing(tmp_path, monkeypatch):
+    """Two distinct real tools execute in successive model turns."""
+    from tool_use.executor import ToolLoop
+
+    monkeypatch.setenv("ARCA_RULESETS_DIR", str(tmp_path))
+
+    def fake_get(url, *, headers, timeout, follow_redirects):
+        return httpx.Response(200, request=httpx.Request("GET", url),
+                              json={"status": "OK", "data": {"identificador": "BOE-A-2021-21007"}})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    class ScriptedLoop(ToolLoop):
+        def __init__(self):
+            super().__init__(registry=default_registry(), model_id="fake")
+            self.replies = iter([
+                '<tool_call>{"name":"comprobar_ruleset","arguments":{"fecha_solicitud":"2027-02-01"}}</tool_call>',
+                '<tool_call>{"name":"consultar_boe","arguments":{"boe_id":"BOE-A-2021-21007"}}</tool_call>',
+                "No hay ruleset vigente; la normativa requiere revisión de importes.",
+            ])
+
+        def generate(self, messages):
+            return next(self.replies)
+
+    result = ScriptedLoop().run("IMV para 2027", max_turns=3)
+    assert [r.name for r in result.tool_calls] == ["comprobar_ruleset", "consultar_boe"]
+    assert all(r.ok for r in result.tool_calls)
+    assert result.tool_calls[0].result["status"] == "no_encontrado"
+    assert "revisión" in result.answer
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_agent_cannot_publish_ruleset_even_if_it_claims_confirmation(tmp_path, monkeypatch):
+    """Executor blocks side effects independently of the LLM-generated boolean."""
+    from tool_use.executor import ToolLoop
+
+    monkeypatch.setenv("ARCA_RULESETS_DIR", str(tmp_path))
+
+    class ScriptedLoop(ToolLoop):
+        def __init__(self):
+            super().__init__(registry=default_registry(), model_id="fake")
+            self.replies = iter([
+                '<tool_call>{"name":"crear_ruleset","arguments":'
+                '{"ruleset":{"id":"imv_es_2027"},"confirmacion_humana":true}}</tool_call>',
+                "Debe revisarlo y autorizarlo una persona.",
+            ])
+
+        def generate(self, messages):
+            return next(self.replies)
+
+    result = ScriptedLoop().run("Crea las reglas", max_turns=2)
+    assert len(result.tool_calls) == 1
+    assert not result.tool_calls[0].ok
+    assert "Confirmation required" in result.tool_calls[0].error
+    assert not list(tmp_path.glob("*.json"))
