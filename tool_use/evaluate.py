@@ -92,14 +92,44 @@ def main() -> None:
     cases = load_bench(args.bench)
     rows = []
     for case in cases:
-        response = loop.run(case["query"], max_turns=args.max_turns)
-        calls = [c.model_dump() for c in response.tool_calls]
-        rows.append(
-            {**case, "tool_calls": calls, "answer": response.answer, **score_case(case, calls)}
+        raw_generations: list[str] = []
+        response = loop.run(
+            case["query"], max_turns=args.max_turns, trace=raw_generations
         )
+        calls = [c.model_dump() for c in response.tool_calls]
+        expected_tool = case.get("expected_tool")
+        execution_ok = (
+            any(call["name"] == expected_tool and call["ok"] for call in calls)
+            if case.get("needs_tool", True) else None
+        )
+        expected_phrases = case.get("expected_answer_contains")
+        answer_check_ok = (
+            all(phrase.casefold() in response.answer.casefold()
+                for phrase in expected_phrases)
+            if expected_phrases else None
+        )
+        rows.append({
+            **case,
+            "tool_calls": calls,
+            "raw_generations": raw_generations,
+            "answer": response.answer,
+            "tool_execution_ok": execution_ok,
+            "answer_check_ok": answer_check_ok,
+            **score_case(case, calls),
+        })
         print(f"{'✓' if rows[-1]['selection_ok'] else '✗'} {case['query'][:70]}")
 
     summary = summarise(rows)
+    requiring_tool = [r for r in rows if r.get("needs_tool", True)]
+    with_answer_checks = [r for r in rows if r["answer_check_ok"] is not None]
+    summary["tool_execution_accuracy"] = (
+        sum(r["tool_execution_ok"] for r in requiring_tool) / len(requiring_tool)
+        if requiring_tool else None
+    )
+    summary["answer_check_accuracy"] = (
+        sum(r["answer_check_ok"] for r in with_answer_checks) /
+        len(with_answer_checks) if with_answer_checks else None
+    )
     print(json.dumps(summary, indent=2))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
