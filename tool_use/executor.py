@@ -283,9 +283,20 @@ class ToolLoop:
 _loop: ToolLoop | None = None
 
 
+def _check_inference_dependencies() -> None:
+    """Make /health reflect absent inference libraries without loading weights."""
+    from importlib.util import find_spec
+
+    if find_spec("torch") is None or find_spec("transformers") is None:
+        raise NotImplementedError(
+            "Phase 2 requires torch and transformers; install 'uv sync --extra train'."
+        )
+
+
 def build_tool_loop() -> ToolLoop:
-    """Return a cached loop. Loading model weights is deferred until first use."""
+    """Return a cached loop with a lightweight dependency/configuration check."""
     global _loop
+    _check_inference_dependencies()
     if _loop is None:
         _loop = ToolLoop()
     return _loop
