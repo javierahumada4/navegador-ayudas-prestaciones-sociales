@@ -25,7 +25,7 @@ jobs:
             'httpx>=0.28' 'pytest>=8.3' 'requests>=2.32' \
             'uvicorn>=0.34' 'python-dotenv>=1.1' 'ruff>=0.11'
       - name: Compile source
-        run: python -m compileall -q tool_use tests/test_imv_tool.py tests/test_imv_tool_grpo.py tests/test_imv_tool_loop.py tests/test_imv_compare.py
+        run: python -m compileall -q tool_use tests/test_imv_tool.py tests/test_imv_tool_grpo.py tests/test_imv_tool_loop.py tests/test_imv_compare.py tests/test_imv_tool_prompt.py
       - name: Test tool, executor, training rewards, and comparison
         run: |
           python -m pytest -q \
@@ -33,6 +33,7 @@ jobs:
             tests/test_imv_tool_grpo.py \
             tests/test_imv_tool_loop.py \
             tests/test_imv_compare.py \
+            tests/test_imv_tool_prompt.py \
             tests/test_tool_registry.py \
             tests/test_tool_parser.py \
             tests/test_api.py
@@ -42,5 +43,6 @@ jobs:
             tool_use/imv_tools.py tool_use/imv_data.py tool_use/tools.py \
             tool_use/executor.py tool_use/train_tool_grpo.py \
             tool_use/tool_grpo_rewards.py tool_use/compare_imv.py \
+            tool_use/tool_prompt.py \
             tests/test_imv_tool.py tests/test_imv_tool_grpo.py \
-            tests/test_imv_tool_loop.py tests/test_imv_compare.py
+            tests/test_imv_tool_loop.py tests/test_imv_compare.py tests/test_imv_tool_prompt.py
