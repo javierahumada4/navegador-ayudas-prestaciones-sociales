@@ -113,6 +113,7 @@ def inspect_rollout(
     messages = _messages(completion)
     calls = _all_calls(messages)
     reference = _reference(reference_case)
+    observed = any(msg.get("role") == "tool" for msg in messages)
     selected = False
     valid = False
     correct_args = False
@@ -139,7 +140,7 @@ def inspect_rollout(
             continue
         correct_args = True
         result = record.result
-        if isinstance(result, dict) and imv_numbers_match(
+        if observed and isinstance(result, dict) and imv_numbers_match(
             str(result.get("total_monthly_eur")), str(answer)
         ):
             executed = True
