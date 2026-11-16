@@ -287,3 +287,20 @@ def test_training_cli_rejects_missing_or_incompatible_start_adapter(tmp_path, ca
     )
     with pytest.raises(SystemExit, match="2"):
         trainer.main(["--init-adapter", str(adapter), *args])
+
+
+def test_complete_phase1_train_is_valid_for_tool_grpo_preflight():
+    """Validate every frozen real training case, not just hand-written fixtures."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    train_path = root / "results/rlm_final/data/train.jsonl"
+    test_path = root / "results/rlm_final/data/test.jsonl"
+    examples = trainer.prepare_training_examples(train_path, test_path, None)
+    assert len(examples) == 800
+    assert all(row["reference_case"] for row in examples)
+    assert any(
+        relation["type"] == "spouse" and relation["degree"] is None
+        for item in examples
+        for relation in json.loads(item["reference_case"])["relationships"]
+    )
