@@ -79,3 +79,11 @@ que requiera dos herramientas encadenadas, y miraré:
 | `executor.py` | tu turno | El flujo de cinco pasos; detrás de `/tools` |
 | `evaluate.py` | hecho | Métricas de selección y argumentos sobre el banco de pruebas |
 | `bench/` | vuestro | Casos de prueba (`example_cases.jsonl` muestra el formato) |
+
+## Extensión de este proyecto: experimento IMV/CAPI
+
+La implementación específica con la tool `calcular_imv`, el entrenamiento
+GRPO de Tool Use sobre **SFT + GRPO de razonamiento** y la comparativa
+de **cinco variantes** están documentados en
+[`IMV_GRPO.md`](IMV_GRPO.md). Se conservan arriba las instrucciones
+originales de la plantilla para referencia docente.
