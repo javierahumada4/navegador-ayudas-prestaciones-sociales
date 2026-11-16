@@ -183,3 +183,26 @@ def test_minimal_benchmark_case_does_not_require_full_personal_checklist(case):
     result = default_registry().call("calcular_imv", {"case": reduced})
     assert result.ok, result.error
     assert result.result["total_monthly_eur"] == 431.26
+
+
+def test_null_degree_for_spouse_is_valid_and_does_not_change_imv(case):
+    """The Phase-1 generator emits degree=null for spouses, where it is irrelevant."""
+    from tool_use.imv_tools import IMVCase
+
+    original = default_registry().call("calcular_imv", {"case": case})
+    assert original.ok, original.error
+    case["relationships"][0]["degree"] = None
+    normalized = IMVCase.model_validate(case).model_dump(mode="json", by_alias=True)
+    assert normalized["relationships"][0]["degree"] is None
+    result = default_registry().call("calcular_imv", {"case": case})
+    assert result.ok, result.error
+    assert result.result["total_monthly_eur"] == original.result["total_monthly_eur"]
+
+
+@pytest.mark.parametrize("relationship_type", ["consanguinity", "affinity"])
+def test_kinship_degree_is_required_when_it_changes_eligibility(case, relationship_type):
+    case["relationships"][0]["type"] = relationship_type
+    case["relationships"][0]["degree"] = None
+    result = default_registry().call("calcular_imv", {"case": case})
+    assert not result.ok
+    assert "degree" in result.error
