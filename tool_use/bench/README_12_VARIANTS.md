@@ -135,11 +135,145 @@ Este es un **ejemplo de comando**, no un experimento ejecutado ni
 un resultado prometido. Ajustar la configuración con los recursos DGX,
 revisar señales de recompensa y guardar los logs.
 
-**GRPO de tool use:** requiere una implementación nueva que entrene con
-llamadas a `calcular_imv` y recompensa sobre ejecución real y respuesta
-final; el GRPO de razonamiento existente **no sirve sin adaptarlo**.
-Serán cuatro entrenamientos adicionales, con datos de **train** exclusivamente,
-nunca con las preguntas del test.
+### GRPO de Tool Use implementado
+
+El módulo **`tool_use.train_tool_grpo`** ejecuta `trl.GRPOTrainer` con
+`tools=[calcular_imv]`, **rollouts con herramienta real**, reinyección
+de observaciones y respuesta final. Comparte la política de `ToolLoop` y
+utiliza `chat_template_kwargs={"enable_thinking": False}`.
+
+Un adaptador Python con firma `calcular_imv(case: dict)` permite que TRL
+genere el JSON Schema (su conversor de funciones no soporta el tipo Pydantic
+anidado). **El cuerpo llama al registro y Pydantic de producción**: no existe
+un segundo motor ni se suprimen las validaciones. En inferencia se mantiene
+el schema Pydantic completo de `calcular_imv`. Es una diferencia de
+representación del schema que puede afectar al aprendizaje y debe incluirse
+entre las limitaciones del experimento.
+
+**Recompensas** (en este orden, pesos por defecto `0.25 1 1 2 0.25`):
+llamada `calcular_imv` bien formada, argumentos normalizados que coinciden
+con el caso-oráculo de *train*, ejecución determinista correcta, cifra final
+correcta **con tool válida** y formato numérico `000.00`. No se repara
+JSON; enviar varias llamadas para probar suerte no suma recompensa de
+ejecución. La referencia oráculo (`params`, `answer`) está disponible
+**solo para el cálculo de recompensas**: no se incluye en el prompt.
+Los prompts contienen exactamente `rule_context` y `question`,
+como en la evaluación de los modelos con herramienta.
+
+Los ficheros de **train** y **test** se comprueban para detectar preguntas
+idénticas antes de entrenar. Nunca debe entrenarse con
+`results/rlm_final/data/test.jsonl`; el programa reserva esa ruta como
+comparación de solapamiento.
+
+#### Preparar configuración
+
+```bash
+cp tool_use/bench/variants.example.json "$HOME/arca-variants.json"
+uv sync --extra train
+
+# Tras entrenar grpo_zero (paso anterior), registrar ese checkpoint si existe:
+python - <<'PY'
+import json
+from pathlib import Path
+p = Path.home() / "arca-variants.json"
+j = json.loads(p.read_text(encoding="utf-8"))
+j["adapters"]["grpo_zero"] = str(
+    Path.home() / "clusters/dgx/arca-runs/grpo-zero/weights/grpo_lora"
+)
+p.write_text(json.dumps(j, indent=2) + "\\n", encoding="utf-8")
+PY
+```
+
+#### Comprobación de datos sin GPU
+
+```bash
+uv run python -m tool_use.train_tool_grpo \\
+  --source base --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+  --dry-run
+
+# Verifica además que tu versión instalada de TRL soporta tools=,
+# max_tool_calling_iterations y que Transformers puede leer el schema:
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source base --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+  --preflight
+```
+
+#### Entrenamiento smoke (2 pasos, en la DGX)
+
+```bash
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source base --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base-smoke/weights/grpo_lora" \\
+  --steps 2 --n-examples 24 \\
+  --num-generations 4 --micro-batch-size 1 \\
+  --max-completion-length 3072 --seed 42
+```
+
+Si el smoke GPU funciona y **la recompensa no colapsa a cero**,
+ejecutar una continuación independiente para cada modelo:
+
+```bash
+# 9) Base + GRPO-tool + calcular_imv
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source base --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+  --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
+
+# 10) SFT + GRPO-tool + calcular_imv
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source sft --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft/weights/grpo_lora" \\
+  --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
+
+# 11) GRPO de razonamiento sin SFT + GRPO-tool + calcular_imv
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source grpo_zero --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-grpo-zero/weights/grpo_lora" \\
+  --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
+
+# 12) SFT + GRPO de razonamiento + GRPO-tool + calcular_imv
+uv run --extra train python -m tool_use.train_tool_grpo \\
+  --source sft_grpo --config "$HOME/arca-variants.json" \\
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft-grpo/weights/grpo_lora" \\
+  --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
+```
+
+Cada ejecución entrena un adaptador **acumulativo** sobre el checkpoint
+indicado, con `PeftModel(..., is_trainable=True)` para SFT/GRPO previos
+y un LoRA nuevo desde base. Nunca sobrescribe el adaptador de origen.
+Los resultados de ejecución, historial de recompensas y configuración se
+guardan en el directorio `--output`. La comprobación real de GPU y
+compatibilidad de TRL **no se ha realizado en GitHub Actions**.
+
+#### Registrar los cuatro resultados para el comparador
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+p = Path.home() / "arca-variants.json"
+j = json.loads(p.read_text(encoding="utf-8"))
+root = Path.home() / "clusters/dgx/arca-runs"
+j["adapters"].update({
+    "tool_grpo_base": str(root / "tool-grpo-base/weights/grpo_lora"),
+    "tool_grpo_sft": str(root / "tool-grpo-sft/weights/grpo_lora"),
+    "tool_grpo_grpo_zero": str(root / "tool-grpo-grpo-zero/weights/grpo_lora"),
+    "tool_grpo_sft_grpo": str(root / "tool-grpo-sft-grpo/weights/grpo_lora"),
+})
+for key in ("tool_grpo_base", "tool_grpo_sft",
+            "tool_grpo_grpo_zero", "tool_grpo_sft_grpo"):
+    folder = Path(j["adapters"][key])
+    if not (folder / "adapter_config.json").is_file():
+        raise FileNotFoundError(f"Checkpoint no entrenado: {folder}")
+p.write_text(json.dumps(j, indent=2) + "\\n", encoding="utf-8")
+PY
+```
+
+Finalmente, ejecutar `tool_use.compare_variants --all` con el mismo
+archivo `test.jsonl` y `--config "$HOME/arca-variants.json"`.
+No copiar los pesos a Git ni incluir respuestas de test en el entrenamiento.
 
 Los checkpoints SFT/SFT+GRPO ya aparecen en el manifiesto de la ejecución
 anterior, pero su existencia física se verifica en la DGX con el inventario.
