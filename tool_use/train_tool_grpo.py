@@ -25,6 +25,7 @@ from tool_use.tool_grpo_rewards import (
     final_answer_reward, numeric_format_reward, tool_arguments_reward,
     tool_execution_reward, tool_selection_reward,
 )
+from tool_use.tool_prompt import tool_demonstration
 from tool_use.tools import default_registry
 
 DEFAULT_WEIGHTS = [0.25, 1.0, 1.0, 2.0, 0.25]
@@ -104,6 +105,7 @@ def prepare_training_examples(
         prepared.append({
             "prompt": [
                 {"role": "system", "content": SYSTEM_PROMPT_TEMPLATE},
+                *tool_demonstration(),
                 {"role": "user", "content": user_prompt(row)},
             ],
             "answer": str(row["answer"]),
@@ -134,6 +136,7 @@ def training_metadata(
         "reward_weights": reward_weights,
         "thinking": False,
         "max_tool_calling_iterations": 2,
+        "cold_start": "fixed synthetic tool-call demonstration (also in inference)",
         "note": "No checkpoint is implied by --dry-run; only trainer.save_model creates weights.",
     }
 
