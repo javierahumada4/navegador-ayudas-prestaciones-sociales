@@ -227,27 +227,30 @@ def test_training_cli_dry_run_does_not_start_gpu_or_write_checkpoint(
 ):
     train = tmp_path / "train.jsonl"
     test = tmp_path / "test.jsonl"
-    conf = tmp_path / "variants.json"
+    adapter = tmp_path / "sft_grpo"
     dest = tmp_path / "weights"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text(
+        '{"base_model_name_or_path":"Qwen/Qwen3-1.7B"}', encoding="utf-8"
+    )
     train.write_text(json.dumps({
         "question": "Pregunta de train", "answer": "431.26", "params": case,
     }) + "\n")
     test.write_text(json.dumps({
         "question": "Pregunta test", "answer": "431.26", "params": case,
     }) + "\n")
-    conf.write_text('{"base_model":"Qwen/Qwen3-1.7B","adapters":{}}')
     monkeypatch.setattr(
         trainer, "train",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("unexpected GPU training")),
     )
     trainer.main([
-        "--source", "base", "--config", str(conf), "--train-data", str(train),
+        "--init-adapter", str(adapter), "--train-data", str(train),
         "--test-data", str(test), "--output", str(dest), "--dry-run",
     ])
     info = json.loads(capsys.readouterr().out)
-    assert info["source"] == "base"
+    assert info["source"] == "sft_grpo"
     assert info["n_train_examples"] == 1
-    assert info["initial_adapter"] is None
+    assert info["initial_adapter"] == str(adapter)
     assert len(info["train_sha256"]) == 64
     assert not dest.exists()
 
@@ -256,14 +259,31 @@ def test_training_cli_blocks_overwriting_input_adapter(tmp_path, case):
     train, test = tmp_path / "train.jsonl", tmp_path / "test.jsonl"
     train.write_text(json.dumps({"question": "train", "answer": "431.26", "params": case}) + "\n")
     test.write_text(json.dumps({"question": "test", "answer": "0.00", "params": case}) + "\n")
-    adapter = tmp_path / "sft"
+    adapter = tmp_path / "sft_grpo"
     adapter.mkdir()
     (adapter / "adapter_config.json").write_text("{}")
-    conf = tmp_path / "config.json"
-    conf.write_text(json.dumps({"adapters": {"sft": str(adapter)}}))
     with pytest.raises(SystemExit):
         trainer.main([
-            "--source", "sft", "--config", str(conf),
+            "--init-adapter", str(adapter),
             "--train-data", str(train), "--test-data", str(test),
             "--output", str(adapter), "--dry-run",
         ])
+
+
+def test_training_cli_rejects_missing_or_incompatible_start_adapter(tmp_path, case):
+    train, test = tmp_path / "train.jsonl", tmp_path / "test.jsonl"
+    train.write_text(json.dumps({"question": "train", "answer": "431.26", "params": case}) + "\n")
+    test.write_text(json.dumps({"question": "test", "answer": "0.00", "params": case}) + "\n")
+    args = [
+        "--train-data", str(train), "--test-data", str(test),
+        "--output", str(tmp_path / "out"), "--dry-run",
+    ]
+    with pytest.raises(SystemExit, match="2"):
+        trainer.main(["--init-adapter", str(tmp_path / "missing"), *args])
+    adapter = tmp_path / "wrong_base"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text(
+        '{"base_model_name_or_path":"Some/Other-Model"}', encoding="utf-8"
+    )
+    with pytest.raises(SystemExit, match="2"):
+        trainer.main(["--init-adapter", str(adapter), *args])
