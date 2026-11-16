@@ -36,8 +36,9 @@ def read_cases(path: str | Path, limit: int | None = None) -> list[dict[str, Any
 def user_prompt(row: dict[str, Any]) -> str:
     context = row.get("rule_context")
     if not context:
-        from rlm.data import get_imv_rule_context
-        context = get_imv_rule_context()
+        from rlm.generate_problems import build_rule_context
+        from rlm.imv_engine import load_ruleset
+        context = build_rule_context(load_ruleset())
     return f"{context}\n\n{row['question']}"
 
 
