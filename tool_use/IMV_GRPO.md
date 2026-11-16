@@ -74,12 +74,17 @@ uv run --extra train python -m tool_use.train_tool_grpo \
 ```
 
 `--preflight` comprueba que la versión instalada de TRL dispone de
-`tools=` y del GRPO de rollouts con herramientas. La herramienta en
-entrenamiento tiene firma sencilla `calcular_imv(case: dict)` para
-obtener JSON Schema de Transformers, **pero su ejecución delega siempre
-en el registro Pydantic y motor de producción**. La inferencia usa el
-schema Pydantic completo; es una diferencia de presentación a considerar
-al interpretar los resultados.
+`tools=` y del GRPO de rollouts con herramientas. Tanto en entrenamiento
+como en inferencia Qwen3 recibe **exactamente el mismo JSON Schema de
+`calcular_imv`**, derivado del registro Pydantic
+(`default_registry().definitions()[0]`), incluidos los campos anidados
+de `IMVCase`. En `tool_use/trl_tool_schema.py` se sustituye *solo* la
+representación del esquema al renderizar el chat de TRL: la función
+ejecutable `calcular_imv(case: dict)` se mantiene para que TRL pueda
+invocarla, y delega en el mismo registro Pydantic y motor de producción.
+No se parchea globalmente Transformers ni se alteran las reglas IMV.
+Los tests CPU verifican la igualdad exacta de esquemas; la
+compatibilidad de generación y aprendizaje real debe comprobarse en DGX.
 
 ### Diagnóstico de recompensa cero antes de entrenar
 
