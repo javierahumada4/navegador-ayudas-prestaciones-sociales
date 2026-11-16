@@ -81,6 +81,41 @@ en el registro Pydantic y motor de producción**. La inferencia usa el
 schema Pydantic completo; es una diferencia de presentación a considerar
 al interpretar los resultados.
 
+### Diagnóstico de recompensa cero antes de entrenar
+
+El adaptador SFT+GRPO de razonamiento puede preferir generar directamente
+`<think>/<answer>` en vez de llamar a herramientas. Si
+`tools/call_frequency=0` y todas las recompensas son cero durante varios
+pasos, GRPO **no tiene gradiente útil** y se detiene deliberadamente.
+
+Para favorecer la exploración sin añadir una nueva etapa de SFT,
+las dos variantes con herramienta incluyen ahora **la misma demostración
+sintética fija** en el contexto: una llamada nativa completa a
+`calcular_imv`, una observación del motor y una respuesta final.
+La demostración está en `tool_use/tool_prompt.py`, es distinta del test
+y se valida mediante el motor IMV. No es una respuesta-oráculo del
+problema actual. Se registra esta intervención al interpretar la
+comparación: el efecto del acceso a herramientas incluye también esta
+demostración, idéntica para los brazos 4 y 5.
+
+Antes de entrenar de nuevo, ejecutar una **sonda de inferencia** con
+cuatro preguntas de train (ningún dato del test ni pesos modificados):
+
+```bash
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --init-adapter "$HOME/clusters/dgx/arca-runs/rlm-final-v3/weights/grpo_lora" \
+  --train-data "$HOME/clusters/dgx/arca-runs/rlm-final-v3/data/train.jsonl" \
+  --test-data "$HOME/clusters/dgx/arca-runs/rlm-final-v3/data/test.jsonl" \
+  --output "$HOME/clusters/dgx/arca-runs/imv-tool-grpo-probe" \
+  --max-completion-length 2048 --probe 4
+```
+
+`--probe` imprime las generaciones crudas y los registros de tool por caso.
+Si sigue sin haber ninguna llamada, **no iniciar 300 pasos**: hay que
+inspeccionar los textos generados y posiblemente introducir una
+inicialización supervisada de Tool Use previa a GRPO. No aumentar el
+límite de pasos ni anular `zero-signal-patience` para ocultarlo.
+
 ### Smoke GPU de dos pasos
 
 ```bash
