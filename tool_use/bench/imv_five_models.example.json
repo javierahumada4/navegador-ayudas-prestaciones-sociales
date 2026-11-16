@@ -1,0 +1,9 @@
+{
+  "base_model": "Qwen/Qwen3-1.7B",
+  "adapters": {
+    "sft": "${HOME}/clusters/dgx/arca-runs/rlm-final-v3/weights/sft_lora",
+    "sft_grpo": "${HOME}/clusters/dgx/arca-runs/rlm-final-v3/weights/grpo_lora",
+    "tool_grpo": null
+  },
+  "notes": "tool_grpo is filled only after GPU training; never reuse the reasoning GRPO as this adapter."
+}
