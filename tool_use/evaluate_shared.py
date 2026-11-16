@@ -1,4 +1,4 @@
-"""Evaluate Qwen3 + calcular_imv on EXACTLY the Phase-1 IMV test questions.
+"""Evaluate one SFT+GRPO or SFT+GRPO+tool-GRPO IMV adapter on held-out cases.
 
 Input: the SAME test.jsonl (question/answer/params/rule_context) used by
 rlm.evaluate. Only rule_context and question are sent to the model; oracle
@@ -94,9 +94,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True, help="EXACT Phase-1 test.jsonl path")
     parser.add_argument("--out", default="reports/tool_vs_phase1.json")
-    parser.add_argument("--brain", choices=["base", "rlm"], default="base")
     parser.add_argument("--model-id", default=None)
-    parser.add_argument("--adapter", default=None)
+    parser.add_argument("--adapter", required=True,
+                        help="Final SFT+GRPO adapter, before or after tool-GRPO")
     parser.add_argument("--n-examples", type=int, default=None)
     parser.add_argument("--max-turns", type=int, default=3)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
@@ -107,7 +107,7 @@ def main() -> None:
     from tool_use.executor import ToolLoop
 
     loop = ToolLoop(
-        brain=args.brain, model_id=args.model_id, adapter_path=args.adapter,
+        brain="rlm", model_id=args.model_id, adapter_path=args.adapter,
         max_new_tokens=args.max_new_tokens,
     )
     cases = load_shared_test(args.data, args.n_examples)
@@ -124,7 +124,7 @@ def main() -> None:
         )
     result = {
         "configuration": {
-            "phase1_data": str(args.data), "brain": loop.brain, "model": loop.model_label,
+            "phase1_data": str(args.data), "model": loop.model_label,
             "max_turns": args.max_turns, "max_new_tokens": args.max_new_tokens,
             "decoding": "greedy",
             "scoring_note": (
