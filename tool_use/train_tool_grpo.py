@@ -257,6 +257,48 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
     print(f"Tool-use GRPO adapter saved: {output}", flush=True)
 
 
+def probe_inference(
+    *, adapter: str, model: str, cases: list[dict[str, Any]],
+    max_new_tokens: int,
+) -> None:
+    """Report real model outputs before allocating hours to GRPO.
+
+    Probe uses the SAME tool-loop prompt/demonstration as inference. It
+    does not train weights, write a checkpoint, or touch held-out test rows.
+    """
+    from tool_use.executor import ToolLoop
+
+    loop = ToolLoop(
+        brain="rlm", model_id=model, adapter_path=adapter,
+        max_new_tokens=max_new_tokens, enable_thinking=False,
+    )
+    attempted = 0
+    executed = 0
+    try:
+        for i, row in enumerate(cases, 1):
+            trace: list[str] = []
+            result = loop.run(user_prompt(row), max_turns=3, trace=trace)
+            attempted += len(result.tool_calls)
+            executed += sum(
+                r.ok and r.name == "calcular_imv" for r in result.tool_calls
+            )
+            print(json.dumps({
+                "case_index": i,
+                "question": row["question"],
+                "raw_generations": [t[:3000] for t in trace],
+                "tool_calls": [c.model_dump() for c in result.tool_calls],
+                "final_answer": result.answer,
+            }, ensure_ascii=False, indent=2), flush=True)
+    finally:
+        del loop
+    print(f"Probe: {attempted} attempted calls; {executed} successful.", flush=True)
+    if attempted == 0:
+        raise RuntimeError(
+            "The checkpoint made no tool calls on the probe cases. "
+            "Do not start a long tool-GRPO run yet; inspect raw_generations."
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -283,9 +325,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--n-examples", type=int)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--probe", type=int, metavar="N",
+                        help="Generate and print N train-only tool-loop traces before GRPO")
     parser.add_argument("--preflight", action="store_true",
                         help="Verify installed TRL/Transformers tool API without loading model weights")
     args = parser.parse_args(argv)
+    if args.probe is not None and args.probe < 1:
+        parser.error("--probe must be positive")
+    if args.probe and (args.preflight or args.dry_run):
+        parser.error("--probe cannot be combined with --dry-run or --preflight")
     if args.steps < 1 or args.num_generations < 2 or args.grad_accum < 1:
         parser.error("steps >= 1, num_generations >= 2, grad_accum >= 1 required")
     if args.micro_batch_size < 1 or (
@@ -332,6 +380,15 @@ def main(argv: list[str] | None = None) -> None:
             preflight_trl_tools()
             metadata["trl_tool_preflight"] = "passed"
         print(json.dumps(metadata, ensure_ascii=False, indent=2))
+        return
+    if args.probe:
+        # Only training questions are probed; never print reference_case or
+        # expected answers and never create output weights.
+        probe_inference(
+            adapter=adapter, model=args.model,
+            cases=read_cases(args.train_data, args.probe),
+            max_new_tokens=args.max_completion_length,
+        )
         return
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "tool_grpo_run.json").write_text(
