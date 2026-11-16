@@ -1,4 +1,4 @@
-"""Continue GRPO on real calcular_imv tool calls for each of four Qwen3 checkpoints.
+"""Continue SFT+reasoning-GRPO with GRPO specialised in calcular_imv tool calls.
 
 This is an *agent/tool-use* rollout: TRL executes calcular_imv in the rollout,
 reinserts the observation and generates the final assistant response. Unlike a
@@ -10,6 +10,7 @@ only to reward functions. GPU training must be run on the DGX.
 """
 
 import argparse
+import hashlib
 import inspect
 import json
 import os
@@ -18,10 +19,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from tool_use.compare_variants import (
-    CHECKPOINTS, VARIANT_BY_NAME, check_test_is_held_out, file_hash,
-    load_config, resolve_adapter,
-)
 from tool_use.evaluate_shared import load_shared_test, prompt_for_case
 from tool_use.executor import SYSTEM_PROMPT_TEMPLATE
 from tool_use.imv_tools import IMVCase
@@ -32,6 +29,43 @@ from tool_use.tool_grpo_rewards import (
 from tool_use.tools import default_registry
 
 DEFAULT_WEIGHTS = [0.25, 1.0, 1.0, 2.0, 0.25]
+DEFAULT_MODEL = "Qwen/Qwen3-1.7B"
+DEFAULT_ADAPTER = "${HOME}/clusters/dgx/arca-runs/rlm-final-v3/weights/grpo_lora"
+
+
+def file_hash(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def check_train_test_disjoint(train: list[dict[str, Any]], test: list[dict[str, Any]]) -> None:
+    train_questions = {r["question"] for r in train}
+    overlapping = sum(r["question"] in train_questions for r in test)
+    if overlapping:
+        raise ValueError(
+            f"DATA LEAKAGE: {overlapping} test questions overlap the training set"
+        )
+
+
+def resolve_init_adapter(value: str, model: str) -> str:
+    """Require a real final PEFT adapter compatible with the chosen base model."""
+    adapter = Path(os.path.expandvars(os.path.expanduser(value))).resolve()
+    conf_path = adapter / "adapter_config.json"
+    if not conf_path.is_file():
+        raise FileNotFoundError(
+            f"Missing SFT+reasoning-GRPO adapter_config.json at {adapter}"
+        )
+    info = json.loads(conf_path.read_text(encoding="utf-8"))
+    trained_base = info.get("base_model_name_or_path")
+    if trained_base and trained_base != model:
+        raise ValueError(
+            f"Adapter base {trained_base!r} differs from --model {model!r}"
+        )
+    return str(adapter)
+
 
 
 def calcular_imv(case: dict) -> dict:
@@ -66,7 +100,7 @@ def prepare_training_examples(
     """Build TRL conversational examples; hide oracle params from the model."""
     all_train = load_shared_test(train_file)
     test_cases = load_shared_test(test_file)
-    check_test_is_held_out(test_cases, train_file)
+    check_train_test_disjoint(all_train, test_cases)
     if not all_train:
         raise ValueError("Training dataset is empty")
     if n_examples is not None and n_examples < 1:
@@ -97,13 +131,13 @@ def prepare_training_examples(
 
 
 def training_metadata(
-    *, source: str, base_model: str, train_file: str, test_file: str,
+    *, base_model: str, train_file: str, test_file: str,
     adapter: str | None, steps: int, n_examples: int, max_completion_length: int,
     num_generations: int, seed: int, reward_weights: list[float],
 ) -> dict[str, Any]:
     return {
         "method": "trl.GRPOTrainer with tools=[calcular_imv]",
-        "source": source,
+        "source": "sft_grpo",
         "base_model": base_model,
         "initial_adapter": adapter,
         "train_file": train_file,
@@ -127,11 +161,14 @@ def preflight_trl_tools() -> None:
     from transformers.utils import get_json_schema
     from trl import GRPOConfig, GRPOTrainer
 
-    if "max_tool_calling_iterations" not in inspect.signature(GRPOConfig).parameters:
+    config_params = inspect.signature(GRPOConfig).parameters
+    if "max_tool_calling_iterations" not in config_params:
         raise RuntimeError(
             "Installed trl.GRPOConfig lacks max_tool_calling_iterations. "
             "Upgrade to a release supporting multi-turn tools."
         )
+    if "chat_template_kwargs" not in config_params:
+        raise RuntimeError("Installed GRPOConfig lacks chat_template_kwargs")
     if "tools" not in inspect.signature(GRPOTrainer).parameters:
         raise RuntimeError("Installed GRPOTrainer lacks tools= agent rollouts")
     schema = get_json_schema(calcular_imv)
@@ -146,14 +183,13 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
     preflight_trl_tools()
     import torch
     from datasets import Dataset
-    from peft import LoraConfig, PeftModel
+    from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
     from rlm.train_grpo import ZeroSignalMonitor, save_log_history
 
-    config = load_config(args.config)
-    base_model = config.get("base_model", "Qwen/Qwen3-1.7B")
+    base_model = args.model
     tokenizer = AutoTokenizer.from_pretrained(base_model)
 
     # Some Qwen thinking adapters come from phase 1. For a controlled
@@ -164,16 +200,8 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
     dtype = torch.bfloat16 if cuda and torch.cuda.is_bf16_supported() else (
         torch.float16 if cuda else torch.float32
     )
-    if adapter:
-        initial = AutoModelForCausalLM.from_pretrained(base_model, dtype=dtype)
-        model = PeftModel.from_pretrained(initial, adapter, is_trainable=True)
-        peft_config = None
-    else:
-        model = base_model
-        peft_config = LoraConfig(
-            r=args.lora_rank, lora_alpha=2 * args.lora_rank,
-            target_modules="all-linear", task_type="CAUSAL_LM",
-        )
+    initial = AutoModelForCausalLM.from_pretrained(base_model, dtype=dtype)
+    model = PeftModel.from_pretrained(initial, adapter, is_trainable=True)
     config = GRPOConfig(
         output_dir=args.output,
         max_steps=args.steps,
@@ -210,7 +238,7 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
         processing_class=tokenizer,
         train_dataset=data,
         tools=[calcular_imv],
-        peft_config=peft_config,
+        peft_config=None,
         reward_funcs=[
             tool_selection_reward, tool_arguments_reward,
             tool_execution_reward, final_answer_reward, numeric_format_reward,
@@ -246,8 +274,9 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", choices=CHECKPOINTS, required=True)
-    parser.add_argument("--config", default="tool_use/bench/variants.example.json")
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--init-adapter", default=DEFAULT_ADAPTER,
+                        help="Final LoRA of SFT followed by reasoning GRPO")
     parser.add_argument("--train-data", default="results/rlm_final/data/train.jsonl")
     parser.add_argument("--test-data", default="results/rlm_final/data/test.jsonl")
     parser.add_argument("--output", required=True)
@@ -256,7 +285,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--micro-batch-size", type=int, default=1)
     parser.add_argument("--max-completion-length", type=int, default=3072)
-    parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--top-p", type=float, default=0.95)
@@ -279,8 +307,8 @@ def main(argv: list[str] | None = None) -> None:
         args.num_generations * args.grad_accum
     ) % args.micro_batch_size:
         parser.error("micro-batch-size must divide num-generations * grad-accum")
-    if args.max_completion_length < 1 or args.lora_rank < 1:
-        parser.error("max-completion-length and lora-rank must be positive")
+    if args.max_completion_length < 1:
+        parser.error("max-completion-length must be positive")
     if args.temperature <= 0 or not 0 < args.top_p <= 1 or args.top_k < 0:
         parser.error("temperature > 0, top-p in (0,1], top-k >= 0 required")
     if args.learning_rate <= 0 or args.zero_signal_patience < 0:
@@ -290,15 +318,14 @@ def main(argv: list[str] | None = None) -> None:
     if not Path(args.train_data).is_file() or not Path(args.test_data).is_file():
         parser.error("Train and held-out test JSONL must exist")
 
-    config = load_config(args.config)
-    variant = VARIANT_BY_NAME[args.source]
-    adapter = resolve_adapter(variant, config)
+    try:
+        adapter = resolve_init_adapter(args.init_adapter, args.model)
+    except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
+        parser.error(str(exc))
     destination = Path(os.path.expandvars(os.path.expanduser(args.output))).resolve()
-    if adapter and (
-        destination == Path(adapter).resolve()
-        or Path(adapter).resolve() in destination.parents
-    ):
-        parser.error("Output must not overwrite the source adapter")
+    source_adapter = Path(adapter)
+    if destination == source_adapter or source_adapter in destination.parents:
+        parser.error("Output must not overwrite the initial SFT+GRPO adapter")
     if (destination / "adapter_config.json").exists() and not args.resume_from_checkpoint:
         parser.error("Output already contains a trained adapter; choose another path")
 
@@ -308,8 +335,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.resume_from_checkpoint and not Path(args.resume_from_checkpoint).exists():
         parser.error("resume-from-checkpoint does not exist")
     metadata = training_metadata(
-        source=args.source,
-        base_model=config.get("base_model", "Qwen/Qwen3-1.7B"),
+        base_model=args.model,
         train_file=args.train_data, test_file=args.test_data,
         adapter=adapter, steps=args.steps, n_examples=len(prepared),
         max_completion_length=args.max_completion_length,
