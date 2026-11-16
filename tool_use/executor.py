@@ -15,6 +15,7 @@ from api.schemas import ToolCallRecord, ToolsResponse
 from rlm.chat_template import restore_thinking_prefix
 from tool_use.parser import ToolCall, format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
+from tool_use.tool_prompt import tool_demonstration
 from tool_use.tools import default_registry
 
 SYSTEM_PROMPT_TEMPLATE = """Eres un asistente de orientación sobre IMV y CAPI en España.
@@ -205,8 +206,12 @@ class ToolLoop:
             raise ValueError("max_turns must be at least 1")
         messages = [
             {"role": "system", "content": build_system_prompt(self.registry)},
-            {"role": "user", "content": query},
         ]
+        # Match the GRPO train prompt for the two IMV tool-enabled arms.
+        # Keep template tests/other registries independent of this demonstration.
+        if set(self.registry.tools) == {"calcular_imv"}:
+            messages.extend(tool_demonstration())
+        messages.append({"role": "user", "content": query})
         records: list[ToolCallRecord] = []
         seen_calls: set[str] = set()
 
