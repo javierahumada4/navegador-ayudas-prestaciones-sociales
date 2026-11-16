@@ -180,34 +180,34 @@ j = json.loads(p.read_text(encoding="utf-8"))
 j["adapters"]["grpo_zero"] = str(
     Path.home() / "clusters/dgx/arca-runs/grpo-zero/weights/grpo_lora"
 )
-p.write_text(json.dumps(j, indent=2) + "\\n", encoding="utf-8")
+p.write_text(json.dumps(j, indent=2) + "\n", encoding="utf-8")
 PY
 ```
 
 #### Comprobación de datos sin GPU
 
 ```bash
-uv run python -m tool_use.train_tool_grpo \\
-  --source base --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+uv run python -m tool_use.train_tool_grpo \
+  --source base --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \
   --dry-run
 
 # Verifica además que tu versión instalada de TRL soporta tools=,
 # max_tool_calling_iterations y que Transformers puede leer el schema:
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source base --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source base --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \
   --preflight
 ```
 
 #### Entrenamiento smoke (2 pasos, en la DGX)
 
 ```bash
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source base --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base-smoke/weights/grpo_lora" \\
-  --steps 2 --n-examples 24 \\
-  --num-generations 4 --micro-batch-size 1 \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source base --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base-smoke/weights/grpo_lora" \
+  --steps 2 --n-examples 24 \
+  --num-generations 4 --micro-batch-size 1 \
   --max-completion-length 3072 --seed 42
 ```
 
@@ -216,27 +216,27 @@ ejecutar una continuación independiente para cada modelo:
 
 ```bash
 # 9) Base + GRPO-tool + calcular_imv
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source base --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source base --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-base/weights/grpo_lora" \
   --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
 
 # 10) SFT + GRPO-tool + calcular_imv
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source sft --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft/weights/grpo_lora" \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source sft --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft/weights/grpo_lora" \
   --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
 
 # 11) GRPO de razonamiento sin SFT + GRPO-tool + calcular_imv
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source grpo_zero --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-grpo-zero/weights/grpo_lora" \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source grpo_zero --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-grpo-zero/weights/grpo_lora" \
   --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
 
 # 12) SFT + GRPO de razonamiento + GRPO-tool + calcular_imv
-uv run --extra train python -m tool_use.train_tool_grpo \\
-  --source sft_grpo --config "$HOME/arca-variants.json" \\
-  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft-grpo/weights/grpo_lora" \\
+uv run --extra train python -m tool_use.train_tool_grpo \
+  --source sft_grpo --config "$HOME/arca-variants.json" \
+  --output "$HOME/clusters/dgx/arca-runs/tool-grpo-sft-grpo/weights/grpo_lora" \
   --steps 300 --num-generations 4 --micro-batch-size 1 --seed 42
 ```
 
@@ -267,7 +267,7 @@ for key in ("tool_grpo_base", "tool_grpo_sft",
     folder = Path(j["adapters"][key])
     if not (folder / "adapter_config.json").is_file():
         raise FileNotFoundError(f"Checkpoint no entrenado: {folder}")
-p.write_text(json.dumps(j, indent=2) + "\\n", encoding="utf-8")
+p.write_text(json.dumps(j, indent=2) + "\n", encoding="utf-8")
 PY
 ```
 
