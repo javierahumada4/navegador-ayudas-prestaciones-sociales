@@ -191,11 +191,16 @@ def test_training_dataset_keeps_answers_and_params_out_of_prompts(tmp_path, case
     assert len(examples) == 1
     entry = examples[0]
     prompt = json.dumps(entry["prompt"], ensure_ascii=False)
+    current_user = entry["prompt"][-1]["content"]
     assert entry["prompt"][0]["role"] == "system"
-    assert "Pregunta del entrenamiento." in prompt
-    assert "Normativa del IMV" in prompt
-    assert "431.26" not in prompt
-    assert "net_worth_eur" not in prompt
+    assert entry["prompt"][-1]["role"] == "user"
+    assert "Pregunta del entrenamiento." in current_user
+    assert "Normativa del IMV" in current_user
+    # The preceding fixed illustration has its OWN numeric observation.
+    # The current training item's answer/params must never be leaked.
+    assert "net_worth_eur" not in current_user
+    assert "reference_case" not in current_user
+    assert prompt.count("Pregunta del entrenamiento.") == 1
     assert "reference_case" in entry
     assert "431.26" == entry["answer"]
     assert "economic" in json.loads(entry["reference_case"])
