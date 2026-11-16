@@ -71,8 +71,17 @@ class Relationship(CaseFacts):
         "permanent_foster_care",
         "unrelated",
     ]
-    degree: int = Field(default=99, ge=1)
+    # The phase-1 problem generator explicitly sets degree=null for
+    # spouses: degree only has meaning for consanguinity/affinity.
+    degree: int | None = Field(default=None, ge=1)
     custody: Literal["exclusive", "shared", "none"] = "none"
+
+    @model_validator(mode="after")
+    def check_kinship_degree(self):
+        if self.type in {"consanguinity", "affinity"} and self.degree is None:
+            raise ValueError("degree is required for consanguinity/affinity")
+        return self
+
 
 class ApplicantHistory(CaseFacts):
     independent_from_parents_since: date | None = Field(
