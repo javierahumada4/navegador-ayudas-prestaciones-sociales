@@ -26,6 +26,7 @@ from tool_use.tool_grpo_rewards import (
     tool_execution_reward, tool_selection_reward,
 )
 from tool_use.tool_prompt import tool_demonstration
+from tool_use.trl_tool_schema import canonical_imv_tool_schema, inject_imv_schema
 from tool_use.tools import default_registry
 
 DEFAULT_WEIGHTS = [0.25, 1.0, 1.0, 2.0, 0.25]
@@ -121,6 +122,7 @@ def training_metadata(
 ) -> dict[str, Any]:
     return {
         "method": "trl.GRPOTrainer with tools=[calcular_imv]",
+        "tool_schema": "identical to default_registry().definitions()[0] (Pydantic IMVCase)",
         "source": "sft_grpo",
         "base_model": base_model,
         "initial_adapter": adapter,
@@ -161,6 +163,13 @@ def preflight_trl_tools() -> None:
         raise RuntimeError("TRL training tool name differs from inference tool")
     if "case" not in schema["function"]["parameters"].get("properties", {}):
         raise RuntimeError("Tool has no case field in its schema")
+    # The generic callable schema above is NOT the schema TRL will show the
+    # model: the production schema below includes the nested Pydantic IMVCase.
+    production = canonical_imv_tool_schema()
+    if production["function"]["name"] != schema["function"]["name"]:
+        raise RuntimeError("Inference and training tool names disagree")
+    if "$defs" not in production["function"]["parameters"]:
+        raise RuntimeError("Canonical IMV schema must contain nested Pydantic definitions")
 
 
 def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str | None) -> None:
@@ -176,6 +185,10 @@ def train(args: argparse.Namespace, prepared: list[dict[str, Any]], adapter: str
 
     base_model = args.model
     tokenizer = AutoTokenizer.from_pretrained(base_model)
+    # TRL needs a callable for execution, but Transformers turns custom
+    # Pydantic hints into an empty object. Intercept only template rendering
+    # so both train and inference see the same full production JSON Schema.
+    inject_imv_schema(tokenizer, calcular_imv)
 
     # Some Qwen thinking adapters come from phase 1. For a controlled
     # comparison the tool-use training and ToolLoop inference both disable
