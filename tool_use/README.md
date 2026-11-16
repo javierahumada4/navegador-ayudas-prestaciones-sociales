@@ -163,6 +163,15 @@ uv run pytest -q tests/test_tool_executor.py tests/test_calcular_imv_tool.py
 herramienta expuesta al modelo**. Los ejemplos `get_weather` y `calculator`
 de la plantilla no se registran.
 
+**Entrenamiento GRPO de Tool Use implementado:** `python -m
+tool_use.train_tool_grpo`. Utiliza rollouts con `calcular_imv` real,
+recompensas de argumento/ejecución/resultado y continúa un adaptador distinto
+para cada una de las cuatro variantes de razonamiento. Antes de gastar GPU,
+usar `--dry-run` y `--preflight`, y después un smoke de dos pasos.
+El entrenamiento GPU y la compatibilidad exacta con TRL en la DGX aún
+requieren verificación experimental. Todos los comandos están en
+[`bench/README_12_VARIANTS.md`](bench/README_12_VARIANTS.md).
+
 **Evaluador implementado:** `python -m tool_use.compare_variants`. Ejecuta los
 12 brazos sobre el mismo test de Fase 1, con puntuación numérica común,
 trazas por problema y exportación JSON/CSV; los checkpoints no disponibles
