@@ -272,6 +272,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--n-examples", type=int)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--preflight", action="store_true",
+                        help="Verify installed TRL/Transformers tool API without loading model weights")
     args = parser.parse_args(argv)
     if args.steps < 1 or args.num_generations < 2 or args.grad_accum < 1:
         parser.error("steps >= 1, num_generations >= 2, grad_accum >= 1 required")
@@ -316,7 +318,10 @@ def main(argv: list[str] | None = None) -> None:
         num_generations=args.num_generations, seed=args.seed,
         reward_weights=args.reward_weights,
     )
-    if args.dry_run:
+    if args.dry_run or args.preflight:
+        if args.preflight:
+            preflight_trl_tools()
+            metadata["trl_tool_preflight"] = "passed"
         print(json.dumps(metadata, ensure_ascii=False, indent=2))
         return
     destination.mkdir(parents=True, exist_ok=True)
