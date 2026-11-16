@@ -188,7 +188,7 @@ def test_training_dataset_keeps_answers_and_params_out_of_prompts(tmp_path, case
     assert "reference_case" in entry
     assert "431.26" == entry["answer"]
     assert "economic" in json.loads(entry["reference_case"])
-    assert "_family" not in entry["reference_case"]
+    assert "_family" not in json.loads(entry["reference_case"])
     assert evaluate_imv_case(case)["total_monthly_eur"] == 431.26
 
 
