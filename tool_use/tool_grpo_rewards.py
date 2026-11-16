@@ -117,7 +117,9 @@ def inspect_rollout(
     valid = False
     correct_args = False
     executed = False
-    for candidate in calls[:3]:
+    # For these one-calculation benchmark problems the desired policy makes
+    # exactly one valid tool call; do not reward spraying calls at the engine.
+    for candidate in calls if len(calls) == 1 else []:
         if candidate is None or candidate[0] != "calcular_imv":
             continue
         selected = True
