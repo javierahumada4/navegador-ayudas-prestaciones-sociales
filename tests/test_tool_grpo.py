@@ -147,6 +147,17 @@ def test_duplicate_calls_get_no_reward_for_correct_execution(case):
     assert not flags["arguments_correct"]
 
 
+def test_missing_actual_tool_observation_does_not_get_execution_credit(case):
+    episode = completion(case)
+    episode = [m for m in episode if m["role"] != "tool"]
+    flags = reward.inspect_rollout(episode, "431.26", reference(case))
+    assert flags["selected"]
+    assert flags["arguments_valid"]
+    assert flags["arguments_correct"]
+    assert not flags["executed_correctly"]
+    assert flags["final_amount_correct"]
+
+
 def test_final_is_not_taken_from_thinking_or_tool_observation(case):
     episode = completion(case)
     episode.pop()
