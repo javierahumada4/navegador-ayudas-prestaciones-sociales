@@ -9,8 +9,6 @@ No test cases or answers are placed in prompts; reference values are available
 only to reward functions. GPU training must be run on the DGX.
 """
 
-from __future__ import annotations
-
 import argparse
 import inspect
 import json
