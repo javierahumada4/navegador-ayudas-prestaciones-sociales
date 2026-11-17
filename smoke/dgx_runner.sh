@@ -11,6 +11,7 @@
 # file, so it can be fixed remotely. Anyone who can push to BRANCH runs code here: keep it a
 # team branch and stop it when idle (Ctrl+C, or pkill -f dgx_runner).
 set -u
+[ -n "${RUNNER_DEBUG:-}" ] && set -x  # RUNNER_DEBUG=1: trace every command (survives re-exec)
 export GIT_TERMINAL_PROMPT=0  # fail instead of hanging on a credential prompt
 BRANCH="${1:?usage: dgx_runner.sh <branch> [interval_seconds]}"
 INTERVAL="${2:-120}"
