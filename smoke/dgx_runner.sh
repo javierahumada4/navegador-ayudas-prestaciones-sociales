@@ -52,7 +52,12 @@ main() {
     local self_hash
     self_hash="$(git hash-object smoke/dgx_runner.sh)"
     while true; do
-        git fetch -q origin "$BRANCH" && git reset -q --hard "origin/$BRANCH"
+        # Rebase, never reset: job results whose push failed must survive until a later push.
+        if git fetch -q origin "$BRANCH"; then
+            git rebase -q "origin/$BRANCH" || { git rebase --abort; step "rebase failed"; }
+            git log -1 --format=%s | grep -q "^update: dgx" && ! git diff --quiet "origin/$BRANCH" HEAD \
+                && push
+        fi
         if [ "$(git hash-object smoke/dgx_runner.sh)" != "$self_hash" ]; then
             step "runner updated on the branch, restarting"
             exec bash smoke/dgx_runner.sh "$@"
