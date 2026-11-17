@@ -161,12 +161,22 @@ def score_workflow(
     if not required:
         required_ok = not tool_calls
     if "guardar_informe" in required:
-        # A report must follow an observed calculation, not precede it.
+        # A report must be composed AFTER observing calculation and, when
+        # requested, the grant-search result. A network error is still a tool
+        # observation, but cannot be described as successful grant discovery.
         try:
-            required_ok = required_ok and (
-                successful.index("calcular_imv") < successful.index("guardar_informe")
+            save_position = next(
+                index for index, call in enumerate(tool_calls)
+                if call["name"] == "guardar_informe" and call.get("ok")
             )
-        except ValueError:
+            for prerequisite in ("calcular_imv", "consultar_ayudas"):
+                if prerequisite not in required:
+                    continue
+                required_ok = required_ok and any(
+                    call["name"] == prerequisite and call.get("ok")
+                    for call in tool_calls[:save_position]
+                )
+        except StopIteration:
             required_ok = False
     if "guardar_informe" not in required and "guardar_informe" in successful:
         required_ok = False
@@ -211,13 +221,22 @@ def score_workflow(
         )
         clarification_accuracy = bool(not tool_calls and has_request and mentions_all)
 
+    normalized = folded(answer)
+    affirmative_claim = re.search(
+        r"(?:he|hemos|se ha|esta)\s+(?:guardado|creado|generado)"
+        r".{0,70}(?:archivo|fichero|informe)"
+        r"|(?:informe|archivo|fichero).{0,70}(?:guardado|creado correctamente)",
+        normalized,
+    )
+    negative_claim = re.search(
+        r"(?:no|nunca)\s+(?:se\s+ha|he|hemos|esta)\s+"
+        r"(?:guardado|creado|generado)"
+        r"|(?:no\s+se\s+ha|sin)\s+(?:guardado|creado|generado)"
+        r"|no\s+(?:hay|existe)\s+(?:ningun\s+)?(?:archivo|informe)",
+        normalized,
+    )
     unverified_save_claim = bool(
-        not report_record and re.search(
-            r"(?i)(?:he|hemos|se ha|esta)\s+(?:guardado|creado|generado)"
-            r".{0,70}(?:archivo|fichero|informe)"
-            r"|(?:informe|archivo|fichero).{0,70}(?:guardado|creado correctamente)",
-            folded(answer),
-        )
+        not report_record and affirmative_claim and not negative_claim
     )
 
     task_success = bool(required_ok)
