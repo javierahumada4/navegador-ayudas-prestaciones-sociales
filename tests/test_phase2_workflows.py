@@ -262,3 +262,26 @@ def test_compare_runs_without_gpu_with_scripted_model(monkeypatch, tmp_path):
     assert outcome["summary"]["end_to_end_success"] == 1.0
     assert outcome["summary"]["clarification_accuracy_n"] == 1
     assert outcome["rows"][0]["workflow"]["clarification_accuracy"]
+
+
+def test_report_request_uses_positive_intent_only():
+    from tool_use.executor import _report_requested
+
+    assert _report_requested("Genera y guarda un informe TXT de mis resultados.")
+    assert _report_requested("Quiero un informe del IMV y CAPI.")
+    assert not _report_requested("No quiero un informe por ahora.")
+    assert not _report_requested("Calcula el IMV sin crear un documento.")
+    assert not _report_requested("¿Cómo generar un informe TXT?")
+
+
+def test_conceptual_fact_gold_exposes_wrong_acronyms():
+    case = {
+        "needs_tool": False,
+        "expected_facts": ["Ingreso Mínimo Vital"],
+    }
+    bad = score_workflow(case, "IMV significa Ingresos Mínimos Válidos.", [])
+    assert bad["conceptual_fact_accuracy"] is False
+    assert not bad["end_to_end_success"]
+    correct = score_workflow(case, "IMV significa Ingreso Mínimo Vital.", [])
+    assert correct["conceptual_fact_accuracy"] is True
+    assert correct["end_to_end_success"]
