@@ -1,81 +1,107 @@
-# Fase 2 — Acción: el modelo habla con el mundo
+# Fase 2 — Herramientas IMV/CAPI (ARCA)
 
-**Endpoint que se evalúa:** `POST /tools` · **Clase:** The augmented LLM, bloque de tool use
+**Endpoint:** `POST /tools`. Implementación manual sin framework de agentes. Base: `main`
+con motor IMV/CAPI de fase 1 intacto. La carpeta `rlm/` no se modifica.
 
-## De qué va
+## Herramientas y justificación
 
-Un modelo de lenguaje consume texto y produce texto. No puede consultar el tiempo, ni
-ejecutar código, ni escribir un fichero. Tool use es la forma de dárselo: la aplicación
-describe al modelo qué herramientas existen, el modelo genera una llamada en un formato
-reconocible, la aplicación la detecta, la ejecuta y le devuelve el resultado, y el modelo
-sigue. Cinco pasos, que en clase dibujamos con `get_weather` y que aquí vais a implementar a
-mano, sin frameworks, con herramientas de vuestro dominio.
-
-## Lo que tendréis que hacer
-
-**1. Tres herramientas reales.** En `tool_use/tools.py`. Una que consulte algo fuera del
-modelo (una API HTTP de verdad, no simulada), una que calcule o ejecute (un intérprete
-acotado, una función numérica, una consulta a una base de datos), y una que actúe con efecto
-observable (escribir un fichero, crear un evento de calendario, enviar algo a un webhook de
-pruebas). `get_weather` y `calculator` os las doy como ejemplo de cómo se escribe una: la
-docstring es la descripción que lee el modelo y los tipos son el esquema. Las que tienen
-efectos se registran con `requires_confirmation=True`; en la fase 4 decidiréis qué hace el
-agente con eso.
-
-**2. Definiciones precisas y argumentos validados.** El registro (`registry.py`) convierte
-la función en JSON Schema y valida con Pydantic lo que el modelo genera antes de ejecutar
-nada. Si la validación falla, el error vuelve al modelo como observación para que se corrija.
-Esto ya está hecho; lo que os pido es que lo uséis bien y que vuestras descripciones sean lo
-bastante precisas para que el modelo acierte los argumentos. Es más difícil de lo que parece.
-
-**3. El flujo de cinco pasos.** En `tool_use/executor.py`: el prompt de sistema con las
-definiciones (la plantilla es la de las diapositivas), la generación, el parser de
-`<tool_call>` (os lo doy, es infraestructura), la ejecución, la reinyección del resultado
-como mensaje con rol `tool`, y la respuesta final. Tiene que soportar varias llamadas
-encadenadas en distintos turnos (multi-step) y varias llamadas en una misma generación
-(paralelas). Sin `smolagents` ni nada parecido en esta fase: quiero ver el bucle.
-
-**4. El banco de pruebas.** Unos treinta casos en `tool_use/bench/cases.jsonl` (formato en
-`example_cases.jsonl`): para cada petición, la herramienta esperada y sus argumentos.
-Incluid casos que **no** necesitan herramienta: un modelo que llama a una herramienta para
-todo no las está usando bien. `tool_use/evaluate.py` calcula la precisión de selección y la
-de argumentos. Y comparad el mismo modelo con y sin herramientas, como en el notebook de
-clase.
-
-## Para ir más allá
-
-- La "opción 2" de las diapositivas: **SFT para tool use**. Generad un dataset sintético de
-  llamadas a vuestras herramientas, ajustad el modelo de la fase 1 con él y medid la mejora
-  en el banco de pruebas.
-- Una herramienta **con estado** (SQLite) y tareas donde las acciones tienen consecuencias
-  sobre llamadas posteriores.
-- Una **política de seguridad**: qué herramientas piden confirmación, cómo se pide, qué pasa
-  si el modelo insiste.
-
-## Cómo se corrige
-
-Llamaré a `POST /tools` con peticiones parecidas a las de vuestro banco de pruebas y alguna
-que requiera dos herramientas encadenadas, y miraré:
-
-- **Implementación (30 %):** el modelo elige la herramienta correcta con los argumentos
-  correctos, el resultado real aparece en `tool_calls` con su latencia, y la respuesta final
-  lo usa. Una petición que no necesita herramienta se responde sin llamar a ninguna.
-- **Completitud (30 %):** tres herramientas de los tres tipos, definiciones desde Pydantic,
-  flujo de cinco pasos con multi-step y paralelo, manejo de errores de validación, banco de
-  treinta casos con métricas, comparación con/sin herramientas.
-- **Interpretación (30 %):** por qué esas herramientas y no otras; qué descripciones
-  funcionaron y cuáles no; en qué casos falla el modelo y por qué; qué cambió al pasar de
-  single-step a multi-step.
-- **Limpieza (10 %):** herramientas con docstrings claras, sin claves en el código, tests
-  para las herramientas que se puedan probar sin red.
-
-## Ficheros
-
-| Fichero | Estado | Qué es |
+| Herramienta | Categoría del enunciado | Resultado |
 |---|---|---|
-| `registry.py` | hecho | `@tool`, definiciones JSON Schema, validación y ejecución con captura de errores |
-| `parser.py` | hecho | Detecta `<think>` y uno o varios `<tool_call>` en la salida del modelo |
-| `tools.py` | ejemplo + tu turno | `get_weather` y `calculator`; las vuestras van aquí |
-| `executor.py` | tu turno | El flujo de cinco pasos; detrás de `/tools` |
-| `evaluate.py` | hecho | Métricas de selección y argumentos sobre el banco de pruebas |
-| `bench/` | vuestro | Casos de prueba (`example_cases.jsonl` muestra el formato) |
+| `calcular_imv(case: IMVCase)` | Cálculo local | IMV, CAPI, total, motivos y versión de reglas |
+| `consultar_ayudas(tema, max_resultados)` | API HTTP externa | Convocatorias públicas registradas en BDNS |
+| `guardar_informe(contenido)` | Acción observable | Ruta, tamaño y SHA256 de un TXT generado |
+
+**El modelo escribe el informe en lenguaje natural.** `guardar_informe` únicamente crea
+el archivo con su texto exacto; no usa ninguna plantilla de redacción. Si no se
+ha solicitado explícitamente guardar el archivo, la ejecución lo rechaza. Requiere
+una simulación IMV previa y un texto que refleje los tres importes devueltos
+por el motor. El usuario debe solicitar explícitamente la generación del fichero;
+el endpoint no ofrece consentimiento interactivo adicional.
+
+**Datos oficiales:** el endpoint público de BDNS `/convocatorias/busqueda` recibe
+`descripcion`, `descripcionTipoBusqueda=1`, `page`, `pageSize`, `order` y `direccion`.
+Se valida la longitud de consulta, se acota la página y se aplica timeout de 15 s.
+Los errores HTTP o de formato se comunican como observaciones, sin resultados
+simulados. BDNS contiene convocatorias de subvenciones, no todas las
+prestaciones sociales; las fechas de apertura y la elegibilidad no se infieren
+de los resultados. Documentación:
+https://www.infosubvenciones.es/bdnstrans/doc/swagger
+
+**Rulesets:** `rules_for_date` busca los JSON `rlm/rulesets/imv_*.json` con
+rangos de vigencia. No se generan reglas con el LLM. Si no existe exactamente
+un ruleset para la fecha, se devuelve un error; el único existente en `main`
+corresponde a 2026. No se inventan reglas para otros años.
+
+## Implementación
+
+- `registry.py`: infraestructura docente existente; Pydantic valida antes de ejecutar.
+- `parser.py`: infraestructura docente existente; admite varios bloques `<tool_call>`.
+- `imv_schema.py`: entradas tipadas, campos estrictos y comprobación de consistencia.
+- `domain_tools.py`: motor 2026, llamada BDNS real y persistencia TXT acotada.
+- `tools.py`: registro de tres herramientas del dominio; ejemplos docentes conservados.
+- `executor.py`: bucle completo generación → parseo → ejecución → observación → respuesta.
+- `bench/cases.jsonl`: 30 casos (14 cálculo, 10 HTTP, 6 sin herramienta; tres
+  de los casos de cálculo incluyen petición de informe posterior).
+- `evaluate.py`: exactitud de primera selección y de argumentos.
+- `compare.py`: mismo modelo **con y sin herramientas**, guardando resultados reales.
+- `tests/test_phase2_imv_tools.py`: pruebas offline del flujo y sus herramientas.
+
+Las herramientas independientes pueden ejecutarse en un mismo turno, mientras que
+`guardar_informe` necesita haber recibido el resultado de `calcular_imv` en un
+turno previo. No se ejecutan procesos externos, ni se acepta una ruta suministrada
+por el LLM, ni se sobrescriben ficheros. Los informes pueden contener datos personales:
+se almacenan con permisos restrictivos en una ruta configurable mediante
+`ARCA_IMV_REPORTS_DIR`, no deben subirse al repositorio ni guardarse sin autorización.
+
+## Instalación, ejecución y verificación
+
+```bash
+uv sync --extra train
+uv run pytest -q tests/test_phase2_imv_tools.py tests/test_tool_registry.py tests/test_tool_parser.py
+uv run arca-api
+
+# POST http://localhost:8000/tools
+curl -X POST http://localhost:8000/tools \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"¿Qué es el IMV?","max_turns":5}'
+
+# En GPU, ejecutar la comparación REAL (no hay métricas precalculadas):
+uv run --extra train python -m tool_use.compare \
+  --bench tool_use/bench/cases.jsonl \
+  --out reports/phase2_comparison.json
+
+# O ejecutar el evaluador docente:
+uv run --extra train python -m tool_use.evaluate \
+  --bench tool_use/bench/cases.jsonl \
+  --out reports/phase2_eval.json
+```
+
+Variables: `ARCA_TOOLS_MODEL_ID` (por defecto `Qwen/Qwen3-1.7B`),
+`ARCA_TOOLS_BRAIN` (`base` o `rlm`), `ARCA_TOOLS_ADAPTER` / `ARCA_RLM_ADAPTER`,
+`ARCA_IMV_REPORTS_DIR`. Para comparar el RLM con su base, utilizar **el mismo**
+identificador que figura en `adapter_config.json`. La carga del modelo es diferida.
+El modelo debe descargar los pesos con acceso a Hugging Face en el primer uso.
+
+## Métricas e interpretación pendiente de ejecución GPU
+
+El benchmark mide `tool_selection_accuracy` y `argument_accuracy`. La exactitud
+de argumentos es un criterio de coincidencia *exacta* normalizada, y puede penalizar
+JSON semánticamente equivalentes. En casos de informe se puntúa la **primera**
+llamada (cálculo), y el flujo completo se mide aparte con tests multi-step.
+Se registra también la traza de llamadas, las respuestas y los errores en el JSON
+de comparación. No presentamos porcentajes sin haber ejecutado la inferencia.
+
+En el informe de la práctica comparar: sin herramientas, con herramientas
+en un solo turno, y con herramientas multi-step; documentar al menos cinco
+fallos reales, especialmente omisión de relaciones, fechas, formato de llamadas,
+parámetros BDNS y bloqueo de efectos secundarios.
+
+## Limitaciones
+
+El motor de `rlm/imv_engine.py` es un simulador de casos normalizados de 2026:
+su exactitud en la batería de la fase 1 **no implica** elegibilidad administrativa
+real. Los valores por defecto de algunos indicadores representan únicamente
+los supuestos del benchmark y deben verificarse en consultas ciudadanas reales.
+El adaptador RLM entrenado para salida numérica no garantiza buen tool calling:
+hay que medirlo con la comparación incluida. El RAG normativo corresponde
+a la fase 3, no se implementa aquí.
