@@ -58,7 +58,7 @@ while true; do
         mkdir -p "jobs/done/$name"
         echo "[$(date -Is)] start $name"
         { echo "commit $(git rev-parse --short HEAD) start $(date -Is)"
-          OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-21600}" bash "$job"
+          OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-50400}" bash "$job"
           echo "exit=$? end $(date -Is)"; } > "$log" 2>&1
         echo "[$(date -Is)] done $name: $(tail -1 "$log")"
         git add -f "$log" "jobs/done/$name"
