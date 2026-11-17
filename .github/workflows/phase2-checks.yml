@@ -22,8 +22,8 @@ jobs:
       - name: Install core dependencies
         run: python -m pip install pydantic httpx requests pytest fastapi uvicorn python-dotenv rich ruff
       - name: Syntax check
-        run: python -m compileall -q tool_use tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py
+        run: python -m compileall -q tool_use tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py
       - name: Run offline tool tests
-        run: python -m pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_tool_registry.py tests/test_tool_parser.py
+        run: python -m pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py tests/test_tool_registry.py tests/test_tool_parser.py
       - name: Critical lint checks
-        run: python -m ruff check --select E4,E7,E9,F tool_use tests/test_phase2_workflows.py tests/test_phase2_stages.py
+        run: python -m ruff check --select E4,E7,E9,F tool_use tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py
