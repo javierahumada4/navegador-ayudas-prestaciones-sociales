@@ -11,30 +11,77 @@ from tool_use.parser import format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
 
-SYSTEM_PROMPT = """Eres un asistente español de IMV/CAPI y navegación de ayudas públicas.
-Las herramientas están descritas con sus esquemas JSON. Usa herramientas SOLO si la
-petición las requiere, nunca para preguntas conceptuales contestables sin ellas.
-- calcular_imv: extrae HECHOS, no conclusiones, y pide aclaraciones si faltan datos
-  necesarios. Nunca inventes residencia, fecha, ingresos, patrimonio o parentesco.
-  El motor de 2026 es un simulador parcial, NO una decisión administrativa.
-- consultar_ayudas: consulta convocatorias en la BDNS, no asumas que están abiertas
-  o que el ciudadano tiene derecho a ellas. El IMV/CAPI no se buscan en BDNS.
-- guardar_informe: primero recibe el resultado real del motor. Redacta TÚ el texto
-  del informe en español, en lenguaje natural, respetando literalmente importes,
-  distinción IMV/CAPI, motivos y limitaciones; luego envía ese texto a la herramienta.
-  Solo guarda si el usuario pide explícitamente guardar, generar o descargar un
-  informe/archivo. No escribas un fichero para responder a una pregunta normal.
-Para llamar a una herramienta emite exactamente:
+SYSTEM_PROMPT = """Eres un asistente de simulación IMV/CAPI y búsqueda de ayudas públicas.
+Utiliza SOLO las herramientas disponibles en las definiciones JSON Schema.
+Cuando un argumento obligatorio se desconoce, PREGUNTA; nunca inventes fechas,
+residencia, convivencia, ingresos o patrimonio. El IMV/CAPI se calcula con el
+motor determinista, no con estimaciones del modelo. Una subvención en BDNS
+NO equivale a concesión, compatibilidad o plazo abierto.
+Las llamadas deben escribirse exactamente como:
 <tool_call>{"name":"nombre","arguments":{"campo":"valor"}}</tool_call>
-Se permiten varias llamadas INDEPENDIENTES en una generación. Las llamadas que
-dependen de otras requieren otra generación tras observar el resultado.
-Al recibir un error de validación, corrige los argumentos o pide los datos; jamás
-inventes una cuantía como sustituto del motor. Explica los límites con claridad.
-Cuando termines responde directamente en español SIN llamadas a herramientas."""
+Puedes emitir varias llamadas independientes en una generación. No hagas
+llamadas dependientes hasta recibir las observaciones. Corrige errores de
+validación usando el mensaje de la herramienta. Responde en español y
+distingue simulaciones de resoluciones oficiales."""
+
+CALCULATION_PROMPT = """Esta etapa SOLO dispone de calcular_imv.
+El argumento es un ÚNICO objeto llamado case, directamente con los campos
+application_date, applicant_id, persons, domicile, economic y, cuando
+corresponda, relationships y applicant_history. No crees un nivel IMVCase,
+ni pongas los campos de case en la raíz de arguments.
+La fecha es YYYY-MM-DD; income es countable_income_annual_eur en euros/año,
+y el patrimonio y activos deben introducirse separadamente.
+Para persona única comprueba independencia parental.
+Todos los indicadores obligatorios deben proceder de la petición.
+Si falta alguno, NO invoques calcular_imv; pide los hechos necesarios.
+Una validación Pydantic fallida es un error de argumentos, no una
+denegación del IMV: corrige el JSON si hay suficientes datos o pregunta.
+En una simulación válida, reproduce exactamente el resultado del motor."""
+
+BDNS_PROMPT = """Esta etapa SOLO dispone de consultar_ayudas.
+Identifica la temática/tema solicitado y el límite max_resultados (1 a 20).
+Consulta la BDNS por HTTP real y usa solo los títulos y entidades
+efectivamente devueltos. Si falla la red, informa del fallo.
+No presentes convocatorias como prestaciones ya concedidas."""
+
+REPORT_PROMPT = """Esta etapa SOLO dispone de guardar_informe.
+Los mensajes anteriores con rol tool contienen las observaciones YA
+EJECUTADAS del cálculo IMV/CAPI y de la búsqueda BDNS. NO vuelvas a
+calcular ni a consultar. Redacta tú mismo un informe natural en español,
+SIN PLANTILLAS; incluye importes IMV, CAPI y TOTAL exactamente como
+figuran en calcular_imv, y explica su condición orientativa y los motivos.
+Incluye convocatorias BDNS únicamente si aparecen en las observaciones;
+si no hubo resultados o la API falló, indícalo. No inventes títulos,
+requisitos, fechas de cierre ni compatibilidad.
+Luego llama a guardar_informe con {"contenido": "TODO EL TEXTO REDACTADO"}.
+Nunca afirmes que se guardó sin una observación de éxito."""
+
+INTEGRATION_PROMPT = """Si el usuario pide cálculo y búsquedas BDNS, puedes llamar
+a calcular_imv y consultar_ayudas en la MISMA generación cuando sus
+argumentos ya estén disponibles. Si faltan datos del cálculo, pregunta
+por ellos; la búsqueda BDNS independiente puede realizarse.
+Si además pide archivo, espera las observaciones de cálculo y BDNS
+antes de redactar el informe y llamar a guardar_informe.
+El informe lo redacta el modelo sin plantillas, usando solamente
+observaciones verificadas; nunca inventes cifras ni ayudas.
+Confirma el guardado únicamente cuando la herramienta lo confirme."""
 
 
 def build_system_prompt(registry: ToolRegistry) -> str:
-    return SYSTEM_PROMPT + "\n\nDefiniciones disponibles:\n" + registry.render_for_prompt()
+    available = set(registry.tools)
+    if available == {"calcular_imv"}:
+        guidance = CALCULATION_PROMPT
+    elif available == {"consultar_ayudas"}:
+        guidance = BDNS_PROMPT
+    elif available == {"guardar_informe"}:
+        guidance = REPORT_PROMPT
+    else:
+        guidance = INTEGRATION_PROMPT
+    return (
+        SYSTEM_PROMPT + "\n\n" + guidance
+        + "\n\nDefiniciones disponibles (JSON Schema Pydantic):\n"
+        + registry.render_for_prompt()
+    )
 
 
 def _report_requested(query: str) -> bool:
@@ -249,7 +296,17 @@ class ToolLoop:
             answer=answer, tool_calls=records, turns=turns, model=self.model_label
         )
 
-    def run(self, query: str, max_turns: int = 5) -> ToolsResponse:
+    def run(
+        self, query: str, max_turns: int = 5, *,
+        prior_observations: list[ToolCallRecord] | None = None,
+    ) -> ToolsResponse:
+        """Perform normal tool use, optionally continuing from trusted tool observations.
+
+        prior_observations is for trusted orchestrators / offline stage tests only.
+        Never expose it as a user-supplied API argument. It contains actual
+        completed tool records that the model is meant to have already seen.
+        Tool calls from this invocation alone are returned in tool_calls.
+        """
         if max_turns < 1:
             raise ValueError("max_turns must be positive")
         messages = [
@@ -257,6 +314,25 @@ class ToolLoop:
              if self.use_tools else "Responde en español sin herramientas ni acceso externo."},
             {"role": "user", "content": query},
         ]
+        if prior_observations and not self.use_tools:
+            raise ValueError("Cannot seed observations without tool access")
+        history = list(prior_observations or [])
+        # Reconstruct the *same* assistant-call/tool-observation chat sequence
+        # produced by run(): never insert golden results as user prose.
+        for item in history:
+            call = json.dumps(
+                {"name": item.name, "arguments": item.arguments},
+                ensure_ascii=False, default=str,
+            )
+            messages.append({"role": "assistant", "content": f"<tool_call>{call}</tool_call>"})
+            observation = {"ok": item.ok}
+            observation.update(
+                {"result": item.result} if item.ok else {"error": item.error}
+            )
+            messages.append({
+                "role": "tool", "name": item.name,
+                "content": format_tool_result(item.name, observation),
+            })
         records: list[ToolCallRecord] = []
         seen: set[str] = set()
         wants_report = self.use_tools and _report_requested(query)
@@ -273,7 +349,7 @@ class ToolLoop:
                 if wants_report and not any(
                     r.ok and r.name == "guardar_informe" for r in records
                 ):
-                    if not any(r.ok and r.name == "calcular_imv" for r in records):
+                    if not any(r.ok and r.name == "calcular_imv" for r in history):
                         return self._finish(parsed.text, records, turn, True,
                                             reason="falta un cálculo IMV válido para redactarlo")
 
@@ -298,8 +374,9 @@ class ToolLoop:
                     # tool-call markup. The application passes that exact text to
                     # the file tool after deterministic checks; no template is used.
                     if parsed.text:
-                        record = self._save_report(parsed.text, records, query)
+                        record = self._save_report(parsed.text, history, query)
                         records.append(record)
+                        history.append(record)
                         if record.ok:
                             return self._finish("", records, turn, True)
                     return self._finish("", records, turn, True,
@@ -325,7 +402,7 @@ class ToolLoop:
             # Calls emitted in the same completion are independent. A report cannot
             # use results which the model has not observed in a previous turn.
             calculated_before_turn = any(
-                r.ok and r.name == "calcular_imv" for r in records
+                r.ok and r.name == "calcular_imv" for r in history
             )
             for call in parsed.tool_calls:
                 if call.error:
@@ -341,7 +418,7 @@ class ToolLoop:
                         )
                     else:
                         record = self._save_report(
-                            str(call.arguments.get("contenido", "")), records, query
+                            str(call.arguments.get("contenido", "")), history, query
                         )
                 elif (
                     call.name in self.registry.tools
@@ -365,6 +442,7 @@ class ToolLoop:
                         seen.add(signature)
                         record = self.registry.call(call.name, call.arguments)
                 records.append(record)
+                history.append(record)
                 observation = {"ok": record.ok}
                 observation.update(
                     {"result": record.result} if record.ok else {"error": record.error}
