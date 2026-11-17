@@ -110,7 +110,10 @@ class ReasoningModel:
             self.base_model, dtype=dtype, device_map=device
         )
         if self.adapter_path:
-            model = PeftModel.from_pretrained(model, self.adapter_path)
+            # Merged LoRA decodes ~1.5-2x faster on the launch-bound 16 GB MIG slice.
+            model = PeftModel.from_pretrained(
+                model, _resolve_adapter(self.adapter_path)
+            ).merge_and_unload()
         self.model = model.eval()
         self.verifier = build_verifier(self.verifier_name)
 
