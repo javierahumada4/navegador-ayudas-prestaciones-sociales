@@ -5,11 +5,15 @@ No agent framework. Qwen3 base and phase-1 LoRA share generation settings.
 import json
 import os
 import re
+from contextlib import nullcontext
+from dataclasses import asdict
+from pathlib import Path
 
 from api.schemas import ToolCallRecord, ToolsResponse
 from tool_use.parser import format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
+from tool_use.tracing import TraceRecorder
 
 SYSTEM_PROMPT = """Eres un asistente de simulación IMV/CAPI y búsqueda de ayudas públicas.
 Utiliza SOLO las herramientas disponibles en las definiciones JSON Schema.
@@ -237,7 +241,19 @@ class ToolLoop:
                 pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
             )
         continuation = output[0, encoded["input_ids"].shape[-1]:]
-        return self.tokenizer.decode(continuation, skip_special_tokens=True)
+        decoded = self.tokenizer.decode(continuation, skip_special_tokens=True)
+        self._last_generation_metadata = {
+            "rendered_chat_template": prompt,
+            "decoded_with_special_tokens": self.tokenizer.decode(
+                continuation, skip_special_tokens=False
+            ),
+            "output_token_ids": continuation.tolist(),
+            "generation_settings": {
+                "max_new_tokens": self.max_new_tokens,
+                "do_sample": False,
+            },
+        }
+        return decoded
 
     def _save_report(self, content: str, records: list[ToolCallRecord], query: str) -> ToolCallRecord:
         """Invoke the file tool only with model-authored, numerically checked prose."""
@@ -314,6 +330,47 @@ class ToolLoop:
     def run(
         self, query: str, max_turns: int = 5, *,
         prior_observations: list[ToolCallRecord] | None = None,
+        trace_path: str | Path | None = None,
+    ) -> ToolsResponse:
+        """Run the loop and optionally persist every model/tool interaction.
+
+        A trace is written incrementally as JSONL so interruptions do not
+        destroy completed turns. Tracing is enabled by all benchmark runners;
+        the public API never supplies a trace path.
+        """
+        writer = TraceRecorder(trace_path) if trace_path is not None else nullcontext(None)
+        with writer as trace:
+            if trace is not None:
+                trace.event(
+                    "run_start", query=query, max_turns=max_turns,
+                    model=self.model_label, brain=self.brain, use_tools=self.use_tools,
+                    available_tools=list(self.registry.tools),
+                    tool_definitions=self.registry.definitions() if self.use_tools else [],
+                    prior_observations=[
+                        record.model_dump(mode="json")
+                        for record in (prior_observations or [])
+                    ],
+                )
+            try:
+                result = self._run_impl(
+                    query, max_turns=max_turns,
+                    prior_observations=prior_observations, trace=trace,
+                )
+            except Exception as exc:
+                if trace is not None:
+                    trace.event(
+                        "run_exception", error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
+                raise
+            if trace is not None:
+                trace.event("final_response", response=result.model_dump(mode="json"))
+            return result
+
+    def _run_impl(
+        self, query: str, max_turns: int = 5, *,
+        prior_observations: list[ToolCallRecord] | None = None,
+        trace: TraceRecorder | None = None,
     ) -> ToolsResponse:
         """Perform normal tool use, optionally continuing from trusted tool observations.
 
@@ -354,8 +411,24 @@ class ToolLoop:
         reminders = 0
 
         for turn in range(1, max_turns + 1):
+            if trace is not None:
+                trace.event("model_input", turn=turn, messages=messages)
+            # Test stubs replace generate(); do not leak capture from a prior turn.
+            self._last_generation_metadata = {}
             raw = self.generate(messages)
+            if trace is not None:
+                trace.event(
+                    "model_output", turn=turn, raw_text=raw,
+                    **self._last_generation_metadata,
+                )
             parsed = parse_tool_calls(raw)
+            if trace is not None:
+                trace.event(
+                    "parsed_output", turn=turn, thinking=parsed.thinking,
+                    text=parsed.text, tool_calls=[
+                        asdict(call) for call in parsed.tool_calls
+                    ],
+                )
             if not self.use_tools:
                 return self._finish(parsed.text or raw, [], turn, False)
 
@@ -372,6 +445,12 @@ class ToolLoop:
                     if reminders == 0 and turn < max_turns:
                         reminders += 1
                         messages.append({"role": "assistant", "content": raw})
+                        if trace is not None:
+                            trace.event(
+                                "orchestration", turn=turn,
+                                decision="retry_incomplete_report",
+                                model_text=parsed.text,
+                            )
                         messages.append({
                             "role": "system",
                             "content": (
@@ -392,6 +471,12 @@ class ToolLoop:
                         record = self._save_report(parsed.text, history, query)
                         records.append(record)
                         history.append(record)
+                        if trace is not None:
+                            trace.event(
+                                "tool_execution", turn=turn,
+                                source="model_text_fallback",
+                                record=record.model_dump(mode="json"),
+                            )
                         if record.ok:
                             return self._finish("", records, turn, True)
                     return self._finish("", records, turn, True,
@@ -412,6 +497,12 @@ class ToolLoop:
                     "role": "tool", "name": "tool_parser",
                     "content": "Error: bloque <tool_call> incompleto. Reintenta.",
                 })
+                if trace is not None:
+                    trace.event(
+                        "tool_execution", turn=turn, source="parser_recovery",
+                        record=record.model_dump(mode="json"),
+                        observation_message=messages[-1],
+                    )
                 continue
 
             # Calls emitted in the same completion are independent. A report cannot
@@ -466,6 +557,12 @@ class ToolLoop:
                     "role": "tool", "name": record.name,
                     "content": format_tool_result(record.name, observation),
                 })
+                if trace is not None:
+                    trace.event(
+                        "tool_execution", turn=turn, source="model_tool_call",
+                        record=record.model_dump(mode="json"),
+                        observation_message=messages[-1],
+                    )
 
             if wants_report and any(
                 r.ok and r.name == "guardar_informe" for r in records
