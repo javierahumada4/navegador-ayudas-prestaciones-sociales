@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
 from tool_use.executor import ToolLoop
-from tool_use.imv_templates import IMVCalculation, explicar_imv
+from tool_use.imv_templates import IMVCalculation, explicar_imv, render_imv_result
 from tool_use.tools import default_registry
 
 
@@ -54,30 +56,51 @@ def test_only_two_imv_tools_exposed_and_teacher_examples_kept():
     assert callable(calculator.fn) and callable(get_weather.fn)
     registry = default_registry()
     assert set(registry.tools) == {"calcular_imv", "explicar_imv"}
-    assert not registry.tools["explicar_imv"].requires_confirmation
+    assert registry.tools["explicar_imv"].requires_confirmation
     schema = registry.tools["explicar_imv"].definition["function"]["parameters"]
     assert schema["required"] == ["resultado"]
     assert "IMVCalculation" in str(schema)
 
 
-def test_template_uses_real_engine_output_without_model(case):
+def test_template_saves_real_engine_result_without_llm(case, tmp_path, monkeypatch):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
     registry = default_registry()
     calculation = registry.call("calcular_imv", {"case": case})
     assert calculation.ok, calculation.error
     assert calculation.result["total_monthly_eur"] == 431.26
-    rendered = registry.call("explicar_imv", {"resultado": calculation.result})
-    assert rendered.ok, rendered.error
-    text = rendered.result
+
+    saved = registry.call("explicar_imv", {"resultado": calculation.result})
+    assert saved.ok, saved.error
+    report = saved.result
+    text = report["texto"]
     assert "431,26 €" in text
     assert "373,76 € de IMV" in text
     assert "57,50 € de CAPI" in text
     assert "3 personas" in text
     assert "no constituye una resolución" in text
-    assert explicar_imv(resultado=calculation.result) == text
-    assert text == registry.call("explicar_imv", {"resultado": calculation.result}).result
+    assert text == render_imv_result(IMVCalculation.model_validate(calculation.result))
+
+    path = Path(report["archivo"])
+    assert path.is_file()
+    assert path.parent == tmp_path
+    body = path.read_text(encoding="utf-8")
+    assert body == "# Informe orientativo de IMV y CAPI\\n\\n" + text + "\\n"
+    assert hashlib.sha256(body.encode("utf-8")).hexdigest() == report["sha256"]
+    assert path.stat().st_mode & 0o077 == 0
+
+    # A second authorized call creates a second file, without touching the first.
+    again = registry.call("explicar_imv", {"resultado": calculation.result})
+    assert again.ok, again.error
+    assert again.result["texto"] == text
+    assert again.result["archivo"] != report["archivo"]
+    assert path.read_text(encoding="utf-8") == body
+    assert len(list(tmp_path.glob("*.md"))) == 2
 
 
-def test_capi_only_and_ineligible_are_explained_without_inventing_imv(case):
+def test_capi_only_and_ineligible_are_saved_deterministically(
+    case, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
     registry = default_registry()
     case["economic"]["countable_income_annual_eur"] = 18000
     capi = registry.call("calcular_imv", {"case": case})
@@ -85,9 +108,9 @@ def test_capi_only_and_ineligible_are_explained_without_inventing_imv(case):
     assert capi.result["total_monthly_eur"] == 57.50
     report = registry.call("explicar_imv", {"resultado": capi.result})
     assert report.ok, report.error
-    assert "0,00 € de IMV" in report.result
-    assert "57,50 € de CAPI" in report.result
-    assert "IMV no aplicable" in report.result
+    assert "0,00 € de IMV" in report.result["texto"]
+    assert "57,50 € de CAPI" in report.result["texto"]
+    assert "IMV no aplicable" in report.result["texto"]
 
     case["persons"][0]["active_company_director"] = True
     none = registry.call("calcular_imv", {"case": case})
@@ -95,12 +118,14 @@ def test_capi_only_and_ineligible_are_explained_without_inventing_imv(case):
     assert none.result["status"] == "ineligible"
     report = registry.call("explicar_imv", {"resultado": none.result})
     assert report.ok, report.error
-    assert "no reconoce prestación" in report.result
-    assert "0,00 €" in report.result
-    assert "administración activa de una sociedad" in report.result
+    assert "no reconoce prestación" in report.result["texto"]
+    assert "0,00 €" in report.result["texto"]
+    assert "administración activa de una sociedad" in report.result["texto"]
+    assert len(list(tmp_path.glob("*.md"))) == 2
 
 
-def test_template_rejects_forged_or_inconsistent_results(case):
+def test_invalid_engine_output_cannot_create_files(case, tmp_path, monkeypatch):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
     registry = default_registry()
     original = registry.call("calcular_imv", {"case": case}).result
     wrong_total = deepcopy(original)
@@ -118,6 +143,7 @@ def test_template_rejects_forged_or_inconsistent_results(case):
     assert not registry.call("explicar_imv", {"resultado": wrong_field}).ok
     with pytest.raises(Exception):
         IMVCalculation.model_validate(wrong_field)
+    assert list(tmp_path.iterdir()) == []
 
 
 class ScriptedImvLoop(ToolLoop):
@@ -131,21 +157,61 @@ class ScriptedImvLoop(ToolLoop):
         return next(self._completions)
 
 
-def test_calculation_automatically_invokes_template_without_extra_generation(case):
-    query = '<tool_call>' + json.dumps({
+def _calculate_call(case):
+    return "<tool_call>" + json.dumps({
         "name": "calcular_imv", "arguments": {"case": case},
     }) + "</tool_call>"
-    # A second generation would throw StopIteration: the explanation must be deterministic.
+
+
+def test_without_confirmation_renders_template_without_writing(
+    case, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
+    query = _calculate_call(case)
     loop = ScriptedImvLoop([query])
     trace = []
     result = loop.run("Calcula y explica el IMV", max_turns=3, trace=trace)
     assert len(loop.messages_seen) == 1
+    assert [r.name for r in result.tool_calls] == ["calcular_imv"]
+    assert all(r.ok for r in result.tool_calls)
+    assert result.turns == 1
+    assert "431,26 €" in result.answer
+    assert "Informe guardado" not in result.answer
+    assert trace == [query]
+    assert not tmp_path.exists()
+
+
+def test_confirmation_writes_report_and_records_both_tools(
+    case, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
+    loop = ScriptedImvLoop([_calculate_call(case)])
+    result = loop.run("Calcula y guarda el informe", confirmar_guardado=True)
+    assert len(loop.messages_seen) == 1  # No model-written final response.
     assert [r.name for r in result.tool_calls] == ["calcular_imv", "explicar_imv"]
     assert all(r.ok for r in result.tool_calls)
     assert result.turns == 1
-    assert result.answer == result.tool_calls[1].result
-    assert "431,26 €" in result.answer
-    assert trace == [query]
+    file = Path(result.tool_calls[1].result["archivo"])
+    assert file.is_file()
+    assert "431,26 €" in file.read_text(encoding="utf-8")
+    assert str(file) in result.answer
+    assert result.tool_calls[1].result["texto"] in result.answer
+
+
+def test_model_cannot_forge_direct_report_write_even_with_confirmation(
+    case, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ARCA_IMV_REPORTS_DIR", str(tmp_path))
+    calculation = default_registry().call("calcular_imv", {"case": case})
+    call = "<tool_call>" + json.dumps({
+        "name": "explicar_imv", "arguments": {"resultado": calculation.result},
+    }) + "</tool_call>"
+    loop = ScriptedImvLoop([call, "No es posible escribir directamente."])
+    result = loop.run("Escribe el informe", confirmar_guardado=True)
+    assert result.tool_calls[0].name == "explicar_imv"
+    assert not result.tool_calls[0].ok
+    assert "application-managed" in result.tool_calls[0].error
+    assert not tmp_path.exists()
 
 
 def test_conceptual_query_does_not_trigger_tools():
