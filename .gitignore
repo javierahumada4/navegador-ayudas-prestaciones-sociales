@@ -9,9 +9,8 @@ dist/
 # Entornos y secretos
 .env
 
-# Pesos, datos, índices y cachés de modelos
-rlm/weights/*
-!rlm/weights/.gitkeep
+# Datos, índices y cachés de modelos
+# Los adaptadores y pesos de rlm/weights/ pueden versionarse en esta rama.
 rag/corpus/*
 !rag/corpus/.gitkeep
 rag/index/
