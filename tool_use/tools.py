@@ -13,6 +13,7 @@ in phase 4 you decide what the agent does with that flag.
 
 from __future__ import annotations
 
+from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe
 from tool_use.registry import ToolRegistry, tool
 
 OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
@@ -97,8 +98,6 @@ def calculator(expression: str) -> float:
 
 # Preserve the teaching examples above for existing tests, but expose
 # only domain tools to the IMV/CAPI model.
-from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe
-
 
 def default_registry() -> ToolRegistry:
     """Register only IMV/CAPI, BDNS and report-writing tools."""
