@@ -110,6 +110,14 @@ def _report_requested(query: str) -> bool:
     return bool(action and document)
 
 
+def _api_requested(query: str) -> bool:
+    """Recognize a request for grant discovery before report composition."""
+    return bool(re.search(
+        r"(?i)\b(?:bdns|convocatorias|subvenciones|"
+        r"busca(?:r)?\s+ayudas|consulta(?:r)?\s+ayudas)\b", query
+    ))
+
+
 def _money_is_mentioned(content: str, value: float) -> bool:
     """Accept decimal commas/dots, one decimal place and thousands separators."""
     from decimal import Decimal, InvalidOperation
@@ -237,6 +245,13 @@ class ToolLoop:
             return ToolCallRecord(
                 name="guardar_informe", arguments={"contenido": content}, ok=False,
                 error="User has not explicitly requested writing an IMV report."
+            )
+        if _api_requested(query) and not any(
+            r.name == "consultar_ayudas" for r in records
+        ):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="Wait for the BDNS tool observation before writing a combined report."
             )
         if not _report_matches_calculation(content, records):
             return ToolCallRecord(
