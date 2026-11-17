@@ -38,21 +38,60 @@ def build_system_prompt(registry: ToolRegistry) -> str:
 
 
 def _report_requested(query: str) -> bool:
-    """Treat an explicit file request as authorization for the local report action."""
-    return bool(re.search(
-        r"(?i)\b(guarda|guardar|genera|generar|crea|crear|descarga|descargar|"
-        r"exporta|exportar|escribe|escribir)\b", query
-    ) and re.search(r"(?i)\b(informe|archivo|fichero|txt|documento)\b", query))
+    """Recognize an affirmative request to create a report file, not just discuss one."""
+    if re.search(r"(?i)\b(?:no|sin)\s+(?:quiero\s+)?(?:guardar|generar|crear)\b", query):
+        return False
+    action = re.search(
+        r"(?i)\b(?:guarda|guardar|guárdame|genera|generar|genérame|"
+        r"crea|crear|descarga|descargar|exporta|exportar|escribe|escribir|"
+        r"redacta|redactar|prepara|preparar|hazme|quiero|necesito)\b", query
+    )
+    document = re.search(r"(?i)\b(?:informe|archivo|fichero|txt|documento)\b", query)
+    return bool(action and document)
 
 
 def _money_is_mentioned(content: str, value: float) -> bool:
-    number = f"{value:.2f}"
-    possible = {number, number.replace(".", ",")}
-    if value >= 1000:
-        possible |= {
-            f"{value:,.2f}", f"{value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
-        }
-    return any(v in content for v in possible)
+    """Accept decimal commas/dots, one decimal place and thousands separators."""
+    from decimal import Decimal, InvalidOperation
+
+    expected = Decimal(str(value)).quantize(Decimal("0.01"))
+    pattern = r"(?<![\w])\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?(?![\w])"
+    for match in re.finditer(pattern, content):
+        raw = match.group()
+        try:
+            if "," in raw and "." in raw:
+                decimal_separator = "," if raw.rfind(",") > raw.rfind(".") else "."
+                thousands = "." if decimal_separator == "," else ","
+                raw = raw.replace(thousands, "").replace(decimal_separator, ".")
+            elif raw.count(",") > 1 or raw.count(".") > 1:
+                sep = "," if "," in raw else "."
+                parts = raw.split(sep)
+                raw = "".join(parts[:-1]) + ("." + parts[-1] if len(parts[-1]) <= 2 else parts[-1])
+            elif "," in raw:
+                raw = raw.replace(",", ".")
+            elif "." in raw and len(raw.rsplit(".", 1)[1]) == 3:
+                raw = raw.replace(".", "")
+            number = Decimal(raw).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            continue
+        if number == expected:
+            return True
+    return False
+
+
+def _report_matches_calculation(content: str, records: list[ToolCallRecord]) -> bool:
+    """Minimum numeric guard, independent of the model's reporting style."""
+    successful = [
+        record.result for record in records
+        if record.ok and record.name == "calcular_imv" and isinstance(record.result, dict)
+    ]
+    if not successful:
+        return False
+    latest = successful[-1]
+    return all(
+        _money_is_mentioned(content, latest[key])
+        for key in ("imv_monthly_eur", "capi_monthly_eur", "total_monthly_eur")
+    )
 
 
 class ToolLoop:
@@ -132,6 +171,65 @@ class ToolLoop:
         continuation = output[0, encoded["input_ids"].shape[-1]:]
         return self.tokenizer.decode(continuation, skip_special_tokens=True)
 
+    def _save_report(self, content: str, records: list[ToolCallRecord], query: str) -> ToolCallRecord:
+        """Invoke the file tool only with model-authored, numerically checked prose."""
+        if not _report_requested(query):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="User has not explicitly requested writing an IMV report."
+            )
+        if not _report_matches_calculation(content, records):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="Report must contain the IMV, CAPI and total amounts from the engine."
+            )
+        if any(r.ok and r.name == "guardar_informe" for r in records):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={}, ok=False,
+                error="A report has already been saved for this request."
+            )
+        return self.registry.call("guardar_informe", {"contenido": content})
+
+    def _finish(self, answer: str, records: list[ToolCallRecord], turns: int,
+                report_requested: bool, *, reason: str = "") -> ToolsResponse:
+        saved = [
+            record for record in records if record.ok and record.name == "guardar_informe"
+        ]
+        if report_requested:
+            if saved:
+                # File creation confirmation is an OBSERVATION, never an LLM assertion.
+                path = saved[-1].result.get("archivo")
+                answer = (
+                    f"Informe guardado correctamente en: {path}. "
+                    "Los importes proceden del motor determinista."
+                )
+            else:
+                cause = reason or next(
+                    (r.error for r in reversed(records)
+                     if r.name in {"guardar_informe", "calcular_imv"} and not r.ok),
+                    None,
+                )
+                if not cause:
+                    cause = "el modelo no completó la escritura del archivo"
+                # Do not propagate any unsupported "already saved" claim from the model.
+                answer = f"No se ha guardado ningún informe. Motivo: {cause}."
+                if not any(r.ok and r.name == "calcular_imv" for r in records):
+                    if answer and not re.search(r"(?i)\bguardad[oa]|archivo creado|fichero creado", answer):
+                        pass
+        else:
+            # The model must not claim file creation without a successful tool record.
+            if not saved and re.search(
+                r"(?i)\b(?:he|hemos|se ha|está)\s+"
+                r"(?:guardado|creado|generado)\b.{0,35}\b(?:archivo|fichero|informe)\b",
+                answer
+            ):
+                answer = "No se ha creado ningún archivo. " + (
+                    "La consulta solo ha producido una respuesta de texto."
+                )
+        return ToolsResponse(
+            answer=answer, tool_calls=records, turns=turns, model=self.model_label
+        )
+
     def run(self, query: str, max_turns: int = 5) -> ToolsResponse:
         if max_turns < 1:
             raise ValueError("max_turns must be positive")
@@ -142,57 +240,93 @@ class ToolLoop:
         ]
         records: list[ToolCallRecord] = []
         seen: set[str] = set()
+        wants_report = self.use_tools and _report_requested(query)
+        reminders = 0
+
         for turn in range(1, max_turns + 1):
             raw = self.generate(messages)
             parsed = parse_tool_calls(raw)
             if not self.use_tools:
-                return ToolsResponse(answer=parsed.text or raw, tool_calls=[], turns=turn,
-                                     model=self.model_label)
-            # An incomplete tool block is a recoverable error, never a final answer.
+                return self._finish(parsed.text or raw, [], turn, False)
+
             malformed_block = "<tool_call>" in raw and "</tool_call>" not in raw
             if not parsed.tool_calls and not malformed_block:
-                answer = parsed.text.strip()
-                if not answer:
-                    answer = "No he podido completar la consulta con los datos disponibles."
-                return ToolsResponse(answer=answer, tool_calls=records, turns=turn,
-                                     model=self.model_label)
+                if wants_report and not any(
+                    r.ok and r.name == "guardar_informe" for r in records
+                ):
+                    if not any(r.ok and r.name == "calcular_imv" for r in records):
+                        return self._finish(parsed.text, records, turn, True,
+                                            reason="falta un cálculo IMV válido para redactarlo")
+
+                    # First request a real tool call: keep generation and tool use separate.
+                    if reminders == 0 and turn < max_turns:
+                        reminders += 1
+                        messages.append({"role": "assistant", "content": raw})
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "La petición NO está completa: el usuario solicitó guardar "
+                                "un informe TXT y guardar_informe todavía NO se ha ejecutado. "
+                                "Con los resultados de calcular_imv disponibles, escribe tú "
+                                "el informe en prosa española con importes IMV, CAPI y total, "
+                                "y haz AHORA una llamada a guardar_informe(contenido=texto). "
+                                "NO afirmes que está guardado sin observación."
+                            ),
+                        })
+                        continue
+
+                    # Recovery: the model has composed its own text but omitted the
+                    # tool-call markup. The application passes that exact text to
+                    # the file tool after deterministic checks; no template is used.
+                    if parsed.text:
+                        record = self._save_report(parsed.text, records, query)
+                        records.append(record)
+                        if record.ok:
+                            return self._finish("", records, turn, True)
+                    return self._finish("", records, turn, True,
+                                        reason="el modelo no generó un informe válido para guardar")
+
+                return self._finish(parsed.text or
+                                    "No he podido completar la consulta con estos datos.",
+                                    records, turn, wants_report)
+
             messages.append({"role": "assistant", "content": raw})
-            calls = parsed.tool_calls
-            if malformed_block and not calls:
-                records.append(ToolCallRecord(name="tool_parser", arguments={}, ok=False,
-                                              error="Incomplete tool_call block"))
-                messages.append({"role": "tool", "name": "tool_parser",
-                                 "content": "Error: bloque <tool_call> incompleto. Reintenta."})
+            if malformed_block and not parsed.tool_calls:
+                record = ToolCallRecord(
+                    name="tool_parser", arguments={}, ok=False,
+                    error="Incomplete tool_call block",
+                )
+                records.append(record)
+                messages.append({
+                    "role": "tool", "name": "tool_parser",
+                    "content": "Error: bloque <tool_call> incompleto. Reintenta.",
+                })
                 continue
-            for call in calls:
+
+            # Calls emitted in the same completion are independent. A report cannot
+            # use results which the model has not observed in a previous turn.
+            calculated_before_turn = any(
+                r.ok and r.name == "calcular_imv" for r in records
+            )
+            for call in parsed.tool_calls:
                 if call.error:
-                    record = ToolCallRecord(name=call.name or "tool_parser", arguments=call.arguments,
-                                            ok=False, error=f"Malformed tool call: {call.error}")
-                elif call.name == "guardar_informe" and not _report_requested(query):
                     record = ToolCallRecord(
-                        name=call.name, arguments=call.arguments, ok=False,
-                        error="Report writing denied: user did not explicitly request a file."
+                        name=call.name or "tool_parser", arguments=call.arguments,
+                        ok=False, error=f"Malformed tool call: {call.error}",
                     )
-                elif call.name == "guardar_informe" and not any(
-                    r.ok and r.name == "calcular_imv" for r in records
-                ):
-                    record = ToolCallRecord(
-                        name=call.name, arguments=call.arguments, ok=False,
-                        error="Run calcular_imv successfully before saving an IMV report."
-                    )
-                elif call.name == "guardar_informe" and not all(
-                    _money_is_mentioned(str(call.arguments.get("contenido", "")), r.result[key])
-                    for r in records if r.ok and r.name == "calcular_imv"
-                    for key in ("imv_monthly_eur", "capi_monthly_eur", "total_monthly_eur")
-                ):
-                    record = ToolCallRecord(
-                        name=call.name, arguments=call.arguments, ok=False,
-                        error="Report must reproduce every IMV/CAPI/total amount from the engine."
-                    )
+                elif call.name == "guardar_informe":
+                    if not calculated_before_turn:
+                        record = ToolCallRecord(
+                            name=call.name, arguments=call.arguments, ok=False,
+                            error="Calculate IMV and observe its result in an earlier turn first."
+                        )
+                    else:
+                        record = self._save_report(
+                            str(call.arguments.get("contenido", "")), records, query
+                        )
                 elif (
                     call.name in self.registry.tools
                     and self.registry.tools[call.name].requires_confirmation
-                    and call.name != "guardar_informe"
                 ):
                     record = ToolCallRecord(
                         name=call.name, arguments=call.arguments, ok=False,
@@ -200,24 +334,36 @@ class ToolLoop:
                     )
                 else:
                     signature = json.dumps(
-                        [call.name, call.arguments], sort_keys=True, default=str, ensure_ascii=False
+                        [call.name, call.arguments], sort_keys=True,
+                        default=str, ensure_ascii=False,
                     )
                     if signature in seen:
-                        record = ToolCallRecord(name=call.name, arguments=call.arguments,
-                                                ok=False, error="Repeated identical call.")
+                        record = ToolCallRecord(
+                            name=call.name, arguments=call.arguments, ok=False,
+                            error="Repeated identical call.",
+                        )
                     else:
                         seen.add(signature)
                         record = self.registry.call(call.name, call.arguments)
                 records.append(record)
                 observation = {"ok": record.ok}
-                observation.update({"result": record.result} if record.ok else {"error": record.error})
+                observation.update(
+                    {"result": record.result} if record.ok else {"error": record.error}
+                )
                 messages.append({
                     "role": "tool", "name": record.name,
                     "content": format_tool_result(record.name, observation),
                 })
-        return ToolsResponse(
-            answer="No he podido completar la consulta dentro del límite de turnos.",
-            tool_calls=records, turns=max_turns, model=self.model_label,
+
+            if wants_report and any(
+                r.ok and r.name == "guardar_informe" for r in records
+            ):
+                # No extra model turn required to establish file creation.
+                return self._finish("", records, turn, True)
+
+        return self._finish(
+            "", records, max_turns, wants_report,
+            reason="se alcanzó el límite de turnos sin generar el fichero"
         )
 
 
