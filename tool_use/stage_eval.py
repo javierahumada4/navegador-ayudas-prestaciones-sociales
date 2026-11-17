@@ -202,11 +202,18 @@ def score_stage(
     output["file_amounts_ok"] = None
     output["file_sources_ok"] = None
     output["api_http_ok"] = None
-    output["repaired_validation_error"] = any(
-        not c.get("ok") and (
-            "invalid arguments" in str(c.get("error", ""))
-            or "Malformed tool call" in str(c.get("error", ""))
-        ) for c in calls
+    invalid_positions = [
+        i for i, record in enumerate(calls)
+        if not record.get("ok") and (
+            "invalid arguments" in str(record.get("error", ""))
+            or "Malformed tool call" in str(record.get("error", ""))
+        )
+    ]
+    output["had_schema_or_parse_error"] = bool(invalid_positions)
+    output["recovered_after_error"] = bool(
+        invalid_positions and any(
+            record.get("ok") for record in calls[min(invalid_positions) + 1:]
+        )
     )
     output["false_save_claim"] = None
 
@@ -258,14 +265,20 @@ def score_stage(
         if successful:
             res = successful[-1].get("result") or {}
             results = res.get("resultados", []) if isinstance(res, dict) else []
-            output["source_grounding_heuristic"] = (
-                not results or any(
+            if not results:
+                output["source_grounding_heuristic"] = bool(re.search(
+                    r"(?:no (?:se )?(?:han )?encontrad|"
+                    r"sin resultados|ninguna convocatoria|"
+                    r"no hay convocatorias|0 resultados)",
+                    folded(answer),
+                ))
+            else:
+                output["source_grounding_heuristic"] = any(
                     folded(str(item.get("titulo", ""))) in folded(answer)
                     or folded(str(item.get("codigo_bdns", ""))) in folded(answer)
                     for item in results
                     if item.get("titulo") or item.get("codigo_bdns")
                 )
-            )
         else:
             output["source_grounding_heuristic"] = bool(
                 attempted and any(
@@ -344,7 +357,7 @@ def summarize_stage(rows: list[dict]) -> dict[str, Any]:
         "oracle_ok", "answer_money_ok", "explanation_heuristic_ok",
         "api_http_ok", "source_grounding_heuristic", "file_verified",
         "file_amounts_ok", "file_sources_ok", "false_save_claim",
-        "repaired_validation_error", "success",
+        "had_schema_or_parse_error", "recovered_after_error", "success",
     )
     summary: dict[str, Any] = {"n_cases": len(rows)}
     for key in fields:
