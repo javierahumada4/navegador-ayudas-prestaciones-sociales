@@ -6,6 +6,8 @@ on:
       - 'feat/**'
     paths:
       - 'tool_use/**'
+      - 'api/app.py'
+      - 'api/schemas.py'
       - 'tests/test_imv_*.py'
       - '.github/workflows/fase2-imv.yml'
   workflow_dispatch:
@@ -25,12 +27,13 @@ jobs:
             'httpx>=0.28' 'pytest>=8.3' 'requests>=2.32' \
             'uvicorn>=0.34' 'python-dotenv>=1.1' 'ruff>=0.11'
       - name: Check syntax
-        run: python -m compileall -q tool_use tests/test_imv_tool.py tests/test_imv_tool_loop.py tests/test_imv_templates.py
+        run: python -m compileall -q tool_use tests/test_imv_tool.py tests/test_imv_tool_loop.py tests/test_imv_templates.py tests/test_imv_api.py
       - name: Test IMV tools, executor, original parser and API
         run: |
           python -m pytest -q \
             tests/test_imv_tool.py \
             tests/test_imv_templates.py \
+            tests/test_imv_api.py \
             tests/test_imv_tool_loop.py \
             tests/test_tool_registry.py \
             tests/test_tool_parser.py \
@@ -41,4 +44,4 @@ jobs:
             tool_use/imv_tools.py tool_use/imv_templates.py \
             tool_use/tools.py tool_use/executor.py \
             tests/test_imv_tool.py tests/test_imv_templates.py \
-            tests/test_imv_tool_loop.py
+            tests/test_imv_tool_loop.py tests/test_imv_api.py
