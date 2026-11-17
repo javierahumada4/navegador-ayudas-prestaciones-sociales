@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from tool_use.executor import ToolLoop
-from tool_use.imv_templates import IMVCalculation, explicar_imv, render_imv_result
+from tool_use.imv_templates import IMVCalculation, render_imv_result
 from tool_use.tools import default_registry
 
 
