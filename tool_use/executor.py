@@ -14,6 +14,7 @@ from pathlib import Path
 
 from api.schemas import ToolCallRecord, ToolsResponse
 from rlm.chat_template import restore_thinking_prefix
+from tool_use.imv_templates import IMVCalculation, render_imv_result
 from tool_use.parser import ToolCall, format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
@@ -29,10 +30,12 @@ REGLAS:
   fechas, ingresos, patrimonio, personas y relaciones. Los campos opcionales
   no mencionados tienen los valores neutros previstos por el simulador.
 - El resultado de calcular_imv se transforma automáticamente en una
-  explicación mediante explicar_imv, una plantilla determinista. NO redactes
-  tú una explicación alternativa ni cambies las cifras.
-- Puedes invocar explicar_imv directamente solo si ya tienes una salida
-  completa y estructurada de calcular_imv.
+  explicación mediante una plantilla determinista. NO redactes tú una
+  explicación alternativa ni cambies las cifras.
+- explicar_imv guarda un informe Markdown y requiere autorización explícita
+  del usuario en la petición, independiente del contenido que tú generes.
+  No llames a explicar_imv directamente: el ejecutor la invoca tras calcular.
+  Si no hay autorización, se presenta el texto sin escribir archivos.
 - Para cuestiones conceptuales sin cálculo, contesta sin herramientas.
 - Las llamadas deben ser JSON nativo dentro de bloques <tool_call>.
   No incluyas Python, comentarios ni texto dentro del objeto de argumentos.
@@ -190,7 +193,8 @@ class ToolLoop:
         return restore_thinking_prefix(prompt, decoded)
 
     def run(
-        self, query: str, max_turns: int = 5, *, trace: list[str] | None = None
+        self, query: str, max_turns: int = 5, *,
+        trace: list[str] | None = None, confirmar_guardado: bool = False,
     ) -> ToolsResponse:
         """Choose, validate, execute and observe tool calls until final answer."""
         if max_turns < 1:
@@ -230,6 +234,20 @@ class ToolLoop:
                         arguments=call.arguments,
                         ok=False,
                         error=f"Malformed tool call: {call.error}",
+                    )
+                elif call.name == "explicar_imv":
+                    # The model may not request an arbitrary file write or
+                    # supply invented calculation results. Only the application
+                    # may call this action with a real engine output.
+                    record = ToolCallRecord(
+                        name=call.name,
+                        arguments=call.arguments,
+                        ok=False,
+                        error=(
+                            "explicar_imv is application-managed: first call "
+                            "calcular_imv. Report saving also requires explicit "
+                            "request-level confirmation."
+                        ),
                     )
                 elif (
                     call.name in self.registry.tools
@@ -272,31 +290,35 @@ class ToolLoop:
                     "content": format_tool_result(record.name, observation),
                 })
 
-                # Deterministic IMV pipeline: the model chooses the calculation,
-                # but cannot rephrase or hallucinate the result. The second
-                # domain tool consumes the actual engine output, not new model
-                # arguments, and both calls appear in the trace.
-                if (
-                    record.name == "calcular_imv"
-                    and record.ok
-                    and "explicar_imv" in self.registry.tools
-                ):
-                    explanation = self.registry.call(
-                        "explicar_imv", {"resultado": record.result}
+                # The model chooses the calculation; the application alone
+                # renders the validated engine response. Writing the report
+                # requires a separate explicit request flag, never model text.
+                if record.name == "calcular_imv" and record.ok:
+                    text = render_imv_result(
+                        IMVCalculation.model_validate(record.result)
                     )
-                    records.append(explanation)
-                    messages.append({
-                        "role": "tool",
-                        "name": explanation.name,
-                        "content": format_tool_result(
-                            explanation.name,
-                            {"ok": True, "result": explanation.result}
-                            if explanation.ok else
-                            {"ok": False, "error": explanation.error},
-                        ),
-                    })
-                    if explanation.ok:
-                        explanations.append(explanation.result)
+                    if confirmar_guardado and "explicar_imv" in self.registry.tools:
+                        saved = self.registry.call(
+                            "explicar_imv", {"resultado": record.result}
+                        )
+                        records.append(saved)
+                        messages.append({
+                            "role": "tool",
+                            "name": saved.name,
+                            "content": format_tool_result(
+                                saved.name,
+                                {"ok": True, "result": saved.result}
+                                if saved.ok else {"ok": False, "error": saved.error},
+                            ),
+                        })
+                        if saved.ok:
+                            text = (
+                                saved.result["texto"]
+                                + f"\n\nInforme guardado en: {saved.result['archivo']}"
+                            )
+                        else:
+                            text += "\n\nNo se ha podido guardar el informe."
+                    explanations.append(text)
 
             if explanations:
                 return ToolsResponse(
@@ -339,9 +361,13 @@ def build_tool_loop() -> ToolLoop:
     return _loop
 
 
-def run_tool_loop(query: str, max_turns: int = 5) -> ToolsResponse:
+def run_tool_loop(
+    query: str, max_turns: int = 5, *, confirmar_guardado: bool = False
+) -> ToolsResponse:
     """Public entry point used by POST /tools and tool-use evaluations."""
-    return build_tool_loop().run(query, max_turns=max_turns)
+    return build_tool_loop().run(
+        query, max_turns=max_turns, confirmar_guardado=confirmar_guardado
+    )
 
 
 __all__ = [
