@@ -5,6 +5,8 @@ No agent framework. Qwen3 base and phase-1 LoRA share generation settings.
 import json
 import os
 import re
+import secrets
+from datetime import datetime, timezone
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
@@ -338,6 +340,14 @@ class ToolLoop:
         destroy completed turns. Tracing is enabled by all benchmark runners;
         the public API never supplies a trace path.
         """
+        if trace_path is None and os.getenv("ARCA_TOOLS_TRACE_DIR"):
+            # Optional server-side tracing of POST /tools. Never accept a
+            # client-supplied path via the public request schema.
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            trace_path = (
+                Path(os.environ["ARCA_TOOLS_TRACE_DIR"])
+                / f"tools-{stamp}-{secrets.token_hex(8)}.jsonl"
+            )
         writer = TraceRecorder(trace_path) if trace_path is not None else nullcontext(None)
         with writer as trace:
             if trace is not None:
