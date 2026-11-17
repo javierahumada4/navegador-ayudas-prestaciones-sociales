@@ -5,7 +5,7 @@
 #     source smoke/dgx_env.sh
 #     bash smoke/serve_ngrok.sh
 #
-# Lee de .env: NGROK_AUTHTOKEN (obligatorio), ARCA_RLM_ADAPTER, HF_TOKEN y opcionalmente
+# Lee de .env: NGROK_AUTHTOKEN (obligatorio), ARCA_RLM_ADAPTER, ARCA_TOOLS_MODEL, HF_TOKEN y opcionalmente
 # NGROK_ARGS (p. ej. --url=<vuestro-dominio>.ngrok-free.app para una URL fija).
 # Ctrl+C cierra el túnel y la API.
 
@@ -17,6 +17,7 @@ fi
 
 : "${NGROK_AUTHTOKEN:?Falta NGROK_AUTHTOKEN en .env (https://dashboard.ngrok.com/get-started/your-authtoken)}"
 export ARCA_RLM_ADAPTER="${ARCA_RLM_ADAPTER:-JES0406/imv-sft-lora}"
+export ARCA_TOOLS_MODEL="${ARCA_TOOLS_MODEL:-Qwen/Qwen3-1.7B}"
 export ARCA_API_PORT="${ARCA_API_PORT:-8000}"
 # El venv con torch cu128 de la fase 1; el .venv por defecto puede estar mezclado con vLLM.
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$HOME/.venvs/arca-train}"

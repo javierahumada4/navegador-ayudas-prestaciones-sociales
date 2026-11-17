@@ -10,13 +10,18 @@
 Steps 2-4 repeat until the model answers or ``max_turns`` is reached (multi-step tool use).
 Several <tool_call> blocks in one generation are executed in the same turn (parallel calls).
 
-``run_tool_loop`` is what ``POST /tools`` calls. Until you implement it, the endpoint
-answers 501.
+``run_tool_loop`` is what ``POST /tools`` calls. Environment: ``ARCA_TOOLS_MODEL``
+(required to enable the endpoint, e.g. ``Qwen/Qwen3-1.7B``),
+``ARCA_TOOLS_MAX_NEW_TOKENS`` (1024) and ``ARCA_TOOLS_THINKING`` (``1`` lets Qwen3 think
+before each call; off by default).
 """
 
 from __future__ import annotations
 
+import os
+
 from api.schemas import ToolCallRecord, ToolsResponse
+from tool_use.parser import ToolCall, format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
 
@@ -46,48 +51,93 @@ class ToolLoop:
 
     def __init__(self, registry: ToolRegistry | None = None, model_id: str | None = None):
         self.registry = registry or default_registry()
-        self.model_id = model_id or "Qwen/Qwen3-1.7B"
+        self.model_id = model_id or os.environ.get("ARCA_TOOLS_MODEL", "Qwen/Qwen3-1.7B")
+        self.max_new_tokens = int(os.environ.get("ARCA_TOOLS_MAX_NEW_TOKENS", "1024"))
+        # Qwen3 thinking before each call is slower and rarely changes the tool chosen.
+        self.enable_thinking = os.environ.get("ARCA_TOOLS_THINKING", "0") == "1"
         self.model = None
         self.tokenizer = None
 
     def load(self) -> None:
-        """Tu turno: load tokenizer and model (bf16 on GPU).
+        """Load tokenizer and model (bf16 on GPU)."""
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        Tip: Qwen's chat template accepts ``tools=registry.definitions()`` directly in
-        ``apply_chat_template``. Using it instead of pasting JSON into the system prompt is
-        allowed, but then explain in your README what the template actually renders.
-        """
-        raise NotImplementedError
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_id, dtype=dtype, device_map=device
+        ).eval()
 
     def generate(self, messages: list[dict]) -> str:
-        """Tu turno: step 2, one generation from the conversation so far."""
-        raise NotImplementedError
+        """Step 2: one greedy generation from the conversation so far.
+
+        The tool definitions travel in the system prompt built by ``build_system_prompt``;
+        ``apply_chat_template`` only wraps the turns (including role ``tool``) in Qwen's format.
+        """
+        import torch
+
+        prompt = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=self.enable_thinking,
+        )
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        with torch.inference_mode():
+            output = self.model.generate(
+                **inputs, max_new_tokens=self.max_new_tokens, do_sample=False
+            )
+        new_tokens = output[0, inputs["input_ids"].shape[1]:]
+        return self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+
+    def _execute(self, call: ToolCall) -> ToolCallRecord:
+        """Step 3. Parse errors and calls needing confirmation become observations."""
+        if call.error is not None:
+            return ToolCallRecord(
+                name=call.name, arguments=call.arguments, ok=False, error=call.error
+            )
+        tool = self.registry.tools.get(call.name)
+        if tool is not None and tool.requires_confirmation:
+            return ToolCallRecord(
+                name=call.name,
+                arguments=call.arguments,
+                ok=False,
+                error="this tool needs user confirmation and /tools cannot ask for it; "
+                "it was not executed. Tell the user what you would do instead.",
+            )
+        return self.registry.call(call.name, call.arguments)
 
     def run(self, query: str, max_turns: int = 5) -> ToolsResponse:
-        """Tu turno: the loop.
-
-        Sketch::
-
-            messages = [system, user]
-            records: list[ToolCallRecord] = []
-            for turn in range(max_turns):
-                raw = self.generate(messages)
-                parsed = parse_tool_calls(raw)
-                if not parsed.has_tool_calls:
-                    return ToolsResponse(answer=parsed.text, tool_calls=records, turns=turn + 1)
-                messages.append({"role": "assistant", "content": raw})
-                for call in parsed.tool_calls:
-                    record = self.registry.call(call.name, call.arguments)   # step 3
-                    records.append(record)
-                    payload = record.result if record.ok else record.error
-                    content = format_tool_result(record.name, payload)
-                    messages.append({"role": "tool", "name": record.name, "content": content})
-            # out of turns: return what you have, flag it
-
-        Decide what to do with parse errors (``call.error``) and with tools that have
-        ``requires_confirmation``. Both are observations the model should see.
-        """
-        raise NotImplementedError
+        """Steps 1-5, repeating 2-4 while the model keeps calling tools."""
+        messages = [
+            {"role": "system", "content": build_system_prompt(self.registry)},
+            {"role": "user", "content": query},
+        ]
+        records: list[ToolCallRecord] = []
+        parsed = None
+        for turn in range(max_turns):
+            raw = self.generate(messages)
+            parsed = parse_tool_calls(raw)
+            if not parsed.tool_calls:
+                return ToolsResponse(
+                    answer=parsed.text, tool_calls=records, turns=turn + 1, model=self.model_id
+                )
+            messages.append({"role": "assistant", "content": raw})
+            for call in parsed.tool_calls:  # parallel calls run in the same turn
+                record = self._execute(call)
+                records.append(record)
+                payload = record.result if record.ok else {"error": record.error}
+                content = format_tool_result(record.name, payload)
+                messages.append({"role": "tool", "name": record.name, "content": content})
+        answer = parsed.text if parsed and parsed.text else ""
+        return ToolsResponse(
+            answer=f"[max_turns={max_turns} reached without a final answer] {answer}".strip(),
+            tool_calls=records,
+            turns=max_turns,
+            model=self.model_id,
+        )
 
 
 _loop: ToolLoop | None = None
@@ -97,8 +147,14 @@ def build_tool_loop() -> ToolLoop:
     """Create and load the loop once; the API keeps the instance."""
     global _loop
     if _loop is None:
-        loop = ToolLoop()
-        loop.load()  # raises NotImplementedError until phase 2 is done
+        model_id = os.environ.get("ARCA_TOOLS_MODEL")
+        if not model_id:
+            # Same contract as ARCA_RLM_ADAPTER: /health and CI must not download a model.
+            raise NotImplementedError(
+                "Phase 2 is not enabled: set ARCA_TOOLS_MODEL (e.g. Qwen/Qwen3-1.7B)."
+            )
+        loop = ToolLoop(model_id=model_id)
+        loop.load()
         _loop = loop
     return _loop
 

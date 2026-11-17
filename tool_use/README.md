@@ -76,6 +76,7 @@ que requiera dos herramientas encadenadas, y miraré:
 | `registry.py` | hecho | `@tool`, definiciones JSON Schema, validación y ejecución con captura de errores |
 | `parser.py` | hecho | Detecta `<think>` y uno o varios `<tool_call>` en la salida del modelo |
 | `tools.py` | ejemplo + tu turno | `get_weather` y `calculator`; las vuestras van aquí |
+| `tools.py` · `consultar_boe` | hecho | Consulta HTTP real: texto vigente de un artículo/anexo de la Ley 19/2021 (IMV) vía API de datos abiertos del BOE |
 | `executor.py` | tu turno | El flujo de cinco pasos; detrás de `/tools` |
 | `evaluate.py` | hecho | Métricas de selección y argumentos sobre el banco de pruebas |
 | `bench/` | vuestro | Casos de prueba (`example_cases.jsonl` muestra el formato) |

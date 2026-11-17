@@ -47,6 +47,18 @@ def normalise(value: Any) -> Any:
     return value
 
 
+def canonical_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Equivalent spellings the tool itself accepts must not count as argument errors."""
+    if tool_name == "consultar_boe" and isinstance(arguments.get("articulo"), str):
+        from tool_use.tools import LEY_IMV, _boe_title_query
+
+        return {
+            "articulo": _boe_title_query(arguments["articulo"]),
+            "norma": arguments.get("norma", LEY_IMV),
+        }
+    return arguments
+
+
 def score_case(case: dict[str, Any], tool_calls: list[dict[str, Any]]) -> dict[str, bool]:
     """Compare the calls the model made against the expectation for one benchmark case."""
     first = tool_calls[0] if tool_calls else None
@@ -54,9 +66,10 @@ def score_case(case: dict[str, Any], tool_calls: list[dict[str, Any]]) -> dict[s
         selection_ok = first is None
         return {"selection_ok": selection_ok, "arguments_ok": selection_ok}
     selection_ok = first is not None and first["name"] == case["expected_tool"]
-    arguments_ok = selection_ok and normalise(first["arguments"]) == normalise(
-        case.get("expected_arguments", {})
-    )
+    name = case.get("expected_tool", "")
+    arguments_ok = selection_ok and normalise(
+        canonical_arguments(name, first["arguments"])
+    ) == normalise(canonical_arguments(name, case.get("expected_arguments", {})))
     return {"selection_ok": selection_ok, "arguments_ok": arguments_ok}
 
 
