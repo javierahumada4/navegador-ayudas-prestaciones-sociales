@@ -5,8 +5,6 @@ calculation. It only renders the *validated* structured response of
 `rlm.imv_engine.evaluate_imv_case` using fixed Spanish text templates.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 
