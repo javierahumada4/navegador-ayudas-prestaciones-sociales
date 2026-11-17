@@ -44,3 +44,16 @@ def test_plain_answer_has_no_calls():
 def test_arguments_given_as_string_are_decoded():
     output = '<tool_call>{"name": "a", "arguments": "{\\"x\\": 1}"}</tool_call>'
     assert parse_tool_calls(output).tool_calls[0].arguments == {"x": 1}
+
+
+def test_surplus_closing_brace_is_forgiven_but_other_trailing_text_is_not():
+    ok = parse_tool_calls('<tool_call>{"name": "a", "arguments": {"case": {"x": 1}}}}</tool_call>')
+    assert ok.tool_calls[0].error is None
+    assert ok.tool_calls[0].arguments == {"case": {"x": 1}}
+    bad = parse_tool_calls('<tool_call>{"name": "a", "arguments": {}} junk</tool_call>')
+    assert bad.tool_calls[0].error and "at char" in bad.tool_calls[0].error
+
+
+def test_raw_newline_inside_a_string_is_accepted():
+    output = '<tool_call>{"name": "a", "arguments": {"contenido": "x\ny"}}</tool_call>'
+    assert parse_tool_calls(output).tool_calls[0].arguments == {"contenido": "x\ny"}
