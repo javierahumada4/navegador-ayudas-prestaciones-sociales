@@ -7,6 +7,7 @@ measured with *declared heuristics*, not assumed to be legally validated.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections import Counter
 import re
 import unicodedata
@@ -16,6 +17,7 @@ from typing import Any
 from rlm.imv_engine import evaluate_imv_case
 from tool_use.domain_tools import rules_for_date
 from tool_use.executor import _money_is_mentioned
+from tool_use.evaluate import normalise
 
 FAILURE_WORDS = {
     "RESIDENCE_NOT_MET": ("residenc",),
@@ -123,9 +125,38 @@ def score_workflow(
     required = case.get("expected_tools")
     if required is None:
         required = [case["expected_tool"]] if case.get("needs_tool", True) else []
-    successful = [
-        c["name"] for c in tool_calls if c.get("ok")
-    ]
+    successful = [c["name"] for c in tool_calls if c.get("ok")]
+    successful_calls = [c for c in tool_calls if c.get("ok")]
+    arg_checks = []
+    if case.get("expected_arguments") is not None:
+        arg_checks.append(any(
+            c["name"] == case.get("expected_tool")
+            and normalise(c.get("arguments", {})) == normalise(case["expected_arguments"])
+            for c in successful_calls
+        ))
+    if case.get("expected_case") is not None:
+        arg_checks.append(any(
+            c["name"] == "calcular_imv"
+            and normalise(c.get("arguments", {}).get("case")) == normalise(case["expected_case"])
+            for c in successful_calls
+        ))
+    for tool_name, expected_args in case.get("expected_additional_arguments", {}).items():
+        arg_checks.append(any(
+            c["name"] == tool_name
+            and normalise(c.get("arguments", {})) == normalise(expected_args)
+            for c in successful_calls
+        ))
+    for tool_name, expected_items in case.get("expected_all_arguments", {}).items():
+        actual = Counter(
+            json.dumps(normalise(c.get("arguments", {})), sort_keys=True, ensure_ascii=False)
+            for c in successful_calls if c["name"] == tool_name
+        )
+        expected = Counter(
+            json.dumps(normalise(arguments), sort_keys=True, ensure_ascii=False)
+            for arguments in expected_items
+        )
+        arg_checks.append(not (expected - actual))
+    all_arguments_correct = all(arg_checks) if arg_checks else None
     required_ok = not (Counter(required) - Counter(successful))
     if not required:
         required_ok = not tool_calls
@@ -164,6 +195,12 @@ def score_workflow(
         explanation_accuracy, reason_coverage = explanation_checks(check_text, gold)
 
     clarification_accuracy = None
+    conceptual_fact_accuracy = None
+    if case.get("expected_facts") is not None:
+        normalized_answer = folded(answer)
+        conceptual_fact_accuracy = all(
+            folded(fragment) in normalized_answer for fragment in case["expected_facts"]
+        )
     if case.get("expected_behavior") == "ask_clarification":
         normal = folded(answer)
         has_request = any(
@@ -190,11 +227,17 @@ def score_workflow(
         task_success = task_success and bool(amount_accuracy) and bool(explanation_accuracy)
     if clarification_accuracy is not None:
         task_success = task_success and clarification_accuracy
+    if all_arguments_correct is not None:
+        task_success = task_success and all_arguments_correct
+    if conceptual_fact_accuracy is not None:
+        task_success = task_success and conceptual_fact_accuracy
     task_success = task_success and not unverified_save_claim
 
     return {
         "required_tools": required,
         "tool_sequence_success": bool(required_ok),
+        "all_tool_arguments_correct": all_arguments_correct,
+        "conceptual_fact_accuracy": conceptual_fact_accuracy,
         "multi_step_success": bool(required_ok) if len(required) > 1 else None,
         "amount_fidelity": amount_accuracy,
         "report_created_and_verified": file_exists if expects_report else None,
@@ -210,7 +253,8 @@ def score_workflow(
 
 def summarise_workflows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     names = (
-        "tool_sequence_success", "multi_step_success", "amount_fidelity",
+        "tool_sequence_success", "multi_step_success", "all_tool_arguments_correct",
+        "conceptual_fact_accuracy", "amount_fidelity",
         "report_created_and_verified", "report_amount_fidelity",
         "explanation_heuristic_accuracy", "failed_reason_coverage",
         "clarification_accuracy", "end_to_end_success",
