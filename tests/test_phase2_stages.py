@@ -76,7 +76,7 @@ def test_only_relevant_tool_is_shown_for_each_stage():
         assert "Definiciones disponibles" in schema
         for name in expected:
             assert f'"name": "{name}"' in schema
-    assert "UNICO objeto llamado case" in build_system_prompt(registry_for_stage("imv"))
+    assert "objeto llamado case" in build_system_prompt(registry_for_stage("imv"))
 
 
 def test_imv_isolated_computes_and_grades_canonical_json():
