@@ -230,7 +230,7 @@ source smoke/dgx_env.sh
 uv sync --extra train
 uv run pytest -q tests/test_phase2_imv_tools.py \
   tests/test_phase2_workflows.py tests/test_phase2_stages.py \
-  tests/test_tool_registry.py tests/test_tool_parser.py
+  tests/test_phase2_tracing.py tests/test_tool_registry.py tests/test_tool_parser.py
 
 # Prueba rápida de la etapa IMV (2 ejemplos, inferencia real)
 uv run --extra train python -m tool_use.stage_eval \
@@ -273,6 +273,111 @@ uv run --extra train python -m tool_use.stage_eval \
 **Limitaciones:** los resultados de BDNS en vivo pueden variar con la red;
 las fixtures del informe son solo de evaluación. Los JSON de salida
 contienen la traza, las métricas por etapa y sus denominadores;
-los informes reales se verifican ANTES de que se borre el directorio
-temporal aislado. Para comparar el base frente al GRPO científicamente,
+los informes se verifican y conservan en el directorio de artefactos. Para comparar el base frente al GRPO científicamente,
 usar el mismo modelo subyacente en ambos experimentos.
+
+
+## Trazas completas y salidas persistentes (automáticas en evaluación)
+
+Los tres ejecutores de evaluación (`stage_eval.py`, `compare.py` y
+`evaluate.py`) guardan por defecto, **sin flags adicionales**, todos los
+turnos y el contenido íntegro generado por el modelo. No se pierden las
+trazas anteriores si una ejecución se interrumpe: cada evento se añade
+inmediatamente a un fichero JSONL independiente por caso.
+
+Si la salida principal es `reports/phase2_stages_base.json`, los artefactos
+se crean en un directorio único:
+
+```text
+reports/
+  phase2_stages_base.json                         # métricas, respuestas, enlace a trazas
+  phase2_artifacts/
+    phase2_stages_base/
+      20261117T190000Z-xxxxxxxx/                 # identificador de ejecución
+        traces/
+          imv-001-P2-001.jsonl                    # TODOS los turnos de ese caso
+          bdns-001-P2-...jsonl
+          report-001-REPORT-01.jsonl
+          integration-001-P2-...jsonl
+        reports/
+          informe-imv-xxxxxxxxxxxxxxxxxxxxxxxx.txt # se CONSERVA el texto escrito
+```
+
+Cada traza JSONL registra en orden:
+
+- `run_start`: solicitud, modelo, esquema y herramientas visibles,
+  y cualquier observación precargada (en la etapa de informe).
+- `model_input`: **todos los mensajes íntegros que ve el modelo**, con
+  roles y contenido (system/user/assistant/tool), antes de generar.
+- `model_output`: respuesta literal devuelta a la aplicación, **prompt
+  renderizado con la plantilla real de Qwen**, salida decodificada sin
+  descartar tokens especiales, ids de tokens generados y parámetros.
+  En tests con generadores simulados, solo se registran los metadatos
+  que realmente proporciona la simulación.
+- `parsed_output`: texto, bloque thinking si existe y llamadas parseadas
+  (incluidos argumentos inválidos).
+- `tool_execution`: ejecución, duración, argumentos, errores de validación,
+  observación completa y registros de la herramienta. Incluye las
+  escrituras de informe por recuperación cuando el modelo omite el
+  marcador de llamada.
+- `orchestration`: reintentos de tareas compuestas antes de terminar.
+- `final_response` o `run_exception`: respuesta confirmada o error real.
+
+El JSON resumen de la evaluación incluye `artifacts_dir` y, en cada caso,
+`trace_path`. La carpeta `reports/` de la ejecución no es temporal: **los
+informes TXT también se conservan** después del cálculo de las métricas.
+
+Ejemplos de inspección en la DGX:
+
+```bash
+# Evaluar, guardar todas las generaciones y conservar los TXT
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain base --out reports/phase2_stages_base.json
+
+# Ver directorio de artefactos concreto de esa ejecución
+ARTIFACTS="$(uv run python -c 'import json; print(json.load(open("reports/phase2_stages_base.json"))["artifacts_dir"])')"
+echo "$ARTIFACTS"
+find "$ARTIFACTS" -type f
+
+# Mostrar la primera traza completa (JSONL) formateada, sin truncarla
+TRACE="$(find "$ARTIFACTS/traces" -type f -name '*.jsonl' | sort | head -1)"
+uv run python -m json.tool --json-lines "$TRACE" | less -R
+
+# Extraer solamente las salidas brutas de todas las generaciones de esa traza
+uv run python - "$TRACE" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    for line in stream:
+        event = json.loads(line)
+        if event["event"] == "model_output":
+            print(f"\n--- TURNO {event['turn']} ---\n{event['raw_text']}")
+PY
+```
+
+En la comparación base/GRPO y el evaluador docente el formato es el
+mismo, con dos subseries `with_tools` y `without_tools` cuando
+corresponde. Repetir una evaluación crea otro directorio, sin sobrescribir
+las trazas previas. Si un proceso termina antes del resumen final,
+los JSONL ya escritos siguen disponibles.
+
+### Registro opcional de llamadas reales a POST /tools
+
+Para sesiones HTTP fuera del benchmark, activar expresamente:
+
+```bash
+export ARCA_TOOLS_TRACE_DIR="reports/phase2_api_traces"
+uv run arca-api
+```
+
+Cada petición crea un JSONL separado con nombre aleatorio. La API
+no acepta una ruta arbitraria de trazas enviada por el usuario; si
+`ARCA_TOOLS_TRACE_DIR` no está definido, las sesiones HTTP **no** se
+registran automáticamente.
+
+**Privacidad:** las trazas son **completas y no anonimizadas**. Pueden
+contener nombres, circunstancias familiares, ingresos, patrimonio y el
+texto de los informes. Evitar subirlas al repositorio o a servicios externos,
+usar solo datos sintéticos en las pruebas y controlar el acceso a los
+archivos. Los ficheros se crean con permisos `0600` y carpetas privadas
+`0700`; `reports/phase2_artifacts/`, `reports/phase2_api_traces/`
+y `reports/imv/` están en `.gitignore`.
