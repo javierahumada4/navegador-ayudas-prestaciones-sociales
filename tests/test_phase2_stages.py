@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 
-from tool_use.domain_tools import calcular_imv
 from tool_use.evaluate import load_bench
 from tool_use.executor import ToolLoop, build_system_prompt
 from tool_use.metrics import score_workflow
@@ -48,6 +47,8 @@ def good_report(calculation, api, *, cite=True):
         f"IMV: {result['imv_monthly_eur']:.2f} euros. "
         f"CAPI: {result['capi_monthly_eur']:.2f} euros. "
         f"Total mensual: {result['total_monthly_eur']:.2f} euros. "
+        + ("Los ingresos o renta familiar superan los límites exigidos. "
+           if result.get("failed_requirements") else "")
         + source
     )
 
@@ -228,7 +229,7 @@ def test_report_is_not_written_before_bdns_observation(monkeypatch, tmp_path):
     content = good_report(*records)
     result = scripted("report", block("guardar_informe", {"contenido": content}),
                       "No pude guardarlo.").run(
-        case["query"], prior_observations=records[:1],
+        case["query"], prior_observations=records[:1], max_turns=2,
     )
     assert not result.tool_calls[0].ok
     assert "BDNS" in result.tool_calls[0].error
