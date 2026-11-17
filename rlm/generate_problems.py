@@ -181,6 +181,7 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 1) RENTA GARANTIZADA E IMV
 - Base de 1 adulto: {_eur_es(base_monthly)}/mes.
 - Por cada miembro adicional: +{_D(amounts['additional_member_pct']) * 100:.0f}% de la base, hasta un máximo del {_D(amounts['max_household_multiplier']) * 100:.0f}% de la base.
+- Cuenta TODOS los miembros de la unidad, adultos y menores (1 adulto + 1 menor = 2 miembros).
 - Importes ordinarios: 1 miembro {_eur_es(base_monthly)}/mes; 2 miembros {_eur_es(base_monthly * Decimal('1.30'))}/mes; 3 miembros {_eur_es(base_monthly * Decimal('1.60'))}/mes; 4 miembros {_eur_es(base_monthly * Decimal('1.90'))}/mes; 5 o más {_eur_es(base_monthly * Decimal('2.20'))}/mes.
 - IMV mensual = renta garantizada final (incluidos complementos) - ingresos computables anuales/12.
 - Solo hay IMV si la diferencia es >= {_eur_es(amounts['minimum_imv_monthly_eur'])}/mes. La igualdad a 10 € sí cumple.
@@ -209,16 +210,17 @@ def build_rule_context(rules: dict[str, Any]) -> str:
 """ + "\n".join(patrimony_lines) + """
 
 6) CAPI (COMPLEMENTO DE AYUDA PARA LA INFANCIA)
-- Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0.
+- Requiere al menos un menor en la unidad. Puede concederse aunque el IMV sea 0 por ingresos, patrimonio o el tope de pensiones.
+- Si falla cualquier requisito del apartado 7 (residencia, edad, independencia, unidad de convivencia) o hay un administrador activo, tampoco hay CAPI: el total es 0.00.
 - Ingresos: ESTRICTAMENTE < 300% del umbral ordinario del Anexo I (sin sumar los complementos de monoparentalidad/discapacidad).
 - Patrimonio neto: ESTRICTAMENTE < 150% del límite del Anexo II.
 - Activos no societarios: se aplica el MISMO límite del test de activos anterior (<= límite).
 - Límites exactos de renta y patrimonio CAPI por composición:
 """ + "\n".join(capi_lines) + f"""
-- Cuantía CAPI por cada menor, según edad a 1 de enero: 115,00 €/mes si <3 años; 80,50 €/mes si 3-5 años; 57,50 €/mes si 6-17 años.
+- Cuantía CAPI por cada menor, según edad a 1 de enero: 0, 1 o 2 años -> 115,00 €/mes; 3, 4 o 5 años -> 80,50 €/mes; de 6 a 17 años -> 57,50 €/mes.
 
 7) OTROS REQUISITOS USADOS EN EL DATASET
-- Residencia legal y efectiva continuada: CADA miembro de la unidad debe cumplir en general >= {rules['requirements']['minimum_continuous_residence_months']} meses. Comprueba la fecha individual de cada miembro; basta con que uno no cumpla para que falle este requisito.
+- Residencia legal y efectiva continuada: CADA miembro de la unidad debe cumplir en general >= {rules['requirements']['minimum_continuous_residence_months']} meses. Comprueba la fecha individual de cada miembro; basta con que uno no cumpla para que falle este requisito. Con solicitud a {APP_DATE.isoformat()}, cada fecha «desde» debe ser <= {add_months(APP_DATE, -int(rules['requirements']['minimum_continuous_residence_months'])).isoformat()}; una fecha posterior incumple aunque la residencia sea legal y efectiva.
 - Beneficiario individual: edad mínima general {rules['requirements']['individual_min_age']} años.
 - Si el beneficiario individual es menor de {rules['requirements']['independence_under_age']} años: debe haber vivido en domicilio distinto al de sus progenitores/tutores durante al menos los {rules['requirements']['independence_under_age_months']} meses inmediatamente anteriores y acreditar al menos {rules['requirements']['independence_under_age_ss_months']} meses de alta en Seguridad Social dentro de ese periodo.
 - Si el beneficiario individual tiene {rules['requirements']['independence_under_age']} años o más, el oracle de este dataset exige domicilio distinto al de progenitores/tutores durante al menos {rules['requirements']['independence_age_30_plus_months']} meses anteriores.
@@ -697,7 +699,7 @@ class IMVProblemGenerator(ProblemGenerator):
                 and p.get("effective_residence_in_spain", False)
             )
             residence_bits.append(
-                f"{pid}: {'sí' if legal_effective else 'no'}, desde "
+                f"{pid}: {'legal y efectiva' if legal_effective else 'NO legal o NO efectiva'}, continuada desde "
                 f"{p['continuous_legal_effective_residence_since']}"
             )
 

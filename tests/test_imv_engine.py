@@ -294,9 +294,9 @@ def test_residence_fail_exposes_each_members_residence_date():
     question, _ = generator.render(case, random.Random(4))
 
     assert "Residencia legal y efectiva continuada por miembro" in question
-    assert "p1: sí, desde 2018-01-01" in question
-    assert "p2: sí, desde 2018-01-01" in question
-    assert "p3: sí, desde 2026-06-01" in question
+    assert "p1: legal y efectiva, continuada desde 2018-01-01" in question
+    assert "p2: legal y efectiva, continuada desde 2018-01-01" in question
+    assert "p3: legal y efectiva, continuada desde 2026-06-01" in question
     assert "La residencia legal y efectiva más reciente" not in question
 
 
