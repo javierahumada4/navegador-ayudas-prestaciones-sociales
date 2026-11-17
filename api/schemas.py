@@ -39,7 +39,9 @@ class ReasoningRequest(BaseModel):
         default=None,
         description="Optional ground truth; when given, the response includes the verifier verdict",
     )
-    max_new_tokens: int = Field(default=4096, ge=16, le=8192)
+    # 1024 = completion budget used in SFT, GRPO and evaluation of the final model.
+    # Larger defaults only add looping tokens and can exceed ngrok's 300 s limit.
+    max_new_tokens: int = Field(default=1024, ge=16, le=8192)
 
 
 class VerifierVerdict(BaseModel):
