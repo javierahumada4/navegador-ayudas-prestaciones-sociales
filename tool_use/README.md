@@ -178,9 +178,8 @@ compara el caso contra la referencia **después de aplicar los valores
 por defecto del esquema a ambos**, distingue corrección de argumentos,
 resultado del motor, fidelidad de la explicación y solicitud de aclaración.
 Una falta de datos no autoriza a inventarlos; un error Pydantic se devuelve
-como observación que el modelo puede corregir. Los errores recuperados
-se registran en `repaired_validation_error` (presencia de error; el éxito
-de recuperación se ve en las métricas de ejecución y argumentos).
+como observación que el modelo puede corregir. Los errores se registran en `had_schema_or_parse_error`, y la posterior
+recuperación se mide separadamente en `recovered_after_error`.
 
 **BDNS:** solo se expone `consultar_ayudas`, la herramienta ejecuta
 **HTTP de verdad** y se puntúan por separado selección, argumentos,
