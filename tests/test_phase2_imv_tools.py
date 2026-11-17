@@ -53,6 +53,12 @@ def scripted_loop(*completions, registry=None):
     return loop
 
 
+def test_identical_failed_output_stops_instead_of_burning_turns():
+    broken = '<tool_call>{"name": "calcular_imv", "arguments": {"case": oops}}</tool_call>'
+    out = scripted_loop(broken, broken, broken, broken, broken).run("Calcula", max_turns=5)
+    assert out.turns == 2 and len(out.tool_calls) == 1
+
+
 def test_registry_exposes_exactly_three_domain_tools():
     registry = default_registry()
     assert set(registry.tools) == {"calcular_imv", "consultar_ayudas", "guardar_informe"}

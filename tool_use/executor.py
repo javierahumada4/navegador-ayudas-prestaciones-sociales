@@ -73,21 +73,27 @@ observaciones verificadas; nunca inventes cifras ni ayudas.
 Confirma el guardado únicamente cuando la herramienta lo confirme."""
 
 
+CASE_EXAMPLE = """Los id de persona son las palabras literales de la consulta (adult, child,
+pareja...): cópialos tal cual y nunca inventes números. Incluye a TODAS las personas
+mencionadas en persons y en domicile.co_resident_ids. Omite los campos opcionales
+que la consulta no menciona. Ejemplo de llamada con dos personas (otros datos):
+<tool_call>{"name":"calcular_imv","arguments":{"case":{"application_date":"2026-05-04","applicant_id":"titular","persons":[{"id":"titular","date_of_birth":"1975-05-10","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2015-03-01"},{"id":"hijo","date_of_birth":"2016-09-20","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2016-09-20"}],"domicile":{"co_resident_ids":["titular","hijo"],"same_domicile_since":"2016-09-20"},"relationships":[{"person_a":"titular","person_b":"hijo","type":"parent_child","custody":"exclusive"}],"applicant_history":{"independent_from_parents_since":"2000-01-01"},"economic":{"countable_income_annual_eur":3000,"net_worth_eur":0,"non_corporate_assets_eur":0}}}}</tool_call>"""
+
 def build_system_prompt(registry: ToolRegistry) -> str:
     available = set(registry.tools)
     if available == {"calcular_imv"}:
-        guidance = CALCULATION_PROMPT
+        guidance = CALCULATION_PROMPT + "\n" + CASE_EXAMPLE
     elif available == {"consultar_ayudas"}:
         guidance = BDNS_PROMPT
     elif available == {"guardar_informe"}:
         guidance = REPORT_PROMPT
     else:
         guidance = INTEGRATION_PROMPT
-    return (
-        SYSTEM_PROMPT + "\n\n" + guidance
-        + "\n\nDefiniciones disponibles (JSON Schema Pydantic):\n"
-        + registry.render_for_prompt()
-    )
+    if "calcular_imv" in available and available != {"calcular_imv"}:
+        guidance += "\n" + CASE_EXAMPLE
+    # The chat template already injects the JSON Schemas through tools=; pasting them here
+    # too doubled the system block (~18.5k chars) for a 1.7B model.
+    return SYSTEM_PROMPT + "\n\n" + guidance
 
 
 def _report_requested(query: str) -> bool:
@@ -172,7 +178,7 @@ class ToolLoop:
     def __init__(
         self, registry: ToolRegistry | None = None, model_id: str | None = None,
         *, brain: str | None = None, adapter_path: str | None = None,
-        use_tools: bool = True, max_new_tokens: int = 2048,
+        use_tools: bool = True, max_new_tokens: int = 1280,
     ):
         self.registry = registry if registry is not None else default_registry()
         self.brain = (brain or os.getenv("ARCA_TOOLS_BRAIN", "base")).lower()
@@ -217,7 +223,8 @@ class ToolLoop:
         )
         if adapter:
             from peft import PeftModel
-            model = PeftModel.from_pretrained(model, adapter)
+            # Merged LoRA: ~75 instead of ~40 tok/s measured on the MIG slice.
+            model = PeftModel.from_pretrained(model, adapter).merge_and_unload()
         self.tokenizer, self.model = tokenizer, model.eval()
 
     def generate(self, messages: list[dict]) -> str:
@@ -419,6 +426,7 @@ class ToolLoop:
         seen: set[str] = set()
         wants_report = self.use_tools and _report_requested(query)
         reminders = 0
+        last_raw, records_before_turn = None, 0
 
         for turn in range(1, max_turns + 1):
             if trace is not None:
@@ -441,6 +449,15 @@ class ToolLoop:
                 )
             if not self.use_tools:
                 return self._finish(parsed.text or raw, [], turn, False)
+            # Greedy decoding: a byte-identical completion after a turn whose calls all failed
+            # means the model ignored the error and will repeat it to max_turns; v4 burned up
+            # to 5 turns (~400 s) per case this way.
+            if raw == last_raw and not any(r.ok for r in records[records_before_turn:]):
+                return self._finish(
+                    parsed.text or "No he podido generar una llamada válida con estos datos.",
+                    records, turn, wants_report, reason="el modelo repitió la misma salida",
+                )
+            last_raw, records_before_turn = raw, len(records)
 
             malformed_block = "<tool_call>" in raw and "</tool_call>" not in raw
             if not parsed.tool_calls and not malformed_block:

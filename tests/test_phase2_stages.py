@@ -72,10 +72,11 @@ def test_only_relevant_tool_is_shown_for_each_stage():
     ):
         registry = registry_for_stage(stage)
         assert set(registry.tools) == expected
-        schema = build_system_prompt(registry)
-        assert "Definiciones disponibles" in schema
+        # Schemas reach the model once, through the chat template's tools=, not the prompt.
+        assert "Definiciones disponibles" not in build_system_prompt(registry)
+        rendered = registry.render_for_prompt()
         for name in expected:
-            assert f'"name": "{name}"' in schema
+            assert f'"name": "{name}"' in rendered
     assert "objeto llamado case" in build_system_prompt(registry_for_stage("imv"))
 
 
