@@ -84,7 +84,7 @@ def test_template_saves_real_engine_result_without_llm(case, tmp_path, monkeypat
     assert path.is_file()
     assert path.parent == tmp_path
     body = path.read_text(encoding="utf-8")
-    assert body == "# Informe orientativo de IMV y CAPI\\n\\n" + text + "\\n"
+    assert body == "# Informe orientativo de IMV y CAPI\n\n" + text + "\n"
     assert hashlib.sha256(body.encode("utf-8")).hexdigest() == report["sha256"]
     assert path.stat().st_mode & 0o077 == 0
 
@@ -178,7 +178,7 @@ def test_without_confirmation_renders_template_without_writing(
     assert "431,26 €" in result.answer
     assert "Informe guardado" not in result.answer
     assert trace == [query]
-    assert not tmp_path.exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_confirmation_writes_report_and_records_both_tools(
@@ -211,7 +211,7 @@ def test_model_cannot_forge_direct_report_write_even_with_confirmation(
     assert result.tool_calls[0].name == "explicar_imv"
     assert not result.tool_calls[0].ok
     assert "application-managed" in result.tool_calls[0].error
-    assert not tmp_path.exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_conceptual_query_does_not_trigger_tools():
