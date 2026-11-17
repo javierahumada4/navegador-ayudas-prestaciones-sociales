@@ -155,3 +155,125 @@ residencia/ingresos, BDNS, nombres IMV/CAPI y redacción de informes. Probar
 los fallos de red. Analizar las diferencias entre llamadas independientes,
 paralelas y encadenadas. Ningún resultado de GPU se ha supuesto ni inventado;
 los JSON v2 deben generarse nuevamente en la DGX.
+
+
+## Evaluación por herramienta (aislamiento fase 2 → reutilización fase 4)
+
+Para separar los errores de **extracción de datos**, **búsqueda HTTP** y
+**redacción/persistencia**, el script `tool_use/stage_eval.py` evalúa **cuatro
+contextos diferentes de conversación**, cada uno con su propio fichero JSONL.
+No sustituye al evaluador docente, ni modifica `POST /tools` o `rlm/`.
+
+| Etapa | Dataset | Casos | Únicas herramientas visibles |
+| --- | --- | ---: | --- |
+| IMV | `bench/imv.jsonl` | 21 | `calcular_imv` |
+| BDNS | `bench/bdns.jsonl` | 10 | `consultar_ayudas` |
+| Informe | `bench/report.jsonl` | 6 | `guardar_informe` |
+| Integración | `bench/integration.jsonl` | 8 | Las tres |
+
+**IMV:** consultas normalizadas y en español natural, denegaciones y
+consultas incompletas. La herramienta recibe un único argumento `case`
+con el esquema Pydantic, sin el contenedor extra `IMVCase`. El evaluador
+compara el caso contra la referencia **después de aplicar los valores
+por defecto del esquema a ambos**, distingue corrección de argumentos,
+resultado del motor, fidelidad de la explicación y solicitud de aclaración.
+Una falta de datos no autoriza a inventarlos; un error Pydantic se devuelve
+como observación que el modelo puede corregir. Los errores recuperados
+se registran en `repaired_validation_error` (presencia de error; el éxito
+de recuperación se ve en las métricas de ejecución y argumentos).
+
+**BDNS:** solo se expone `consultar_ayudas`, la herramienta ejecuta
+**HTTP de verdad** y se puntúan por separado selección, argumentos,
+éxito del HTTP y evidencia textual de las fuentes. Se comprueba si
+la respuesta del modelo menciona resultados auténticamente devueltos,
+en vez de conceder una prestación o inventar subvenciones. El resultado
+depende de la disponibilidad de la API y su catálogo en el momento de
+evaluar. Los tests de CPU usan una red simulada, **no** afirman conectar
+realmente con la BDNS.
+
+**Informe:** el usuario pide un archivo, y el modelo recibe dos
+observaciones PREVIAS en la estructura de chat usada por el bucle Qwen:
+
+```text
+role=user: "Redacta y guarda un informe TXT..."
+role=assistant: <tool_call>{"name":"calcular_imv",...}</tool_call>
+role=tool (calcular_imv): {"ok":true,"result":{...cantidades...}}
+role=assistant: <tool_call>{"name":"consultar_ayudas",...}</tool_call>
+role=tool (consultar_ayudas): {"ok":true,"result":{...convocatorias...}}
+role=assistant: ... SOLO puede llamar a guardar_informe ...
+```
+
+La observación IMV procede de ejecutar el motor real contra el caso de referencia,
+**no** de introducir importes calculados por el modelo. La observación BDNS
+usa, por defecto, una **fixture SINTÉTICA rotulada** (convocatoria
+ficticia con código SIMULADA-001, respuesta vacía o error de red).
+Esto permite comprobar que el modelo cita exclusivamente observaciones
+recibidas, incluso ante fallos de BDNS, sin confundir datos ficticios con
+convocatorias oficiales. Si se quiere comprobar el comportamiento con
+la API real, pasar `--report-api live`. En ambos modos, el texto del
+informe lo redacta el modelo: `guardar_informe` solamente lo escribe.
+Se valida archivo, SHA-256, texto exacto, importes y referencias BDNS.
+Las comprobaciones del texto son **heurísticas**, no auditoría jurídica.
+
+**Integración:** se conservan los casos de dos búsquedas independientes,
+cálculo y BDNS en un mismo turno, redacción en el turno siguiente y
+solicitudes sin datos suficientes pero con búsqueda externa posible.
+Se exige que el guardado espere a las observaciones requeridas.
+Se conservan asimismo los 40 casos del evaluador global en
+`bench/cases.jsonl` para la comparación con/sin herramientas del docente.
+
+### Ejecutar en DGX
+
+Desde la raíz del repositorio y en la rama `feat/fase2-tool-use-imv-bdns-informes`:
+
+```bash
+source smoke/dgx_env.sh
+uv sync --extra train
+uv run pytest -q tests/test_phase2_imv_tools.py \
+  tests/test_phase2_workflows.py tests/test_phase2_stages.py \
+  tests/test_tool_registry.py tests/test_tool_parser.py
+
+# Prueba rápida de la etapa IMV (2 ejemplos, inferencia real)
+uv run --extra train python -m tool_use.stage_eval \
+  --stage imv --limit 2 --out reports/phase2_imv_smoke.json
+
+# Cada etapa de forma independiente, modelo base
+uv run --extra train python -m tool_use.stage_eval \
+  --stage imv --brain base --out reports/phase2_imv_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage bdns --brain base --out reports/phase2_bdns_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage report --brain base --report-api fixture \
+  --out reports/phase2_report_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage integration --brain base --out reports/phase2_integration_base.json
+```
+
+Alternativa: ejecutar las cuatro etapas en una sola invocación, reutilizando
+los pesos cargados del modelo dentro del proceso:
+
+```bash
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain base --model Qwen/Qwen3-1.7B \
+  --out reports/phase2_stages_base.json
+```
+
+Para el adaptador LoRA de fase 1, el base seleccionado debe coincidir
+exactamente con el identificador de `adapter_config.json`:
+
+```bash
+export ARCA_RLM_ADAPTER="/ruta/real/a/grpo_lora"
+export ARCA_TOOLS_MODEL_ID="$(uv run python -c \
+  'import json,os,pathlib; p=pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json"; print(json.loads(p.read_text())["base_model_name_or_path"])')"
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
+  --model "$ARCA_TOOLS_MODEL_ID" \
+  --out reports/phase2_stages_grpo.json
+```
+
+**Limitaciones:** los resultados de BDNS en vivo pueden variar con la red;
+las fixtures del informe son solo de evaluación. Los JSON de salida
+contienen la traza, las métricas por etapa y sus denominadores;
+los informes reales se verifican ANTES de que se borre el directorio
+temporal aislado. Para comparar el base frente al GRPO científicamente,
+usar el mismo modelo subyacente en ambos experimentos.
