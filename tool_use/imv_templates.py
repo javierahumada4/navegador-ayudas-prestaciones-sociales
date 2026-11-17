@@ -5,7 +5,11 @@ calculation. It only renders the *validated* structured response of
 `rlm.imv_engine.evaluate_imv_case` using fixed Spanish text templates.
 """
 
+import hashlib
+import os
+import secrets
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
@@ -98,22 +102,48 @@ def render_imv_result(result: IMVCalculation) -> str:
     )
 
 
-@tool
-def explicar_imv(resultado: IMVCalculation) -> str:
-    """Convert a calculated IMV/CAPI result to plain Spanish with a fixed template.
+@tool(requires_confirmation=True)
+def explicar_imv(resultado: IMVCalculation) -> dict:
+    """Save a deterministic Markdown report from the complete calcular_imv result.
 
-    Use only with the complete structured response already returned by
-    calcular_imv. Never invent monetary values or eligibility facts. This
-    function does not calculate eligibility or call an LLM; it preserves the
-    exact engine figures and includes a non-official-estimate disclaimer.
+    This is a file-writing action and requires explicit user confirmation at
+    the application boundary. It never calls a language model, recalculates
+    eligibility, or accepts a file path supplied by the model. The report is
+    created under ARCA_IMV_REPORTS_DIR (default: reports/imv) with a unique
+    filename, without overwriting any previous report.
 
     Args:
-        resultado: Entire structured response from calcular_imv, including
-            eligibility, IMV/CAPI amounts, household IDs and failed checks.
+        resultado: Complete validated engine output from calcular_imv, with
+            eligibility, monthly IMV/CAPI amounts and failed checks.
 
     Returns:
-        Deterministic natural-language explanation of the engine result.
+        A record with the exact template text, path of the created Markdown
+        file and SHA-256 digest of its contents.
     """
-    # Validate direct calls too. ToolRegistry already checks model arguments.
     validated = IMVCalculation.model_validate(resultado)
-    return render_imv_result(validated)
+    texto = render_imv_result(validated)  # Reuse the original template verbatim.
+    contenido = "# Informe orientativo de IMV y CAPI\n\n" + texto + "\n"
+    directory = Path(os.environ.get("ARCA_IMV_REPORTS_DIR") or "reports/imv").expanduser()
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    # The caller cannot provide a path. Exclusive creation prevents overwrites
+    # even if several requests arrive simultaneously. Files contain only the
+    # aggregate engine breakdown, not names or identifiers.
+    for _ in range(10):
+        file = directory / f"imv-{secrets.token_hex(12)}.md"
+        try:
+            fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(contenido)
+        except BaseException:
+            file.unlink(missing_ok=True)
+            raise
+        return {
+            "texto": texto,
+            "archivo": str(file.resolve()),
+            "sha256": hashlib.sha256(contenido.encode("utf-8")).hexdigest(),
+        }
+    raise RuntimeError("Unable to allocate a unique IMV report filename")
