@@ -109,7 +109,13 @@ def reasoning(request: ReasoningRequest):
 @app.post("/tools", response_model=ToolsResponse, tags=["fase 2"])
 def tools(request: ToolsRequest):
     """Phase 2: the model decides which tools to call; the application executes them."""
-    return _run("tools", backends.tools, lambda loop: loop.run(request.query, request.max_turns))
+    return _run(
+        "tools", backends.tools,
+        lambda loop: loop.run(
+            request.query, request.max_turns,
+            confirmar_guardado=request.confirmar_guardado,
+        ),
+    )
 
 
 @app.post("/rag", response_model=RagResponse, tags=["fase 3"])
