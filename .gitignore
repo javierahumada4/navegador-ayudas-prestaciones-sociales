@@ -51,3 +51,7 @@ reports/*.md
 
 # Phase-2 generated user reports (may contain sensitive personal data)
 reports/imv/
+
+# Phase-2 full raw model traces, prompts and report artifacts (sensitive)
+reports/phase2_artifacts/
+reports/phase2_api_traces/
