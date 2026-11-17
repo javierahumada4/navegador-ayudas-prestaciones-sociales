@@ -21,7 +21,7 @@ from typing import Any
 
 from api.schemas import ToolCallRecord
 from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe
-from tool_use.evaluate import load_bench, normalise, score_case
+from tool_use.evaluate import load_bench, normalise
 from tool_use.executor import ToolLoop
 from tool_use.imv_schema import IMVCase
 from tool_use.metrics import (
