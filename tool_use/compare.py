@@ -8,21 +8,30 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import tempfile
 import time
 from pathlib import Path
 
 from tool_use.evaluate import load_bench, score_case, summarise
 from tool_use.executor import ToolLoop
 from tool_use.metrics import score_workflow, summarise_workflows
+from tool_use.tracing import case_trace_path, create_artifact_run
 
 
-def evaluate_configuration(cases, loop, max_turns, *, report_root: Path | None = None):
+def evaluate_configuration(cases, loop, max_turns, *, report_root: Path | None = None,
+                           artifact_run: Path | None = None):
     scores, rows = [], []
     for index, case in enumerate(cases, 1):
         started = time.perf_counter()
+        trace_path = (
+            case_trace_path(
+                artifact_run, "with_tools" if loop.use_tools else "without_tools",
+                index, case.get("id", f"case-{index}"),
+            ) if artifact_run is not None else None
+        )
         try:
-            result = loop.run(case["query"], max_turns=max_turns)
+            result = loop.run(
+                case["query"], max_turns=max_turns, trace_path=trace_path,
+            )
             calls = [record.model_dump(mode="json") for record in result.tool_calls]
             score = score_case(case, calls)
             workflow = score_workflow(case, result.answer, calls, report_root=report_root)
@@ -47,6 +56,8 @@ def evaluate_configuration(cases, loop, max_turns, *, report_root: Path | None =
                     case, "", [], report_root=report_root
                 ),
             }
+        if trace_path is not None:
+            row["trace_path"] = str(trace_path.resolve()) if trace_path.exists() else None
         scores.append(score)
         rows.append(row)
         print(
@@ -93,40 +104,46 @@ def main():
         use_tools=False,
     )
 
-    with tempfile.TemporaryDirectory(prefix="arca-phase2-") as folder:
-        previous = os.environ.get("ARCA_IMV_REPORTS_DIR")
-        os.environ["ARCA_IMV_REPORTS_DIR"] = folder
-        try:
-            results = {
-                "model": with_tools.model_label,
-                "benchmark_cases": len(cases),
-                "with_tools": evaluate_configuration(
-                    cases, with_tools, args.max_turns, report_root=Path(folder)
-                ),
-                "without_tools": evaluate_configuration(
-                    cases, without_tools, 1, report_root=Path(folder)
-                ),
-                "metric_notes": {
-                    "tool_selection_accuracy": "Teacher's first-call accuracy (unchanged).",
-                    "argument_accuracy": "Teacher's strict normalized first-call arguments.",
-                    "multi_step_success": "All required tools executed successfully; independent of first-call score.",
-                    "report_created_and_verified": "A real TXT existed within the temporary directory; content, byte count and SHA256 matched the tool record.",
-                    "amount_fidelity": "Three IMV/CAPI/total euro amounts found in answer or saved report, checked against an independently run deterministic oracle.",
-                    "explanation_heuristic_accuracy": "Rule-based keyword and contradiction checks, NOT a validated legal fact-check.",
-                    "end_to_end_success": "Calls completed, verified file where required, amounts and explanation checks met.",
-                    "live_api": "BDNS is queried over real HTTP; network failure lowers success rates.",
-                    "without_tools": "The first-tool metric is necessarily zero for requests that require external actions.",
-                },
-            }
-        finally:
-            if previous is None:
-                os.environ.pop("ARCA_IMV_REPORTS_DIR", None)
-            else:
-                os.environ["ARCA_IMV_REPORTS_DIR"] = previous
+    artifact_run = create_artifact_run(args.out)
+    previous = os.environ.get("ARCA_IMV_REPORTS_DIR")
+    os.environ["ARCA_IMV_REPORTS_DIR"] = str(artifact_run / "reports")
+    try:
+        results = {
+            "model": with_tools.model_label,
+            "benchmark_cases": len(cases),
+            "artifacts_dir": str(artifact_run),
+            "reports_dir": str(artifact_run / "reports"),
+            "trace_format": "jsonl (one file per case, flushed per event)",
+            "with_tools": evaluate_configuration(
+                cases, with_tools, args.max_turns,
+                report_root=artifact_run / "reports", artifact_run=artifact_run,
+            ),
+            "without_tools": evaluate_configuration(
+                cases, without_tools, 1,
+                report_root=artifact_run / "reports", artifact_run=artifact_run,
+            ),
+            "metric_notes": {
+                "tool_selection_accuracy": "Teacher's first-call accuracy (unchanged).",
+                "argument_accuracy": "Teacher's strict normalized first-call arguments.",
+                "multi_step_success": "All required tools executed successfully; independent of first-call score.",
+                "report_created_and_verified": "TXT persisted in reports_dir; bytes, content and SHA256 match tool records.",
+                "amount_fidelity": "Three IMV/CAPI/total euro amounts checked against independent deterministic oracle.",
+                "explanation_heuristic_accuracy": "Keyword/contradiction checks, NOT validated legal fact-check.",
+                "end_to_end_success": "Calls, amounts, files and explanations all checked.",
+                "live_api": "BDNS uses real HTTP; network failures lower success rates.",
+                "without_tools": "No tool actions available, so required tool calls cannot succeed.",
+            },
+        }
+    finally:
+        if previous is None:
+            os.environ.pop("ARCA_IMV_REPORTS_DIR", None)
+        else:
+            os.environ["ARCA_IMV_REPORTS_DIR"] = previous
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Trazas y archivos persistentes: {artifact_run}", flush=True)
     for label in ("with_tools", "without_tools"):
         print(label, json.dumps(results[label]["summary"], indent=2, ensure_ascii=False))
 
