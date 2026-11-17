@@ -106,7 +106,7 @@ ARCA_IMV_REPORTS_DIR apuntando a un directorio privado.
 
 Desde el directorio raíz del proyecto:
 
-\`\`\`bash
+```bash
 git fetch origin
 git switch feat/fase2-tool-use-imv-bdns-informes
 git pull --ff-only
@@ -114,27 +114,27 @@ source smoke/dgx_env.sh
 uv sync --extra train
 uv run arca-check-gpu
 uv run pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_tool_registry.py tests/test_tool_parser.py
-\`\`\`
+```
 
 Smoke rápido (dos casos, sin GPU en los tests pero con inferencia en la comparación):
 
-\`\`\`bash
+```bash
 uv run --extra train python -m tool_use.compare --limit 2 \
   --model Qwen/Qwen3-1.7B --brain base --out reports/phase2_smoke.json
-\`\`\`
+```
 
 Evaluación completa del base, 40 casos **con** y **sin** herramientas:
 
-\`\`\`bash
+```bash
 uv run --extra train python -m tool_use.compare \
   --model Qwen/Qwen3-1.7B --brain base \
   --bench tool_use/bench/cases.jsonl --max-turns 5 \
   --out reports/phase2_base_v2.json
-\`\`\`
+```
 
 Evaluación del mismo modelo equipado con LoRA de la fase 1:
 
-\`\`\`bash
+```bash
 export ARCA_RLM_ADAPTER=/ruta/al/adaptador/grpo
 export ARCA_TOOLS_MODEL_ID=$(uv run python -c \
   'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json").read_text())["base_model_name_or_path"])')
@@ -142,7 +142,7 @@ uv run --extra train python -m tool_use.compare \
   --model "$ARCA_TOOLS_MODEL_ID" --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
   --bench tool_use/bench/cases.jsonl --max-turns 5 \
   --out reports/phase2_grpo_v2.json
-\`\`\`
+```
 
 Si el LoRA se entrenó sobre otro modelo base, ejecutar también la evaluación
 base de esa misma arquitectura para comparar justamente.
