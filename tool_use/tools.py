@@ -95,8 +95,11 @@ def calculator(expression: str) -> float:
     return float(evaluate(ast.parse(expression, mode="eval").body))
 
 
+# Preserve the teaching examples above for existing tests, but expose
+# only domain tools to the IMV/CAPI model.
+from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe
+
+
 def default_registry() -> ToolRegistry:
-    """The registry the executor and the agent use. Register your tools here."""
-    registry = ToolRegistry().register(get_weather, calculator)
-    # Tu turno: registry.register(my_domain_api, my_domain_compute, my_domain_action)
-    return registry
+    """Register only IMV/CAPI, BDNS and report-writing tools."""
+    return ToolRegistry().register(calcular_imv, consultar_ayudas, guardar_informe)
