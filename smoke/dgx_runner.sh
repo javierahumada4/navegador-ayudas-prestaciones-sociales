@@ -37,6 +37,15 @@ if ! git push -q --dry-run origin "HEAD:refs/heads/$BRANCH" 2>/dev/null; then
     echo "!!! Arréglalo una vez (docs/github.md: token o 'gh auth login') y relanza."
 fi
 echo "[$(date -Is)] runner up on $BRANCH, every ${INTERVAL}s"
+# Low-memory installs: a parallel torch+CUDA unpack can trip the session's cgroup OOM killer.
+export UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_DOWNLOADS=2 UV_CONCURRENT_BUILDS=1
+# Diagnostics first, pushed before any heavy job, so a killed session still leaves evidence.
+mkdir -p jobs/done
+{ date -Is; hostname; nproc; free -g; df -h "$HOME" | tail -1
+  cat /sys/fs/cgroup/memory.max 2>/dev/null; ulimit -a | grep -E "memory|processes"
+  nvidia-smi -L 2>/dev/null; command -v uv; } > jobs/done/runner.log 2>&1
+git add -f jobs/done/runner.log && git commit -qm "update: dgx runner up" --no-verify \
+    && { git pull -q --rebase origin "$BRANCH" && git push -q origin "HEAD:$BRANCH"; }
 
 while true; do
     git fetch -q origin "$BRANCH" && git checkout -q -B "$BRANCH" "origin/$BRANCH"
