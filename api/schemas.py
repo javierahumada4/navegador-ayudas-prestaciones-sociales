@@ -68,6 +68,11 @@ class ReasoningResponse(BaseModel):
 class ToolsRequest(BaseModel):
     query: str = Field(..., min_length=1)
     max_turns: int = Field(default=5, ge=1, le=20, description="Maximum tool-calling rounds.")
+    confirmar_guardado: bool = Field(
+        default=False,
+        description="Explicit user authorization to write the deterministic IMV report to disk.",
+        strict=True,
+    )
 
 
 class ToolCallRecord(BaseModel):
