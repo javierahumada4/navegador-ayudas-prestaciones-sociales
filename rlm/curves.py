@@ -6,6 +6,9 @@ plotted. Several runs can be overlaid to compare hyperparameters:
 
     uv run python -m rlm.curves --runs grpo=rlm/weights/grpo_lora --out reports/grpo_curves.png
     uv run python -m rlm.curves --runs beta0=rlm/weights/grpo_b0 beta004=rlm/weights/grpo_b004
+    uv run python -m rlm.curves --panels sft --window 1 --runs sft=<run>/weights/sft_lora
+
+The last command reads the newest checkpoint-*/trainer_state.json of an SFT run.
 """
 
 from __future__ import annotations
@@ -47,6 +50,18 @@ PANELS: list[tuple[str, list[tuple[str, str]]]] = [
     ),
     ("Entropía", [("entropy", "entropía")]),
 ]
+
+# SFTTrainer logs (trainer_state.json of the last SFT checkpoint).
+SFT_PANELS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Pérdida de entrenamiento", [("loss", "pérdida")]),
+    ("Exactitud por token", [("mean_token_accuracy", "exactitud")]),
+    ("Entropía", [("entropy", "entropía")]),
+    ("Norma del gradiente", [("grad_norm", "norma")]),
+    ("Learning rate", [("learning_rate", "lr")]),
+    ("Tokens vistos", [("num_tokens", "tokens")]),
+]
+
+PANEL_SETS = {"grpo": PANELS, "sft": SFT_PANELS}
 
 
 def find_history(path: str | Path) -> Path:
@@ -90,7 +105,9 @@ def series(history: list[dict], key: str) -> tuple[list[int], list[float]]:
     return [s for s, _ in points], [v for _, v in points]
 
 
-def plot_runs(runs: dict[str, list[dict]], out: Path, window: int) -> list[str]:
+def plot_runs(
+    runs: dict[str, list[dict]], out: Path, window: int, panel_set: str = "grpo"
+) -> list[str]:
     """Draw one panel per metric group; returns the titles that were drawn."""
     import matplotlib
 
@@ -100,7 +117,7 @@ def plot_runs(runs: dict[str, list[dict]], out: Path, window: int) -> list[str]:
 
     panels = [
         (title, [(k, label) for k, label in keys if any(series(h, k)[0] for h in runs.values())])
-        for title, keys in PANELS
+        for title, keys in PANEL_SETS[panel_set]
     ]
     panels = [(title, keys) for title, keys in panels if keys]
     cols = 2
@@ -142,6 +159,9 @@ def main() -> None:
     )
     parser.add_argument("--window", type=int, default=5, help="moving-average window")
     parser.add_argument("--out", default="reports/grpo_curves.png")
+    parser.add_argument(
+        "--panels", choices=sorted(PANEL_SETS), default="grpo", help="metric panels to draw"
+    )
     args = parser.parse_args()
 
     runs = {}
@@ -149,7 +169,7 @@ def main() -> None:
         name, path = pair.split("=", 1) if "=" in pair else (Path(pair).name, pair)
         runs[name] = load_history(path)
         print(f"{name}: {len(runs[name])} logged steps from {find_history(path)}")
-    drawn = plot_runs(runs, Path(args.out), args.window)
+    drawn = plot_runs(runs, Path(args.out), args.window, args.panels)
     print(f"{len(drawn)} panels -> {args.out}")
 
 
