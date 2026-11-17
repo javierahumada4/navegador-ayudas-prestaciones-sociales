@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import requests
 
+from tool_use.imv_templates import explicar_imv
+from tool_use.imv_tools import calcular_imv
 from tool_use.registry import ToolRegistry, tool
 
 OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
@@ -97,6 +99,6 @@ def calculator(expression: str) -> float:
 
 def default_registry() -> ToolRegistry:
     """The registry the executor and the agent use. Register your tools here."""
-    registry = ToolRegistry().register(get_weather, calculator)
-    # Tu turno: registry.register(my_domain_api, my_domain_compute, my_domain_action)
-    return registry
+    # Domain tools only; teacher examples remain importable but are not exposed.
+    # A third tool will be selected after agreeing on an HTTP/side-effect use case.
+    return ToolRegistry().register(calcular_imv, explicar_imv)
