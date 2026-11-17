@@ -197,7 +197,7 @@ class ToolLoop:
         ]
         if report_requested:
             if saved:
-                # File creation confirmation is an OBSERVATION, never an LLM assertion.
+                # The file path and success are taken ONLY from actual tool execution.
                 path = saved[-1].result.get("archivo")
                 answer = (
                     f"Informe guardado correctamente en: {path}. "
@@ -211,19 +211,25 @@ class ToolLoop:
                 )
                 if not cause:
                     cause = "el modelo no completó la escritura del archivo"
-                # Do not propagate any unsupported "already saved" claim from the model.
+                original = answer.strip()
                 answer = f"No se ha guardado ningún informe. Motivo: {cause}."
+                # Preserve an informational request for missing facts but never
+                # reproduce an unverified assertion that a file was saved.
                 if not any(r.ok and r.name == "calcular_imv" for r in records):
-                    if answer and not re.search(r"(?i)\bguardad[oa]|archivo creado|fichero creado", answer):
-                        pass
+                    if original and not re.search(
+                        r"(?i)\b(?:he|hemos|se ha|está|ya está)\s+"
+                        r"(?:guardado|creado|generado)\b", original
+                    ):
+                        answer += " " + original
         else:
-            # The model must not claim file creation without a successful tool record.
+            # If the user did not authorize saving, the model cannot assert it did.
             if not saved and re.search(
                 r"(?i)\b(?:he|hemos|se ha|está)\s+"
                 r"(?:guardado|creado|generado)\b.{0,35}\b(?:archivo|fichero|informe)\b",
                 answer
             ):
-                answer = "No se ha creado ningún archivo. " + (
+                answer = (
+                    "No se ha creado ningún archivo. "
                     "La consulta solo ha producido una respuesta de texto."
                 )
         return ToolsResponse(
