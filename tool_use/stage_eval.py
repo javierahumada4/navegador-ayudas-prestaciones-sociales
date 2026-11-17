@@ -14,7 +14,6 @@ import argparse
 import json
 import os
 import re
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -30,6 +29,7 @@ from tool_use.metrics import (
 )
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
+from tool_use.tracing import case_trace_path, create_artifact_run
 
 STAGES = ("imv", "bdns", "report", "integration")
 STAGE_TOOLS = {
@@ -370,16 +370,26 @@ def summarize_stage(rows: list[dict]) -> dict[str, Any]:
 def evaluate_stage_cases(
     cases: list[dict[str, Any]], loop: ToolLoop, stage: str, *,
     max_turns: int = 5, report_api: str = "fixture", report_root: Path | None = None,
+    artifact_run: Path | None = None,
 ) -> dict[str, Any]:
     """Execute one isolated stage, injectable with scripted generations for CPU tests."""
     rows = []
     for idx, case in enumerate(cases, 1):
         started = time.perf_counter()
-        prior = seed_report_observations(case, report_api=report_api) if stage == "report" else []
+        trace_path = (
+            case_trace_path(artifact_run, stage, idx, case.get("id", f"case-{idx}"))
+            if artifact_run is not None else None
+        )
+        prior = []
         try:
+            prior = (
+                seed_report_observations(case, report_api=report_api)
+                if stage == "report" else []
+            )
             response = loop.run(
                 case["query"], max_turns=max_turns,
                 prior_observations=prior or None,
+                trace_path=trace_path,
             )
             answer = response.answer
             calls = [c.model_dump(mode="json") for c in response.tool_calls]
@@ -404,6 +414,8 @@ def evaluate_stage_cases(
                 "scores": {"stage": stage, "success": False},
             }
         row["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        if trace_path is not None:
+            row["trace_path"] = str(trace_path.resolve()) if trace_path.exists() else None
         rows.append(row)
         print(
             f"[{stage} {idx:02d}/{len(cases):02d}] "
@@ -437,38 +449,44 @@ def main() -> None:
         "evaluation": "isolated_phase4_like",
         "report_api_default": args.report_api,
     }
+    artifact_run = create_artifact_run(args.out)
+    outcomes["artifacts_dir"] = str(artifact_run)
+    outcomes["trace_format"] = "jsonl (one file per case, each event flushed immediately)"
+    outcomes["reports_dir"] = str(artifact_run / "reports")
     shared_model = None
-    with tempfile.TemporaryDirectory(prefix="arca-stage-reports-") as root:
-        old = os.environ.get("ARCA_IMV_REPORTS_DIR")
-        os.environ["ARCA_IMV_REPORTS_DIR"] = root
-        try:
-            for stage in stages:
-                path = Path(__file__).with_name("bench") / f"{stage}.jsonl"
-                cases = load_bench(path)
-                if args.limit is not None:
-                    cases = cases[:args.limit]
-                loop = ToolLoop(
-                    registry=registry_for_stage(stage), model_id=args.model,
-                    brain=args.brain, adapter_path=args.adapter,
-                )
-                if shared_model is not None:
-                    loop.model, loop.tokenizer = shared_model
-                outcome = evaluate_stage_cases(
-                    cases, loop, stage, max_turns=args.max_turns,
-                    report_api=args.report_api, report_root=Path(root),
-                )
-                if loop.model is not None:
-                    shared_model = loop.model, loop.tokenizer
-                outcomes[stage] = outcome
-        finally:
-            if old is None:
-                os.environ.pop("ARCA_IMV_REPORTS_DIR", None)
-            else:
-                os.environ["ARCA_IMV_REPORTS_DIR"] = old
+    old = os.environ.get("ARCA_IMV_REPORTS_DIR")
+    os.environ["ARCA_IMV_REPORTS_DIR"] = str(artifact_run / "reports")
+    try:
+        for stage in stages:
+            path = Path(__file__).with_name("bench") / f"{stage}.jsonl"
+            cases = load_bench(path)
+            if args.limit is not None:
+                cases = cases[:args.limit]
+            loop = ToolLoop(
+                registry=registry_for_stage(stage), model_id=args.model,
+                brain=args.brain, adapter_path=args.adapter,
+            )
+            if shared_model is not None:
+                loop.model, loop.tokenizer = shared_model
+            outcome = evaluate_stage_cases(
+                cases, loop, stage, max_turns=args.max_turns,
+                report_api=args.report_api,
+                report_root=artifact_run / "reports",
+                artifact_run=artifact_run,
+            )
+            if loop.model is not None:
+                shared_model = loop.model, loop.tokenizer
+            outcomes[stage] = outcome
+    finally:
+        if old is None:
+            os.environ.pop("ARCA_IMV_REPORTS_DIR", None)
+        else:
+            os.environ["ARCA_IMV_REPORTS_DIR"] = old
 
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(outcomes, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Trazas y archivos persistentes: {artifact_run}", flush=True)
     for stage in stages:
         print(stage, json.dumps(outcomes[stage]["summary"], ensure_ascii=False, indent=2))
 
