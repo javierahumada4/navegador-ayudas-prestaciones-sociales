@@ -12,6 +12,7 @@
 # serves the API. Anyone who can push to BRANCH can run code here: keep it a team branch.
 # Stop it with: pkill -f dgx_runner.sh
 set -u
+export GIT_TERMINAL_PROMPT=0  # fail instead of hanging on a credential prompt
 BRANCH="${1:?usage: dgx_runner.sh <branch> [interval_seconds]}"
 INTERVAL="${2:-300}"
 WORK_DIR="${ARCA_WORK_DIR:-$HOME/clusters/dgx}"
