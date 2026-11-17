@@ -40,18 +40,18 @@ def build_system_prompt(registry: ToolRegistry) -> str:
 def _report_requested(query: str) -> bool:
     """Recognize an affirmative request to create a report file, not just discuss one."""
     if re.search(
-        r"(?i)\\b(?:no|sin)\\s+(?:quiero\\s+)?(?:un\\s+)?"
-        r"(?:informe|archivo|fichero|documento|txt)\\b", query
+        r"(?i)\b(?:no|sin)\s+(?:quiero\s+)?(?:un\s+)?"
+        r"(?:informe|archivo|fichero|documento|txt)\b", query
     ):
         return False
     if re.search(
-        r"(?i)\\b(?:no|sin)\\s+(?:quiero\\s+)?(?:guardar|generar|crear)\\b", query
+        r"(?i)\b(?:no|sin)\s+(?:quiero\s+)?(?:guardar|generar|crear)\b", query
     ):
         return False
     if re.search(
-        r"(?i)^\\s*¿?\\s*(?:como|cómo|que|qué)\\s+(?:se\\s+)?"
-        r"(?:guardar|generar|crear|hacer)\\s+(?:un\\s+)?"
-        r"(?:informe|archivo|fichero|documento|txt)\\b", query
+        r"(?i)^\s*¿?\s*(?:como|cómo|que|qué)\s+(?:se\s+)?"
+        r"(?:guardar|generar|crear|hacer)\s+(?:un\s+)?"
+        r"(?:informe|archivo|fichero|documento|txt)\b", query
     ):
         return False
     action = re.search(
