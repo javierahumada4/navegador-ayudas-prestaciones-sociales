@@ -120,7 +120,7 @@ def test_invalid_imv_tool_call_is_observed_then_repaired():
         "imv", case, response.answer,
         [r.model_dump(mode="json") for r in response.tool_calls],
     )
-    assert scored["repaired_validation_error"]
+    assert scored["had_schema_or_parse_error"] and scored["recovered_after_error"]
     assert scored["arguments_ok"] and scored["oracle_ok"]
 
 
@@ -281,3 +281,24 @@ def test_offline_stage_evaluator_returns_independent_denominators():
     assert output["summary"]["n_cases"] == 1
     assert output["summary"]["clarification_ok_n"] == 1
     assert output["summary"]["file_verified_n"] == 0
+
+
+def test_bdns_empty_results_must_not_be_presented_as_grants(monkeypatch):
+    case = sample("bdns", lambda c: c["needs_tool"])
+    def empty_http(url, *, params, headers, timeout, follow_redirects):
+        return httpx.Response(
+            200, json={"content": [], "totalElements": 0},
+            request=httpx.Request("GET", url),
+        )
+    monkeypatch.setattr(httpx, "get", empty_http)
+    wrong = scripted(
+        "bdns", block("consultar_ayudas", case["expected_arguments"]),
+        "La BDNS ha encontrado tres convocatorias de alquiler.",
+    ).run(case["query"])
+    scores = score_stage(
+        "bdns", case, wrong.answer,
+        [c.model_dump(mode="json") for c in wrong.tool_calls],
+    )
+    assert scores["api_http_ok"]
+    assert not scores["source_grounding_heuristic"]
+    assert not scores["success"]
