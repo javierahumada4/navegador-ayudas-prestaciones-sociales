@@ -7,6 +7,7 @@ measured with *declared heuristics*, not assumed to be legally validated.
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 import re
 import unicodedata
 from pathlib import Path
@@ -125,7 +126,7 @@ def score_workflow(
     successful = [
         c["name"] for c in tool_calls if c.get("ok")
     ]
-    required_ok = all(name in successful for name in required)
+    required_ok = not (Counter(required) - Counter(successful))
     if not required:
         required_ok = not tool_calls
     if "guardar_informe" in required:
