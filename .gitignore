@@ -48,3 +48,6 @@ rlm/data/*.jsonl
 rlm/test_ood/*.jsonl
 reports/*.json
 reports/*.md
+
+# Generated IMV reports may contain personal financial details.
+reports/imv/
