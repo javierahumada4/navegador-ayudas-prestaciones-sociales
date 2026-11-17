@@ -1,71 +1,91 @@
 #!/usr/bin/env bash
 # Unattended job queue for the DGX (no SSH there, so work arrives through GitHub).
 #
-# Every INTERVAL seconds: pull BRANCH into $ARCA_WORK_DIR/arca-runner, run each jobs/*.sh with
-# no log yet (name order, one at a time, env OUT=jobs/done/<name>), commit the log plus
-# whatever the job left in $OUT and push it back. Start it once per DGX session, in tmux:
+# Every INTERVAL seconds: pull BRANCH, run each jobs/*.sh with no log yet (name order, one at
+# a time, env OUT=jobs/done/<name>), commit the log plus whatever the job left in $OUT and push
+# it back. Start it from a clone of the repo, in the DGX terminal:
 #
-#     export ARCA_WORK_DIR=$HOME; git clone -q https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales.git ~/arca-runner 2>/dev/null; cd ~/arca-runner && git fetch -q origin feat/night-improvements && git checkout -q -B feat/night-improvements origin/feat/night-improvements && bash smoke/dgx_runner.sh feat/night-improvements
+#     cd ~/arca-runner && bash smoke/dgx_runner.sh feat/night-improvements
 #
-# The runner runs from a private copy and re-executes itself when the branch changes this
-# file, so it can be fixed remotely. Anyone who can push to BRANCH runs code here: keep it a
-# team branch and stop it when idle (Ctrl+C, or pkill -f dgx_runner).
-set -u
-[ -n "${RUNNER_DEBUG:-}" ] && set -x  # RUNNER_DEBUG=1: trace every command (survives re-exec)
-export GIT_TERMINAL_PROMPT=0  # fail instead of hanging on a credential prompt
-BRANCH="${1:?usage: dgx_runner.sh <branch> [interval_seconds]}"
-INTERVAL="${2:-120}"
-if [ -z "${ARCA_WORK_DIR:-}" ]; then
-    ARCA_WORK_DIR="$HOME/clusters/dgx"; [ -d "$ARCA_WORK_DIR" ] || ARCA_WORK_DIR="$HOME"
-fi
-export ARCA_WORK_DIR
-CLONE="$ARCA_WORK_DIR/arca-runner"
-SELF="$ARCA_WORK_DIR/.dgx_runner.sh"
+# Every step is printed and appended to ~/runner-steps.log, so a dead session leaves a trace.
+# Anyone who can push to BRANCH runs code here: keep it a team branch, stop it when idle.
+# The whole script is one function: bash parses it fully before running, so a git checkout
+# that rewrites this file mid-run cannot corrupt the running copy.
 
-# Run from a copy: git checkout rewrites the repo file under a running bash.
-if [ "$0" != "$SELF" ]; then cp "$0" "$SELF"; exec bash "$SELF" "$@"; fi
+step() { echo "[runner $(date +%T)] $*" | tee -a "$HOME/runner-steps.log" >&2; }
 
-[ -d "$CLONE/.git" ] || git clone -q https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales.git "$CLONE"
-cd "$CLONE" || exit 1
-source smoke/dgx_env.sh >/dev/null || true
-git config user.name >/dev/null || git config user.name dgx-runner
-git config user.email >/dev/null || git config user.email dgx-runner@users.noreply.github.com
-if [ -f "$ARCA_WORK_DIR/.env" ]; then set -a; . "$ARCA_WORK_DIR/.env"; set +a; fi
-[ -f .env ] && { set -a; . ./.env; set +a; }
+main() {
+    step "1 start: shell=$BASH_VERSION pwd=$PWD args=$*"
+    BRANCH="${1:?usage: dgx_runner.sh <branch> [interval_seconds]}"
+    INTERVAL="${2:-120}"
+    export GIT_TERMINAL_PROMPT=0  # fail instead of hanging on a credential prompt
+    if [ -z "${ARCA_WORK_DIR:-}" ]; then
+        ARCA_WORK_DIR="$HOME/clusters/dgx"; [ -d "$ARCA_WORK_DIR" ] || ARCA_WORK_DIR="$HOME"
+    fi
+    export ARCA_WORK_DIR
+    step "2 work dir $ARCA_WORK_DIR; repo $(git rev-parse --show-toplevel 2>&1)"
+    cd "$(git rev-parse --show-toplevel)" || { step "not inside the repo clone"; return 1; }
 
-if ! git push -q --dry-run origin "HEAD:refs/heads/$BRANCH" 2>/dev/null; then
-    echo "!!! git push no funciona desde aquí: los resultados no llegarán a GitHub."
-    echo "!!! Arréglalo una vez (docs/github.md: token o 'gh auth login') y relanza."
-fi
-echo "[$(date -Is)] runner up on $BRANCH, every ${INTERVAL}s"
-# Low-memory installs: a parallel torch+CUDA unpack can trip the session's cgroup OOM killer.
-export UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_DOWNLOADS=2 UV_CONCURRENT_BUILDS=1
-# Diagnostics first, pushed before any heavy job, so a killed session still leaves evidence.
-mkdir -p jobs/done
-{ date -Is; hostname; nproc; free -g; df -h "$HOME" | tail -1
-  cat /sys/fs/cgroup/memory.max 2>/dev/null; ulimit -a | grep -E "memory|processes"
-  nvidia-smi -L 2>/dev/null; command -v uv; } > jobs/done/runner.log 2>&1
-git add -f jobs/done/runner.log && git commit -qm "update: dgx runner up" --no-verify \
-    && { git pull -q --rebase origin "$BRANCH" && git push -q origin "HEAD:$BRANCH"; }
-
-while true; do
-    git fetch -q origin "$BRANCH" && git checkout -q -B "$BRANCH" "origin/$BRANCH"
-    cmp -s smoke/dgx_runner.sh "$SELF" || { echo "runner updated, restarting"; cp smoke/dgx_runner.sh "$SELF"; exec bash "$SELF" "$@"; }
-    for job in jobs/*.sh; do
-        [ -e "$job" ] || continue
-        name="$(basename "$job" .sh)"
-        log="jobs/done/$name.log"
-        [ -e "$log" ] && continue
-        mkdir -p "jobs/done/$name"
-        echo "[$(date -Is)] start $name"
-        { echo "commit $(git rev-parse --short HEAD) start $(date -Is)"
-          OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-50400}" bash "$job"
-          echo "exit=$? end $(date -Is)"; } > "$log" 2>&1
-        echo "[$(date -Is)] done $name: $(tail -1 "$log")"
-        git add -f "$log" "jobs/done/$name"
-        git commit -qm "update: dgx job $name" --no-verify
-        until git pull -q --rebase origin "$BRANCH" && git push -q origin "HEAD:$BRANCH"; do sleep 30; done
-        continue 2  # re-fetch between jobs: newer pushes may fix the queue
+    step "3 loading smoke/dgx_env.sh"
+    source smoke/dgx_env.sh || step "dgx_env.sh returned $?"
+    step "4 env loaded: uv=$(command -v uv) HF_HOME=${HF_HOME:-}"
+    git config user.name >/dev/null || git config user.name dgx-runner
+    git config user.email >/dev/null || git config user.email dgx-runner@users.noreply.github.com
+    for f in "$ARCA_WORK_DIR/.env" ./.env; do
+        [ -f "$f" ] && { step "5 sourcing $f"; set -a; . "$f"; set +a; }
     done
-    sleep "$INTERVAL"
-done
+    export UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_DOWNLOADS=2 UV_CONCURRENT_BUILDS=1
+
+    step "6 checking git push"
+    if ! git push -q --dry-run origin "HEAD:refs/heads/$BRANCH"; then
+        step "!!! git push no funciona: los resultados no llegarán a GitHub"
+    fi
+    step "7 host diagnostics"
+    mkdir -p jobs/done
+    { date -Is; hostname; nproc; free -g; df -h "$HOME" | tail -1
+      cat /sys/fs/cgroup/memory.max 2>/dev/null; ulimit -a | grep -E "memory|processes"
+      nvidia-smi -L 2>/dev/null; command -v uv; } > jobs/done/runner.log 2>&1
+    git add -f jobs/done/runner.log && git commit -qm "update: dgx runner up" --no-verify
+    push
+    step "8 runner up on $BRANCH, every ${INTERVAL}s"
+
+    local self_hash
+    self_hash="$(git hash-object smoke/dgx_runner.sh)"
+    while true; do
+        git fetch -q origin "$BRANCH" && git reset -q --hard "origin/$BRANCH"
+        if [ "$(git hash-object smoke/dgx_runner.sh)" != "$self_hash" ]; then
+            step "runner updated on the branch, restarting"
+            exec bash smoke/dgx_runner.sh "$@"
+        fi
+        for job in jobs/*.sh; do
+            [ -e "$job" ] || continue
+            name="$(basename "$job" .sh)"
+            log="jobs/done/$name.log"
+            [ -e "$log" ] && continue
+            mkdir -p "jobs/done/$name"
+            step "job $name: start"
+            { echo "commit $(git rev-parse --short HEAD) start $(date -Is)"
+              OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-50400}" bash "$job"
+              echo "exit=$? end $(date -Is)"; } > "$log" 2>&1
+            step "job $name: $(tail -1 "$log")"
+            git add -f "$log" "jobs/done/$name"
+            git commit -qm "update: dgx job $name" --no-verify
+            push
+            continue 2  # re-fetch between jobs: newer pushes may fix the queue
+        done
+        sleep "$INTERVAL"
+    done
+}
+
+push() {
+    local tries=0
+    until git pull -q --rebase origin "$BRANCH" && git push -q origin "HEAD:$BRANCH"; do
+        tries=$((tries + 1)); step "push failed ($tries), retrying in 30 s"
+        [ "$tries" -ge 20 ] && { step "giving up on this push"; return 1; }
+        sleep 30
+    done
+    step "pushed $(git rev-parse --short HEAD)"
+}
+
+main "$@"
+exit
