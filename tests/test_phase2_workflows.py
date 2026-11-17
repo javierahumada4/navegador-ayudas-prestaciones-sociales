@@ -2,19 +2,14 @@
 
 Offline, with deterministic scripted model completions. No GPU or BDNS network.
 """
-import hashlib
 import json
 from pathlib import Path
 
-import pytest
-
 from tool_use.compare import evaluate_configuration
-from tool_use.domain_tools import rules_for_date
 from tool_use.executor import ToolLoop, _money_is_mentioned
 from tool_use.evaluate import load_bench
 from tool_use.metrics import (
-    expected_engine_result, explanation_checks, money_fields_present,
-    score_workflow, summarise_workflows,
+    expected_engine_result, explanation_checks, score_workflow,
 )
 from tool_use.tools import default_registry
 
@@ -214,7 +209,7 @@ def test_multi_step_requires_all_calls_and_duplicates():
             "expected_tools": ["consultar_ayudas", "consultar_ayudas"]}
     once = [{"name": "consultar_ayudas", "ok": True}]
     assert not score_workflow(both, "Encontré ayudas", once)["multi_step_success"]
-    twice = twice = once + [{"name": "consultar_ayudas", "ok": True}]
+    twice = once + [{"name": "consultar_ayudas", "ok": True}]
     assert score_workflow(both, "Encontré ayudas", twice)["multi_step_success"]
 
 
