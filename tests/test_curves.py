@@ -36,5 +36,19 @@ def test_plot_skips_missing_metrics(tmp_path):
     assert "Entropía" not in drawn and "Recompensa total" in drawn
 
 
+SFT_HISTORY = [
+    {"step": 10, "loss": 0.9, "mean_token_accuracy": 0.75, "grad_norm": 1.2, "learning_rate": 2e-4},
+    {"step": 20, "loss": 0.6, "mean_token_accuracy": 0.82, "grad_norm": 0.8, "learning_rate": 1e-4},
+]
+
+
+def test_plot_sft_panels(tmp_path):
+    out = tmp_path / "sft.png"
+    drawn = plot_runs({"sft": SFT_HISTORY}, out, window=1, panel_set="sft")
+    assert out.exists()
+    assert "Pérdida de entrenamiento" in drawn and "Exactitud por token" in drawn
+    assert "Recompensa total" not in drawn and "Entropía" not in drawn
+
+
 def load_history_list():
     return [e for e in HISTORY if "train_runtime" not in e]
