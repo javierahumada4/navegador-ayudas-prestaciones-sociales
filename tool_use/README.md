@@ -1,107 +1,157 @@
-# Fase 2 — Herramientas IMV/CAPI (ARCA)
+# Fase 2 — Herramientas y evaluación integral IMV/CAPI
 
-**Endpoint:** `POST /tools`. Implementación manual sin framework de agentes. Base: `main`
-con motor IMV/CAPI de fase 1 intacto. La carpeta `rlm/` no se modifica.
+**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tool-use-imv-bdns-informes.
+Motor determinista y ruleset IMV 2026 reutilizados de main, sin tocar la fase 1.
 
-## Herramientas y justificación
+## Tres herramientas reales
 
-| Herramienta | Categoría del enunciado | Resultado |
-|---|---|---|
-| `calcular_imv(case: IMVCase)` | Cálculo local | IMV, CAPI, total, motivos y versión de reglas |
-| `consultar_ayudas(tema, max_resultados)` | API HTTP externa | Convocatorias públicas registradas en BDNS |
-| `guardar_informe(contenido)` | Acción observable | Ruta, tamaño y SHA256 de un TXT generado |
+| Nombre | Tipo | Trabajo |
+| --- | --- | --- |
+| calcular_imv(case: IMVCase) | Cálculo | Validar caso y calcular IMV/CAPI con JSON por fecha |
+| consultar_ayudas(tema, max_resultados) | HTTP | Consultar convocatorias reales en la API BDNS |
+| guardar_informe(contenido) | Efecto persistente | Escribir en TXT el texto íntegro compuesto por el LLM |
 
-**El modelo escribe el informe en lenguaje natural.** `guardar_informe` únicamente crea
-el archivo con su texto exacto; no usa ninguna plantilla de redacción. Si no se
-ha solicitado explícitamente guardar el archivo, la ejecución lo rechaza. Requiere
-una simulación IMV previa y un texto que refleje los tres importes devueltos
-por el motor. El usuario debe solicitar explícitamente la generación del fichero;
-el endpoint no ofrece consentimiento interactivo adicional.
+El modelo **redacta libremente** el informe. La herramienta guardar_informe solo
+escribe el fichero con esos bytes; no se utiliza ninguna plantilla de texto.
 
-**Datos oficiales:** el endpoint público de BDNS `/convocatorias/busqueda` recibe
-`descripcion`, `descripcionTipoBusqueda=1`, `page`, `pageSize`, `order` y `direccion`.
-Se valida la longitud de consulta, se acota la página y se aplica timeout de 15 s.
-Los errores HTTP o de formato se comunican como observaciones, sin resultados
-simulados. BDNS contiene convocatorias de subvenciones, no todas las
-prestaciones sociales; las fechas de apertura y la elegibilidad no se infieren
-de los resultados. Documentación:
-https://www.infosubvenciones.es/bdnstrans/doc/swagger
+El bucle manual (executor.py) soporta llamadas paralelas o encadenadas y
+reinyecta observaciones de ejecución o errores de Pydantic. Si el usuario ha
+solicitado explícitamente un informe:
 
-**Rulesets:** `rules_for_date` busca los JSON `rlm/rulesets/imv_*.json` con
-rangos de vigencia. No se generan reglas con el LLM. Si no existe exactamente
-un ruleset para la fecha, se devuelve un error; el único existente en `main`
-corresponde a 2026. No se inventan reglas para otros años.
+1. El modelo debe calcular el IMV/CAPI y recibir la observación.
+2. Se le recuerda que aún debe llamar a guardar_informe cuando intenta terminar
+   antes. Si genera la redacción sin el marcador de tool-call, el orquestador
+   puede enviar **ese texto exacto del modelo** a la herramienta, sin plantilla.
+3. La herramienta solo se ejecuta si el texto cumple una comprobación mínima
+   de importes. Se valida el permiso a partir de la solicitud expresa; **no hay
+   interfaz de confirmación interactiva** en esta fase.
+4. La respuesta confirma el guardado **solo tras un resultado ok de la tool**,
+   usando la ruta real devuelta. Si no se pudo escribir, hay un error explícito:
+   nunca se comunica un éxito inventado.
+5. Los archivos viven en reports/imv/ o ARCA_IMV_REPORTS_DIR, con nombres
+   aleatorios y permisos restrictivos. No se reciben rutas elegidas por el LLM
+   ni se sobrescriben archivos. reports/imv/ está excluido de Git.
 
-## Implementación
+**Garantías y límites:** el motor simula casos normalizados (no resolución
+administrativa). La comprobación previa de importes en el informe es numérica
+y mínima; la auditoría de la precisión del lenguaje se realiza separadamente.
+BDNS no engloba todas las prestaciones, no acredita elegibilidad ni plazos
+abiertos. Endpoint: https://www.infosubvenciones.es/bdnstrans/doc/swagger.
 
-- `registry.py`: infraestructura docente existente; Pydantic valida antes de ejecutar.
-- `parser.py`: infraestructura docente existente; admite varios bloques `<tool_call>`.
-- `imv_schema.py`: entradas tipadas, campos estrictos y comprobación de consistencia.
-- `domain_tools.py`: motor 2026, llamada BDNS real y persistencia TXT acotada.
-- `tools.py`: registro de tres herramientas del dominio; ejemplos docentes conservados.
-- `executor.py`: bucle completo generación → parseo → ejecución → observación → respuesta.
-- `bench/cases.jsonl`: 30 casos (14 cálculo, 10 HTTP, 6 sin herramienta; tres
-  de los casos de cálculo incluyen petición de informe posterior).
-- `evaluate.py`: exactitud de primera selección y de argumentos.
-- `compare.py`: mismo modelo **con y sin herramientas**, guardando resultados reales.
-- `tests/test_phase2_imv_tools.py`: pruebas offline del flujo y sus herramientas.
+Los rulesets se seleccionan por fecha desde rlm/rulesets/imv_*.json. Solo existe
+el de 2026 en main; fechas sin reglas unívocas producen un error.
 
-Las herramientas independientes pueden ejecutarse en un mismo turno, mientras que
-`guardar_informe` necesita haber recibido el resultado de `calcular_imv` en un
-turno previo. No se ejecutan procesos externos, ni se acepta una ruta suministrada
-por el LLM, ni se sobrescriben ficheros. Los informes pueden contener datos personales:
-se almacenan con permisos restrictivos en una ruta configurable mediante
-`ARCA_IMV_REPORTS_DIR`, no deben subirse al repositorio ni guardarse sin autorización.
+## Banco de 40 casos (bench/cases.jsonl)
 
-## Instalación, ejecución y verificación
+| Categoría | Casos | Objetivo |
+| --- | ---: | --- |
+| structured_calculation | 4 | Conserva casos directos de JSON de la fase inicial |
+| natural_calculation | 6 | Extraer fechas, miembros, relaciones e importes desde prosa |
+| negative_eligibility | 6 | Ingresos, patrimonio, activos, residencia, empresa y edad |
+| missing_facts | 5 | Pedir datos faltantes, no inventar y no guardar un fichero |
+| bdns_natural | 8 | Filtrado HTTP en lenguaje natural, número de resultados |
+| multi_step | 6 | IMV → informe, IMV + BDNS, IMV + BDNS → informe, 2 búsquedas |
+| no_tool | 5 | Responder preguntas conceptuales sin invocar herramientas |
 
-```bash
+Los casos multi_step incluyen expected_tools; las búsquedas repetidas exigen
+dos llamadas correctas. Para los cálculos existe expected_case (el JSON
+normalizado de referencia) aunque la query sea texto natural. No es legítimo
+tratar un caso con información desconocida como si sus valores fueran cero.
+
+En el anterior benchmark de 30 casos casi todas las peticiones de cálculo
+copiaban un JSON entero. Por tanto, **los porcentajes de los anteriores
+phase2_base.json / phase2_grpo.json no son comparables** con los nuevos.
+
+## Evaluación: primera llamada y flujo completo
+
+El evaluador del docente (evaluate.py) se conserva sin cambios en sus métricas
+de selección de la primera llamada y exactitud de sus argumentos.
+
+compare.py añade mediante metrics.py, por caso y agregado:
+
+- tool_sequence_success y multi_step_success: éxito de **todas** las herramientas
+  exigidas (también si se repite la misma herramienta).
+- all_tool_arguments_correct: compara argumentos de todas las acciones relevantes
+  con el gold y no solo la primera llamada. La comparación es estricta y puede
+  penalizar representaciones semánticamente equivalentes.
+- amount_fidelity: exige los tres importes IMV/CAPI/total en la respuesta o
+  en el informe escrito, cotejados con una ejecución independiente del motor.
+  Soporta decimales con punto o coma y separadores de miles.
+- report_created_and_verified: comprueba que un TXT existe de verdad dentro
+  del directorio aislado, y que UTF-8, contenido, bytes y SHA-256 coinciden
+  exactamente con el registro de guardar_informe.
+- report_amount_fidelity: importes dentro del archivo efectivamente guardado.
+- failed_reason_coverage y explanation_heuristic_accuracy: cobertura de los
+  motivos de denegación, presencia de IMV/CAPI y aviso de simulación. Son
+  **heurísticas léxicas**, no una certificación jurídica de las explicaciones.
+- conceptual_fact_accuracy: presencia de expresiones correctas para las siglas
+  IMV y CAPI cuando existe etiqueta gold; tampoco detecta negaciones por sí sola.
+- clarification_accuracy: no ejecutar tools y solicitar la información que
+  falta en solicitudes incompletas.
+- unverified_save_claims: número de respuestas que afirman haber guardado algo
+  sin constancia de ejecución satisfactoria.
+- end_to_end_success: conjunto de llamadas correctas, argumentos esperados,
+  verificación del archivo cuando procede, importes y comprobaciones de texto.
+
+Cada métrica agrega su propio denominador (_n) y usa null cuando no aplica.
+En particular, guardar_informe no se exige en casos sin solicitud de fichero.
+El script escribe una fila por caso con la traza completa y el gold usado.
+
+**Importante:** el directorio temporal de informes se elimina al finalizar
+compare.py. Las comprobaciones de existencia se hacen durante la ejecución,
+antes de borrarlo. Para auditar un TXT persistente, ejecutar POST /tools con
+ARCA_IMV_REPORTS_DIR apuntando a un directorio privado.
+
+## Comandos en la DGX
+
+Desde el directorio raíz del proyecto:
+
+\`\`\`bash
+git fetch origin
+git switch feat/fase2-tool-use-imv-bdns-informes
+git pull --ff-only
+source smoke/dgx_env.sh
 uv sync --extra train
-uv run pytest -q tests/test_phase2_imv_tools.py tests/test_tool_registry.py tests/test_tool_parser.py
-uv run arca-api
+uv run arca-check-gpu
+uv run pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_tool_registry.py tests/test_tool_parser.py
+\`\`\`
 
-# POST http://localhost:8000/tools
-curl -X POST http://localhost:8000/tools \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"¿Qué es el IMV?","max_turns":5}'
+Smoke rápido (dos casos, sin GPU en los tests pero con inferencia en la comparación):
 
-# En GPU, ejecutar la comparación REAL (no hay métricas precalculadas):
+\`\`\`bash
+uv run --extra train python -m tool_use.compare --limit 2 \
+  --model Qwen/Qwen3-1.7B --brain base --out reports/phase2_smoke.json
+\`\`\`
+
+Evaluación completa del base, 40 casos **con** y **sin** herramientas:
+
+\`\`\`bash
 uv run --extra train python -m tool_use.compare \
-  --bench tool_use/bench/cases.jsonl \
-  --out reports/phase2_comparison.json
+  --model Qwen/Qwen3-1.7B --brain base \
+  --bench tool_use/bench/cases.jsonl --max-turns 5 \
+  --out reports/phase2_base_v2.json
+\`\`\`
 
-# O ejecutar el evaluador docente:
-uv run --extra train python -m tool_use.evaluate \
-  --bench tool_use/bench/cases.jsonl \
-  --out reports/phase2_eval.json
-```
+Evaluación del mismo modelo equipado con LoRA de la fase 1:
 
-Variables: `ARCA_TOOLS_MODEL_ID` (por defecto `Qwen/Qwen3-1.7B`),
-`ARCA_TOOLS_BRAIN` (`base` o `rlm`), `ARCA_TOOLS_ADAPTER` / `ARCA_RLM_ADAPTER`,
-`ARCA_IMV_REPORTS_DIR`. Para comparar el RLM con su base, utilizar **el mismo**
-identificador que figura en `adapter_config.json`. La carga del modelo es diferida.
-El modelo debe descargar los pesos con acceso a Hugging Face en el primer uso.
+\`\`\`bash
+export ARCA_RLM_ADAPTER=/ruta/al/adaptador/grpo
+export ARCA_TOOLS_MODEL_ID=$(uv run python -c \
+  'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json").read_text())["base_model_name_or_path"])')
+uv run --extra train python -m tool_use.compare \
+  --model "$ARCA_TOOLS_MODEL_ID" --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
+  --bench tool_use/bench/cases.jsonl --max-turns 5 \
+  --out reports/phase2_grpo_v2.json
+\`\`\`
 
-## Métricas e interpretación pendiente de ejecución GPU
+Si el LoRA se entrenó sobre otro modelo base, ejecutar también la evaluación
+base de esa misma arquitectura para comparar justamente.
 
-El benchmark mide `tool_selection_accuracy` y `argument_accuracy`. La exactitud
-de argumentos es un criterio de coincidencia *exacta* normalizada, y puede penalizar
-JSON semánticamente equivalentes. En casos de informe se puntúa la **primera**
-llamada (cálculo), y el flujo completo se mide aparte con tests multi-step.
-Se registra también la traza de llamadas, las respuestas y los errores en el JSON
-de comparación. No presentamos porcentajes sin haber ejecutado la inferencia.
+## Qué analizar en la memoria de la práctica
 
-En el informe de la práctica comparar: sin herramientas, con herramientas
-en un solo turno, y con herramientas multi-step; documentar al menos cinco
-fallos reales, especialmente omisión de relaciones, fechas, formato de llamadas,
-parámetros BDNS y bloqueo de efectos secundarios.
-
-## Limitaciones
-
-El motor de `rlm/imv_engine.py` es un simulador de casos normalizados de 2026:
-su exactitud en la batería de la fase 1 **no implica** elegibilidad administrativa
-real. Los valores por defecto de algunos indicadores representan únicamente
-los supuestos del benchmark y deben verificarse en consultas ciudadanas reales.
-El adaptador RLM entrenado para salida numérica no garantiza buen tool calling:
-hay que medirlo con la comparación incluida. El RAG normativo corresponde
-a la fase 3, no se implementa aquí.
+Interpretar los falsos positivos del antiguo first-call accuracy, comparar
+base frente a GRPO, señalar cinco fallos reales de extracción de argumentos,
+residencia/ingresos, BDNS, nombres IMV/CAPI y redacción de informes. Probar
+los fallos de red. Analizar las diferencias entre llamadas independientes,
+paralelas y encadenadas. Ningún resultado de GPU se ha supuesto ni inventado;
+los JSON v2 deben generarse nuevamente en la DGX.
