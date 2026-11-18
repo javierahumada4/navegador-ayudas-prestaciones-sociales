@@ -69,11 +69,25 @@ main() {
             [ -e "$log" ] && continue
             mkdir -p "jobs/done/$name"
             step "job $name: start"
+            # Run in the background and push the tail of the log every PROGRESS_EVERY seconds,
+            # so a long job is observable from GitHub before it ends.
             { echo "commit $(git rev-parse --short HEAD) start $(date -Is)"
               OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-50400}" bash "$job"
-              echo "exit=$? end $(date -Is)"; } > "$log" 2>&1
+              echo "exit=$? end $(date -Is)"; } > "$log.part" 2>&1 &
+            local pid=$!
+            while kill -0 "$pid" 2>/dev/null; do
+                for _ in $(seq "${PROGRESS_EVERY:-600}"); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+                kill -0 "$pid" 2>/dev/null || break
+                tail -c 20000 "$log.part" | grep -v "it/s\]" | tail -60 > "jobs/done/$name.progress.log"
+                git add -f "jobs/done/$name.progress.log"
+                git commit -qm "update: dgx progress $name" --no-verify && push
+            done
+            wait "$pid"
+            mv "$log.part" "$log"
+            rm -f "jobs/done/$name.progress.log"
             step "job $name: $(tail -1 "$log")"
             git add -f "$log" "jobs/done/$name"
+            git rm -q --cached --ignore-unmatch "jobs/done/$name.progress.log"
             git commit -qm "update: dgx job $name" --no-verify
             push
             continue 2  # re-fetch between jobs: newer pushes may fix the queue
