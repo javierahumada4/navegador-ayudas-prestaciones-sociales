@@ -163,4 +163,30 @@ personas» con un ejemplo de dos personas distinto del banco; el parser perdona 
 sobrantes al final y saltos de línea dentro de cadenas.
 
 **Esperamos:** menos tiempo por caso sin perder aciertos, y algún cálculo en prosa resuelto.
-**Riesgo:** el ejemplo puede sesgar al modelo hacia dos personas. Resultados (job 020): *pendientes*.
+**Riesgo:** el ejemplo puede sesgar al modelo hacia dos personas.
+
+**Resultados (job 020, 2026-11-18 02:39, mismos 40 casos):**
+
+| Métrica (con tools) | base v4 | base v5 | GRPO v4 | GRPO v5 |
+|---|---:|---:|---:|---:|
+| Selección | .750 | **.975** | .875 | **.975** |
+| Argumentos (1.ª llamada) | .725 | .800 | .800 | .825 |
+| Secuencia completa | .675 | **.900** | .775 | .850 |
+| Multi-step (6) | .50 | **.83** | .50 | .50 |
+| Importes correctos | .381 | .381 | .286 | .238 |
+| Éxito extremo a extremo | .500 | .400 | .425 | .400 |
+| Tiempo con tools | 1376 s | 1278 s | 1335 s | 1234 s |
+
+**Qué pasó.** La parte de *herramientas* mejora claramente: el JSON del cálculo en prosa ya se
+parsea y ejecuta (selección .975 en ambos), y el base encadena mejor (multi-step .50 → .83).
+Pero el éxito extremo a extremo **baja**, por dos causas que vemos en las filas:
+1. *El ejemplo sesgó los ids*: ya no inventa `123456789`, pero copia `titular` (la palabra del
+   ejemplo y de la consulta «el titular adult») en vez de `adult`. P2-007 y P2-009 fallan
+   **solo** por el id; P2-008 por una fecha. Era el riesgo anotado, en otra forma.
+2. *Las denegaciones no dan importes*: el motivo es correcto pero la respuesta no dice
+   «IMV 0,00 €, CAPI 0,00 €, total 0,00 €» y la métrica lo exige (base 3/6 → 0/6).
+La velocidad apenas cambia (−7 %): hay turnos únicos de 245 s que no explican ni los tokens ni
+el prompt; el cuello está en la decodificación HF en el slice (ver fase 1, vLLM).
+
+**v6 (job 021):** ejemplo «rol id → id» con nombres que no aparecen en el banco (`ana`, `leo`)
+y regla «da siempre IMV, CAPI y total, también si son 0,00 €». Resultados: *pendientes*.
