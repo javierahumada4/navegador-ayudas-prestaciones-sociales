@@ -202,6 +202,8 @@ class ToolLoop:
         if self.model is not None:
             return
         import torch
+
+        torch.backends.cuda.enable_cudnn_sdp(False)  # crashed on padded batches on the MIG slice
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         adapter = None
