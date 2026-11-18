@@ -1,4 +1,5 @@
-# est-minutes: 270
+# est-minutes: 210
+# (210 = SFT 25 + GRPO ~170 + vLLM eval ~15, once job 029 has done generate+distill)
 # Phase 1 v2: full pipeline with the fixed rule sheet (873b2c6). Same seed, sizes, student,
 # SFT and GRPO hyperparameters as results/rlm_final; only differences:
 #   - rule sheet v2 (residence cutoff, CAPI loss, age bands, member count)
