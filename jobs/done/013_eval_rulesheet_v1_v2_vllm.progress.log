@@ -1,8 +1,3 @@
-(EngineCore pid=2459) INFO 11-18 15:21:42 [kernel_warmup.py:438] Using FlashInfer autotune cache file: /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json
-(EngineCore pid=2459) 2026-11-18 15:21:42,296 - INFO - autotuner.py:2789 - flashinfer.jit: [Autotuner]: Loaded 0 configs from /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json
-(EngineCore pid=2459) 2026-11-18 15:21:42,297 - INFO - autotuner.py:972 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
-(EngineCore pid=2459) INFO 11-18 15:21:42 [kernel_warmup.py:359] Running FlashInfer autotune with 16384 tokens and token buckets (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 768, 1024, 1280, 1536, 1792, 2048, 2560, 3072, 3584, 4096, 8192, 16384).
-(EngineCore pid=2459) 2026-11-18 15:21:42,382 - INFO - autotuner.py:995 - flashinfer.jit: [Autotuner]: Autotuning process ends
 (EngineCore pid=2459) 2026-11-18 15:21:42,385 - INFO - autotuner.py:2652 - flashinfer.jit: [Autotuner]: Saved 0 configs to /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json (0 new, 0 from previous config)
 (EngineCore pid=2459) INFO 11-18 15:21:59 [model_runner.py:1066] Graph capturing finished in 15 secs, took 0.38 GiB
 (EngineCore pid=2459) INFO 11-18 15:21:59 [gpu_worker.py:825] CUDA graph pool memory: 0.38 GiB (actual), 0.87 GiB (estimated), difference: 0.49 GiB (130.3%).
@@ -58,3 +53,8 @@ eval v1 vllm FAILED after 2700 s, falling back to HF
   32/200 generations
   48/200 generations
   64/200 generations
+  80/200 generations
+  96/200 generations
+  112/200 generations
+  128/200 generations
+  144/200 generations
