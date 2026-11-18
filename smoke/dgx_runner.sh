@@ -52,7 +52,8 @@ main() {
     while true; do
         # Rebase, never reset: job results whose push failed must survive until a later push.
         if git fetch -q origin "$BRANCH"; then
-            git rebase -q "origin/$BRANCH" || { git rebase --abort; step "rebase failed"; }
+            # -X theirs keeps the runner's own commits (job results) when files conflict.
+            git rebase -q -X theirs "origin/$BRANCH" || { git rebase --abort; step "rebase failed"; }
             git log -1 --format=%s | grep -q "^update: dgx" && ! git diff --quiet "origin/$BRANCH" HEAD \
                 && push
         fi
@@ -132,7 +133,9 @@ main() {
 
 push() {
     local tries=0
-    until git pull -q --rebase origin "$BRANCH" && git push -q origin "HEAD:$BRANCH"; do
+    # A conflicted rebase must be aborted, or every later pull and push fails (seen 2026-11-18).
+    until { git pull -q --rebase -X theirs origin "$BRANCH" || { git rebase --abort 2>/dev/null; false; }; } \
+            && git push -q origin "HEAD:$BRANCH"; do
         tries=$((tries + 1)); step "push failed ($tries), retrying in 30 s"
         [ "$tries" -ge 20 ] && { step "giving up on this push"; return 1; }
         sleep 30
