@@ -65,6 +65,17 @@ main() {
             name="$(basename "$job" .sh)"
             log="jobs/done/$name.log"
             [ -e "$log" ] && continue
+            # Tripwire: jobs/deadline (ISO time, end of the DGX session) and a job header line
+            # "# est-minutes: N". A job that would not finish 10 min before the deadline waits
+            # for the next session instead of being cut halfway.
+            local deadline=0
+            [ -f jobs/deadline ] && deadline="$(date -d "$(cat jobs/deadline)" +%s 2>/dev/null || echo 0)"
+            local est
+            est="$(sed -n 's/^# est-minutes: *\([0-9]*\).*/\1/p' "$job" | head -1)"
+            if [ "$deadline" -gt 0 ] && [ $(( $(date +%s) + ${est:-0} * 60 )) -gt $(( deadline - 600 )) ]; then
+                step "job $name: needs ${est:-?} min, does not fit before $(cat jobs/deadline); left for the next session"
+                continue
+            fi
             mkdir -p "jobs/done/$name"
             step "job $name: start"
             # Run in its own process group (setsid) in the background; every PROGRESS_EVERY
@@ -75,12 +86,15 @@ main() {
                 timeout "${JOB_TIMEOUT:-50400}" bash "$2"
                 echo "exit=$? end $(date -Is)"' _ "$(git rev-parse --short HEAD)" "$job" \
                 > "$log.part" 2>&1 &
-            local pid=$!
+            local pid=$! cut=""
             while kill -0 "$pid" 2>/dev/null; do
                 for _ in $(seq "${PROGRESS_EVERY:-600}"); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
                 kill -0 "$pid" 2>/dev/null || break
-                if git fetch -q origin "$BRANCH" && git cat-file -e "origin/$BRANCH:jobs/$name.stop" 2>/dev/null; then
-                    step "job $name: stop requested on the branch, killing it"
+                local cut=""
+                [ "$deadline" -gt 0 ] && [ "$(date +%s)" -gt $(( deadline - 600 )) ] && cut=deadline
+                if [ -n "$cut" ] || { git fetch -q origin "$BRANCH" \
+                        && git cat-file -e "origin/$BRANCH:jobs/$name.stop" 2>/dev/null; }; then
+                    step "job $name: ${cut:-stop requested on the branch}, killing it"
                     # GNU timeout moves itself into its own process group: kill that group too.
                     local groups="-$pid"
                     for child in $(pgrep -P "$pid"); do groups="$groups -$child"; done
@@ -93,6 +107,16 @@ main() {
                 git commit -qm "update: dgx progress $name" --no-verify && push
             done
             wait "$pid"
+            if [ -n "${cut:-}" ]; then
+                # Not done: push what it produced as progress; the next session re-runs the job
+                # (resumable jobs pick up from their checkpoints).
+                mv "$log.part" "jobs/done/$name.progress.log"
+                git add -f "jobs/done/$name.progress.log" "jobs/done/$name"
+                git commit -qm "update: dgx progress $name (cut at session deadline)" --no-verify
+                push
+                step "session deadline reached: idle until this session ends"
+                sleep infinity
+            fi
             mv "$log.part" "$log"
             rm -f "jobs/done/$name.progress.log"
             step "job $name: $(tail -1 "$log")"

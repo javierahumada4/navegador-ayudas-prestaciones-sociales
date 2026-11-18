@@ -1,3 +1,4 @@
+# est-minutes: 30
 # Rerun of job 011 after the vLLM LoRA-swap hang (now max_loras=4). 011 got, on v1 with vLLM:
 # base .045 and SFT .410 in ~3.5 min per model, then hung loading the GRPO adapter.
 # v1 (final run) vs v2 (fixed residence/CAPI wording), base / SFT / SFT+GRPO.

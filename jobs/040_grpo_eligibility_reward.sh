@@ -1,3 +1,4 @@
+# est-minutes: 200
 # Reward ablation on top of job 030: same SFT v2 init, data, seed and hyperparameters as the
 # v2 GRPO; only the third reward changes, domain (two-decimal format, redundant) ->
 # eligibility (answers 0 exactly when the oracle does). Needs job 030's run directory.

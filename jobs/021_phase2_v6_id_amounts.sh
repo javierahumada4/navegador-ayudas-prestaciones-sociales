@@ -1,3 +1,4 @@
+# est-minutes: 75
 # Phase 2 v6 = v5 + id example as «rol id» -> id (v5 copied the example id "titular") + rule to
 # always state IMV/CAPI/total (v5 denials gave no amounts). v5 was feat/fase2-speed (merged LoRA, stop on repeated failed
 # output, 1280-token cap, id rule + two-person example, schema sent once, lenient braces).

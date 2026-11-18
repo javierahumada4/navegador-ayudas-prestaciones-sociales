@@ -1,3 +1,4 @@
+# est-minutes: 270
 # Phase 1 v2: full pipeline with the fixed rule sheet (873b2c6). Same seed, sizes, student,
 # SFT and GRPO hyperparameters as results/rlm_final; only differences:
 #   - rule sheet v2 (residence cutoff, CAPI loss, age bands, member count)
@@ -16,9 +17,19 @@ if UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv sync --extr
   SPEED="--teacher-backend vllm --teacher-batch-size 64 --eval-backend vllm --eval-batch-size 16"
 fi
 echo "backends: $SPEED"
+# Cut at a session deadline? Resume from the first stage whose outputs are missing.
+RESUME_FLAGS=""
+if [ -f "$RUN/manifest.json" ]; then
+  stage=generate
+  [ -f "$RUN/reports/dataset_validation.json" ] && stage=distill
+  [ -f "$RUN/reports/distillation_validation.json" ] && stage=sft
+  [ -f "$RUN/weights/sft_lora/adapter_config.json" ] && stage=grpo
+  [ -f "$RUN/weights/grpo_lora/adapter_config.json" ] && stage=evaluate
+  RESUME_FLAGS="--from-stage $stage --resume"
+fi
+echo "resume: ${RESUME_FLAGS:-fresh run}"
 start=$(date +%s)
-uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn $SPEED \
-    ${RESUME:+--resume}
+uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn $SPEED $RESUME_FLAGS
 echo "pipeline wall: $(( $(date +%s) - start )) s"
 cp "$RUN"/manifest.json "$OUT/"
 cp "$RUN"/reports/*.json "$RUN"/reports/*.md "$RUN"/reports/*.png "$OUT/" 2>/dev/null || true
