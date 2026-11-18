@@ -209,4 +209,28 @@ La velocidad apenas cambia (−7 %): hay turnos únicos de 245 s que no explican
 el prompt; el cuello está en la decodificación HF en el slice (ver fase 1, vLLM).
 
 **v6 (job 021):** ejemplo «rol id → id» con nombres que no aparecen en el banco (`ana`, `leo`)
-y regla «da siempre IMV, CAPI y total, también si son 0,00 €». Resultados: *pendientes*.
+y regla «da siempre IMV, CAPI y total, también si son 0,00 €».
+
+**Resultados v6 (job 021, 2026-11-18 20:11):**
+
+| Métrica (con tools) | base v4 | base v6 | GRPO v4 | GRPO v6 |
+|---|---:|---:|---:|---:|
+| Selección | .750 | .975 | .875 | **1.000** |
+| Argumentos (1.ª llamada) | .725 | .875 | .800 | **.900** |
+| Secuencia completa | .675 | .950 | .775 | **.975** |
+| Multi-step (6) | .50 | .83 | .50 | .83 |
+| Importes correctos (21) | .381 | **.905** | .286 | **.762** |
+| Éxito extremo a extremo | .500 | .400 | .425 | .375 |
+| Tiempo con tools | 1376 s | **367 s** | 1335 s | **296 s** |
+| Caso más lento | 341 s | **50 s** | 183 s | **28 s** |
+
+- El cálculo en prosa ya usa los ids correctos (`adult`) y las personas completas en 5 de 6
+  casos; los argumentos aciertan en 4 de 6 (v4: 0 de 6).
+- La velocidad mejora ~4×, pero **no toda es nuestra**: la configuración sin tools, cuyo prompt no
+  cambió, también bajó de 817 a 247 s, así que parte es carga del nodo. El caso más lento ya queda
+  muy por debajo del límite de 300 s de ngrok.
+- El éxito extremo a extremo no sube porque fallan dos comprobaciones de texto, no las
+  herramientas: (1) las respuestas no dicen que es una simulación orientativa (heurística de
+  explicación, 15–16 casos); (2) con datos faltantes el base responde literalmente «PREGUNTA»,
+  copiando la palabra en mayúsculas del prompt, y en P2-017 inventa datos y calcula. Corregido en
+  v7 (job 022): pregunta explícita por cada dato y aviso de simulación.
