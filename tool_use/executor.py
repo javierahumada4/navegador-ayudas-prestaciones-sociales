@@ -28,7 +28,8 @@ Las llamadas deben escribirse exactamente como:
 Puedes emitir varias llamadas independientes en una generación. No hagas
 llamadas dependientes hasta recibir las observaciones. Corrige errores de
 validación usando el mensaje de la herramienta. Responde en español y
-distingue simulaciones de resoluciones oficiales."""
+distingue simulaciones de resoluciones oficiales. Tras un cálculo, da SIEMPRE los
+tres importes del motor (IMV, CAPI y total, en €/mes), también cuando son 0,00 €."""
 
 CALCULATION_PROMPT = """Esta etapa SOLO dispone de calcular_imv.
 El argumento es un ÚNICO objeto llamado case, directamente con los campos
@@ -73,11 +74,15 @@ observaciones verificadas; nunca inventes cifras ni ayudas.
 Confirma el guardado únicamente cuando la herramienta lo confirme."""
 
 
-CASE_EXAMPLE = """Los id de persona son las palabras literales de la consulta (adult, child,
-pareja...): cópialos tal cual y nunca inventes números. Incluye a TODAS las personas
-mencionadas en persons y en domicile.co_resident_ids. Omite los campos opcionales
-que la consulta no menciona. Ejemplo de llamada con dos personas (otros datos):
-<tool_call>{"name":"calcular_imv","arguments":{"case":{"application_date":"2026-05-04","applicant_id":"titular","persons":[{"id":"titular","date_of_birth":"1975-05-10","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2015-03-01"},{"id":"hijo","date_of_birth":"2016-09-20","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2016-09-20"}],"domicile":{"co_resident_ids":["titular","hijo"],"same_domicile_since":"2016-09-20"},"relationships":[{"person_a":"titular","person_b":"hijo","type":"parent_child","custody":"exclusive"}],"applicant_history":{"independent_from_parents_since":"2000-01-01"},"economic":{"countable_income_annual_eur":3000,"net_worth_eur":0,"non_corporate_assets_eur":0}}}}</tool_call>"""
+CASE_EXAMPLE = """Cada persona se nombra con un ROL seguido de su ID: el id es la palabra que va
+DESPUÉS del rol, nunca el rol («la solicitante ana» -> "ana"; «su hijo leo» -> "leo";
+«titular adult» -> "adult"). Nunca inventes números. Incluye a TODAS las personas en persons
+y en domicile.co_resident_ids. Omite los campos opcionales que la consulta no menciona.
+Ejemplo. Consulta: «Solicitud 2026-05-04. La solicitante ana nació el 1975-05-10 y reside
+legal y efectivamente desde 2015-03-01; vive desde 2016-09-20 con su hijo leo, nacido el
+2016-09-20, residente desde su nacimiento; custodia exclusiva. Independiente desde 2000-01-01.
+Ingresos 3000 €/año, patrimonio 0 €, activos 0 €.» Llamada:
+<tool_call>{"name":"calcular_imv","arguments":{"case":{"application_date":"2026-05-04","applicant_id":"ana","persons":[{"id":"ana","date_of_birth":"1975-05-10","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2015-03-01"},{"id":"leo","date_of_birth":"2016-09-20","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2016-09-20"}],"domicile":{"co_resident_ids":["ana","leo"],"same_domicile_since":"2016-09-20"},"relationships":[{"person_a":"ana","person_b":"leo","type":"parent_child","custody":"exclusive"}],"applicant_history":{"independent_from_parents_since":"2000-01-01"},"economic":{"countable_income_annual_eur":3000,"net_worth_eur":0,"non_corporate_assets_eur":0}}}}</tool_call>"""
 
 def build_system_prompt(registry: ToolRegistry) -> str:
     available = set(registry.tools)
