@@ -33,7 +33,8 @@ def main() -> None:
         assert len(outputs) == len(prompts) and tokens > 0
         print(f"{name}: {tokens} tokens in {time.time() - t1:.1f} s "
               f"= {tokens / (time.time() - t1):.0f} tok/s", flush=True)
-    print("VLLM_OK")
+    print("VLLM_OK", flush=True)
+    os._exit(0)  # vLLM can keep the interpreter alive at exit
 
 
 if __name__ == "__main__":

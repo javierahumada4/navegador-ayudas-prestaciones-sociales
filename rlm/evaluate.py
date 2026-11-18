@@ -434,7 +434,13 @@ def main() -> None:
 
     table = out.with_suffix(".md")
     table.write_text(render_markdown(results), encoding="utf-8")
-    print(f"details -> {out}\ntables  -> {table}")
+    print(f"details -> {out}\ntables  -> {table}", flush=True)
+    if args.backend == "vllm":
+        # vLLM's engine process kept the interpreter alive after every result was written
+        # (jobs 011/013 sat there until their timeout): leave as soon as the files exist.
+        import os
+
+        os._exit(0)
 
 
 if __name__ == "__main__":

@@ -688,8 +688,13 @@ def main() -> None:
     kept = sum(1 for row in persisted if row["verified"])
     print(
         f"{kept}/{len(persisted)} traces verified "
-        f"({100 * kept / max(len(persisted), 1):.1f}%) -> {out} | log -> {log_path}"
+        f"({100 * kept / max(len(persisted), 1):.1f}%) -> {out} | log -> {log_path}",
+        flush=True,
     )
+    if args.backend == "vllm":
+        # vLLM's engine process can keep the interpreter alive after the output is complete
+        # (seen in evaluation jobs 011/013): exit once the traces are on disk.
+        os._exit(0)
 
 
 if __name__ == "__main__":
