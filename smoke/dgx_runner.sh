@@ -35,6 +35,9 @@ main() {
         [ -f "$f" ] && { step "5 sourcing $f"; set -a; . "$f"; set +a; }
     done
     export UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_DOWNLOADS=2 UV_CONCURRENT_BUILDS=1
+    # Job output goes to a file: without this Python block-buffers it and the progress log
+    # stays empty for hours (job 029's distillation).
+    export PYTHONUNBUFFERED=1
 
     step "6 checking git push"
     if ! git push -q --dry-run origin "HEAD:refs/heads/$BRANCH"; then
