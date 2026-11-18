@@ -42,3 +42,9 @@ eval v1 vllm FAILED after 2700 s, falling back to HF
   128/200 generations
   144/200 generations
   160/200 generations
+  176/200 generations
+  192/200 generations
+  200/200 generations
+    base: pass@1 = 0.075  format = 0.130  truncated = 0.870  zero = 0.005
+  16/200 generations
+  32/200 generations
