@@ -25,11 +25,19 @@ if [ -f "$RUN/manifest.json" ]; then
   [ -f "$RUN/reports/distillation_validation.json" ] && stage=sft
   [ -f "$RUN/weights/sft_lora/adapter_config.json" ] && stage=grpo
   [ -f "$RUN/weights/grpo_lora/adapter_config.json" ] && stage=evaluate
-  RESUME_FLAGS="--from-stage $stage --resume"
+  RESUME_FLAGS="--from-stage $stage"
+  # --resume only where there is something to resume; pipeline aborts otherwise.
+  case "$stage" in
+    distill) [ -s "$RUN/data/sft_traces.jsonl" ] && RESUME_FLAGS="$RESUME_FLAGS --resume" ;;
+    sft) ls -d "$RUN"/weights/sft_lora/checkpoint-* >/dev/null 2>&1 && RESUME_FLAGS="$RESUME_FLAGS --resume" ;;
+    grpo) ls -d "$RUN"/weights/grpo_lora/checkpoint-* >/dev/null 2>&1 && RESUME_FLAGS="$RESUME_FLAGS --resume" ;;
+    evaluate) RESUME_FLAGS="$RESUME_FLAGS --resume" ;;
+  esac
 fi
-echo "resume: ${RESUME_FLAGS:-fresh run}"
+echo "resume: ${RESUME_FLAGS:-fresh run}${THROUGH:+, through $THROUGH}"
 start=$(date +%s)
-uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn $SPEED $RESUME_FLAGS
+uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn $SPEED $RESUME_FLAGS \
+    ${THROUGH:+--through-stage $THROUGH}
 echo "pipeline wall: $(( $(date +%s) - start )) s"
 cp "$RUN"/manifest.json "$OUT/"
 cp "$RUN"/reports/*.json "$RUN"/reports/*.md "$RUN"/reports/*.png "$OUT/" 2>/dev/null || true
