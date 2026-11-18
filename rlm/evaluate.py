@@ -135,7 +135,9 @@ def _generate_vllm(
 
     if base_model not in _VLLM_ENGINES:
         _VLLM_ENGINES[base_model] = LLM(
-            model=base_model, dtype="bfloat16", enable_lora=True, max_lora_rank=64,
+            # max_loras=4: base+SFT+GRPO share one engine without LoRA swapping; with the default
+            # (1) the engine hung when the second adapter (GRPO) replaced the first (job 011).
+            model=base_model, dtype="bfloat16", enable_lora=True, max_lora_rank=64, max_loras=4,
             gpu_memory_utilization=0.85, max_model_len=8192, seed=seed,
         )
     llm = _VLLM_ENGINES[base_model]
