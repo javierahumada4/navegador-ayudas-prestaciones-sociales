@@ -69,15 +69,27 @@ main() {
             [ -e "$log" ] && continue
             mkdir -p "jobs/done/$name"
             step "job $name: start"
-            # Run in the background and push the tail of the log every PROGRESS_EVERY seconds,
-            # so a long job is observable from GitHub before it ends.
-            { echo "commit $(git rev-parse --short HEAD) start $(date -Is)"
-              OUT="jobs/done/$name" timeout "${JOB_TIMEOUT:-50400}" bash "$job"
-              echo "exit=$? end $(date -Is)"; } > "$log.part" 2>&1 &
+            # Run in its own process group (setsid) in the background; every PROGRESS_EVERY
+            # seconds push the tail of the log, and kill the whole group if the branch carries
+            # jobs/<name>.stop (remote kill switch: git add jobs/<name>.stop && push).
+            OUT="jobs/done/$name" setsid bash -c '
+                echo "commit $1 start $(date -Is)"
+                timeout "${JOB_TIMEOUT:-50400}" bash "$2"
+                echo "exit=$? end $(date -Is)"' _ "$(git rev-parse --short HEAD)" "$job" \
+                > "$log.part" 2>&1 &
             local pid=$!
             while kill -0 "$pid" 2>/dev/null; do
                 for _ in $(seq "${PROGRESS_EVERY:-600}"); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
                 kill -0 "$pid" 2>/dev/null || break
+                if git fetch -q origin "$BRANCH" && git cat-file -e "origin/$BRANCH:jobs/$name.stop" 2>/dev/null; then
+                    step "job $name: stop requested on the branch, killing it"
+                    # GNU timeout moves itself into its own process group: kill that group too.
+                    local groups="-$pid"
+                    for child in $(pgrep -P "$pid"); do groups="$groups -$child"; done
+                    kill -TERM -- $groups 2>/dev/null; sleep 20; kill -KILL -- $groups 2>/dev/null
+                    echo "exit=stopped $(date -Is)" >> "$log.part"
+                    break
+                fi
                 tail -c 20000 "$log.part" | grep -v "it/s\]" | tail -60 > "jobs/done/$name.progress.log"
                 git add -f "jobs/done/$name.progress.log"
                 git commit -qm "update: dgx progress $name" --no-verify && push
