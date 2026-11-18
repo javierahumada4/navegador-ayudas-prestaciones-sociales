@@ -107,6 +107,8 @@ class ZeroSignalMonitor:
 
 def train(args: argparse.Namespace) -> None:
     import torch
+
+    torch.backends.cuda.enable_cudnn_sdp(False)  # crashes on padded batches (see inference.py)
     from peft import LoraConfig
     from transformers import AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer

@@ -104,6 +104,9 @@ class ReasoningModel:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        # torch 2.11's cuDNN SDPA kernel crashed ("mha_graph.execute ... is_good") on padded
+        # batches of 16 on the MIG slice; flash/mem-efficient SDPA handle them fine.
+        torch.backends.cuda.enable_cudnn_sdp(False)
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         self.tokenizer = AutoTokenizer.from_pretrained(self.base_model)
         model = AutoModelForCausalLM.from_pretrained(
