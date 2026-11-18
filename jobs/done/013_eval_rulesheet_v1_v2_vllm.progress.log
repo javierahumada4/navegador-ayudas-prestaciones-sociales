@@ -1,60 +1,28 @@
-(EngineCore pid=2459) 2026-11-18 15:21:42,385 - INFO - autotuner.py:2652 - flashinfer.jit: [Autotuner]: Saved 0 configs to /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json (0 new, 0 from previous config)
-(EngineCore pid=2459) INFO 11-18 15:21:59 [model_runner.py:1066] Graph capturing finished in 15 secs, took 0.38 GiB
-(EngineCore pid=2459) INFO 11-18 15:21:59 [gpu_worker.py:825] CUDA graph pool memory: 0.38 GiB (actual), 0.87 GiB (estimated), difference: 0.49 GiB (130.3%).
-(EngineCore pid=2459) INFO 11-18 15:21:59 [gpu_worker.py:888] Free memory on device (15.89/16.0 GiB) on startup. Desired GPU memory utilization is (0.85, 13.6 GiB). Actual usage is 4.74 GiB for consumed memory (weights + non-torch), 1.62 GiB for peak activation, and 0.38 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=7213552743` (6.72 GiB) to fit into requested memory, or `--kv-cache-memory=9675189760` (9.01 GiB) to fully utilize gpu memory. Current kv cache memory in use is 7.24 GiB.
-(EngineCore pid=2459) INFO 11-18 15:21:59 [jit_monitor.py:85] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
-(EngineCore pid=2459) INFO 11-18 15:21:59 [torch_utils.py:287] Reducing Torch threads from 4 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
-(EngineCore pid=2459) INFO 11-18 15:21:59 [core.py:372] init engine (profile, create kv cache, warmup model) took 37.19 s (compilation: 0.82 s)
-(EngineCore pid=2459) INFO 11-18 15:22:00 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
-INFO 11-18 15:22:02 [hf.py:642] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
-(EngineCore pid=2459) WARNING 11-18 15:22:02 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
-(EngineCore pid=2459) WARNING 11-18 15:22:02 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_step_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
-(EngineCore pid=2459) WARNING 11-18 15:22:02 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_mask_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
-(EngineCore pid=2459) WARNING 11-18 15:22:02 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
-(EngineCore pid=2459) WARNING 11-18 15:22:04 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topk_topp_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
-    base: pass@1 = 0.045  format = 0.125  truncated = 0.875  zero = 0.020
-WARNING 11-18 15:24:57 [input_processor.py:196] vLLM has deprecated support for supporting different tokenizers for different LoRAs. By default, vLLM uses base model's tokenizer. If you are using a LoRA with its own tokenizer, consider specifying `--tokenizer [lora_path]` to use the LoRA tokenizer.
-     sft: pass@1 = 0.445  format = 0.700  truncated = 0.300  zero = 0.145
-(EngineCore pid=2459) INFO 11-18 16:06:03 [core.py:1342] [shutdown] EngineCore: trigger received signal=SIGTERM
-(EngineCore pid=2459) INFO 11-18 16:06:03 [core.py:1493] [shutdown] EngineCore: start mode=abort timeout=0s
-(EngineCore pid=2459) INFO 11-18 16:06:03 [core.py:1524] [shutdown] EngineCore: request processing complete; starting resource teardown
-(EngineCore pid=2459) INFO 11-18 16:06:03 [core.py:1355] [shutdown] EngineCore: exiting busy loop
-eval v1 vllm FAILED after 2700 s, falling back to HF
-200 problems x 1 samples from results/rlm_final/data/test.jsonl
-  16/200 generations
-  32/200 generations
-  48/200 generations
-  64/200 generations
-  80/200 generations
-  96/200 generations
-  112/200 generations
-  128/200 generations
-  144/200 generations
-  160/200 generations
-  176/200 generations
-  192/200 generations
-  200/200 generations
-    base: pass@1 = 0.075  format = 0.130  truncated = 0.870  zero = 0.005
-  16/200 generations
-  32/200 generations
-  48/200 generations
-  64/200 generations
-  80/200 generations
-  96/200 generations
-  112/200 generations
-  128/200 generations
-  144/200 generations
-  160/200 generations
-  176/200 generations
-  192/200 generations
-  200/200 generations
-     sft: pass@1 = 0.405  format = 0.695  truncated = 0.305  zero = 0.135
-  16/200 generations
-  32/200 generations
-  48/200 generations
-  64/200 generations
-  80/200 generations
-  96/200 generations
-  112/200 generations
-  128/200 generations
-  144/200 generations
+(EngineCore pid=12791) INFO 11-18 18:42:24 [model_runner.py:1066] Graph capturing finished in 10 secs, took 0.64 GiB
+(EngineCore pid=12791) INFO 11-18 18:42:25 [gpu_worker.py:640] Available KV cache memory: 7.24 GiB
+(EngineCore pid=12791) INFO 11-18 18:42:25 [gpu_worker.py:655] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.8500 is equivalent to --gpu-memory-utilization=0.7957 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9043. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=12791) INFO 11-18 18:42:25 [kv_cache_utils.py:2395] GPU KV cache size: 67,792 tokens, Maximum concurrency for 8,192 tokens per request: 8.28x
+(EngineCore pid=12791) INFO 11-18 18:42:25 [kernel_warmup.py:172] JIT kernel warmup starting.
+(EngineCore pid=12791) INFO 11-18 18:42:25 [kernel_warmup.py:185] JIT kernel warmup finished in 0.00s.
+(EngineCore pid=12791) INFO 11-18 18:42:25 [kernel_warmup.py:438] Using FlashInfer autotune cache file: /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json
+(EngineCore pid=12791) 2026-11-18 18:42:25,441 - INFO - autotuner.py:2789 - flashinfer.jit: [Autotuner]: Loaded 0 configs from /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json
+(EngineCore pid=12791) 2026-11-18 18:42:25,441 - INFO - autotuner.py:972 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(EngineCore pid=12791) INFO 11-18 18:42:25 [kernel_warmup.py:359] Running FlashInfer autotune with 16384 tokens and token buckets (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 768, 1024, 1280, 1536, 1792, 2048, 2560, 3072, 3584, 4096, 8192, 16384).
+(EngineCore pid=12791) 2026-11-18 18:42:25,539 - INFO - autotuner.py:995 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(EngineCore pid=12791) 2026-11-18 18:42:25,544 - INFO - autotuner.py:2652 - flashinfer.jit: [Autotuner]: Saved 0 configs to /home/202200872/.cache/vllm/flashinfer_autotune_cache/0.6.18.post1/90a/d48298d85f66b623c04a486d226e058251ebe8bf400dd6ccca26d9c7939c5299/autotune_configs.json (0 new, 0 from previous config)
+(EngineCore pid=12791) INFO 11-18 18:42:46 [model_runner.py:1066] Graph capturing finished in 20 secs, took 0.38 GiB
+(EngineCore pid=12791) INFO 11-18 18:42:46 [gpu_worker.py:825] CUDA graph pool memory: 0.38 GiB (actual), 0.87 GiB (estimated), difference: 0.49 GiB (130.3%).
+(EngineCore pid=12791) INFO 11-18 18:42:46 [gpu_worker.py:888] Free memory on device (15.89/16.0 GiB) on startup. Desired GPU memory utilization is (0.85, 13.6 GiB). Actual usage is 4.74 GiB for consumed memory (weights + non-torch), 1.62 GiB for peak activation, and 0.38 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=7213552743` (6.72 GiB) to fit into requested memory, or `--kv-cache-memory=9675189760` (9.01 GiB) to fully utilize gpu memory. Current kv cache memory in use is 7.24 GiB.
+(EngineCore pid=12791) INFO 11-18 18:42:47 [jit_monitor.py:85] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(EngineCore pid=12791) INFO 11-18 18:42:47 [torch_utils.py:287] Reducing Torch threads from 4 to 1 for serving. Set OMP_NUM_THREADS in the external environment to override.
+(EngineCore pid=12791) INFO 11-18 18:42:47 [core.py:372] init engine (profile, create kv cache, warmup model) took 36.39 s (compilation: 0.18 s)
+(EngineCore pid=12791) INFO 11-18 18:42:48 [kernel.py:416] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+INFO 11-18 18:42:50 [hf.py:642] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(EngineCore pid=12791) WARNING 11-18 18:42:50 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_stats_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(EngineCore pid=12791) WARNING 11-18 18:42:50 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_step_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(EngineCore pid=12791) WARNING 11-18 18:42:50 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topp_sb_mask_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(EngineCore pid=12791) WARNING 11-18 18:42:50 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _gumbel_sample_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(EngineCore pid=12791) WARNING 11-18 18:42:51 [jit_monitor.py:141] Triton kernel JIT compilation during inference: _topk_topp_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+    base: pass@1 = 0.040  format = 0.085  truncated = 0.915  zero = 0.000
+WARNING 11-18 18:45:47 [input_processor.py:196] vLLM has deprecated support for supporting different tokenizers for different LoRAs. By default, vLLM uses base model's tokenizer. If you are using a LoRA with its own tokenizer, consider specifying `--tokenizer [lora_path]` to use the LoRA tokenizer.
+     sft: pass@1 = 0.350  format = 0.735  truncated = 0.265  zero = 0.135
