@@ -96,11 +96,31 @@ mejora menor sin reentrenar (el adaptador actual nunca vio la regla).
 | 010 | mismos adaptadores (base/SFT/GRPO), test v1 frente a v2 | efecto del prompt sin entrenar; velocidad de evaluación |
 | 030 | pipeline completo con hoja v2, resto igual | efecto de la especificación en destilación, SFT y GRPO |
 
-Resultados: *pendientes*.
+**Resultados del job 010/013 (2026-11-18, mismos 200 problemas, T 0.6, 1024 tokens):**
+
+| Evaluación | base | SFT | SFT+GRPO |
+|---|---:|---:|---:|
+| Run final original (HF, batch 2) | .065 | .375 | .490 |
+| Repetición v1 (HF, batch 16, LoRA fusionada) | .075 | .405 | .510 |
+| v1 con vLLM | .045 | .445 | .475 |
+| **v2 con vLLM (hoja corregida, sin reentrenar)** | .040 | **.350** | **.375** |
+
+- **Reproducibilidad:** las tres pasadas v1 difieren en ±3–4 puntos, lo esperable por muestreo con
+  n = 200 (error típico binomial ≈ 3.5 puntos). Ninguna diferencia menor que eso es concluyente.
+- **Sorpresa:** cambiar solo el texto del prompt, sin reentrenar, **resta ~10 puntos** al SFT y al
+  GRPO, y `residence_fail` apenas se mueve (0 → 2/20). El SFT pasa de 24 a 52 «importe
+  equivocado». Los adaptadores aprendieron la redacción v1 (trazas del profesor y prompts de GRPO
+  con la hoja v1): una hoja más larga y distinta es un cambio de distribución. Conclusión: la
+  corrección de especificación solo puede ayudar **reentrenando** con ella (job 030), y la
+  comparación justa es v2 entrenado y evaluado con v2 frente a v1 con v1.
 
 **Velocidad** (mismas salidas, distinta ejecución): evaluación con batch 16 y LoRA fusionada
 (antes batch 2 sin fusionar, 2.1 h solo el test); destilación con vLLM batch 64 (antes HF batch
-1, 4.6 h). Tiempos medidos: *pendientes*.
+1, 4.6 h). Medido en la DGX: HF batch 16 con LoRA fusionada, **2.6 h** para los tres modelos del
+test; vLLM (un motor, LoRA por petición) **~3.5 min por modelo** y 700–1000 tok/s (HF: 20–75
+tok/s). Dos incidencias reales: el kernel cuDNN de atención de torch 2.11 falla con lotes de 16
+con padding (desactivado), y el proceso de vLLM no terminaba tras escribir los resultados (salida
+forzada); ambas costaron un job entero antes de diagnosticarlas.
 
 **Siguiente ablación propuesta** (no ejecutada): sustituir la recompensa de dominio, redundante,
 por una de elegibilidad (acierta si responde 0 cuando el oracle da 0), y subir a 8 generaciones
