@@ -33,3 +33,7 @@ WARNING 11-18 15:24:57 [input_processor.py:196] vLLM has deprecated support for 
 eval v1 vllm FAILED after 2700 s, falling back to HF
 200 problems x 1 samples from results/rlm_final/data/test.jsonl
   16/200 generations
+  32/200 generations
+  48/200 generations
+  64/200 generations
+  80/200 generations
