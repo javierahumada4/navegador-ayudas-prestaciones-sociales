@@ -13,7 +13,9 @@ uv run --extra train python -m rlm.train_grpo --data "$RUN/data/train.jsonl" \
     --micro-batch-size 1 --max-completion-length 1024 --zero-signal-patience 0 --seed 42 \
     --third-reward eligibility
 echo "grpo wall: $(( $(date +%s) - start )) s"
-uv run --extra train python -m rlm.evaluate --data "$RUN/data/test.jsonl" --model Qwen/Qwen3-1.7B \
+# Same backend as job 030's evaluation (vLLM in the run's distill venv) for a fair comparison.
+UV_PROJECT_ENVIRONMENT="$RUN/.venv-distill" uv run --extra distill python -m rlm.evaluate \
+    --data "$RUN/data/test.jsonl" --model Qwen/Qwen3-1.7B --backend vllm \
     --adapters "grpo_elig=$RUN/weights/grpo_elig" --verifier imv --samples 1 --batch-size 16 \
     --max-new-tokens 1024 --seed 42 --out "$OUT/eval_test_elig.json"
 uv run --extra train python -m rlm.curves --runs "domain=$RUN/weights/grpo_lora" \
