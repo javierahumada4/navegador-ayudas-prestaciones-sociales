@@ -8,9 +8,16 @@ OUT="$(realpath "$OUT")"
 RUN="$ARCA_WORK_DIR/arca-runs/rlm-v2"
 mkdir -p "$RUN"
 uv sync --extra train -q
+# vLLM may hang on this slice (job 011): use it only if a 15-min probe passes, else HF.
+SPEED="--teacher-backend hf --teacher-batch-size 1 --eval-backend hf --eval-batch-size 16"
+if UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv sync --extra distill -q &&
+   UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv run --extra distill \
+       python smoke/vllm_probe.py | tee /dev/stderr | grep -q VLLM_OK; then
+  SPEED="--teacher-backend vllm --teacher-batch-size 64 --eval-backend vllm --eval-batch-size 16"
+fi
+echo "backends: $SPEED"
 start=$(date +%s)
-uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn \
-    --teacher-backend vllm --teacher-batch-size 64 --eval-backend vllm --eval-batch-size 16 \
+uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn $SPEED \
     ${RESUME:+--resume}
 echo "pipeline wall: $(( $(date +%s) - start )) s"
 cp "$RUN"/manifest.json "$OUT/"

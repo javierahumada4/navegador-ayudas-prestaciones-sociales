@@ -13,11 +13,17 @@ uv run --extra train python -m rlm.train_grpo --data "$RUN/data/train.jsonl" \
     --micro-batch-size 1 --max-completion-length 1024 --zero-signal-patience 0 --seed 42 \
     --third-reward eligibility
 echo "grpo wall: $(( $(date +%s) - start )) s"
-# Same backend as job 030's evaluation (vLLM in the run's distill venv) for a fair comparison.
-UV_PROJECT_ENVIRONMENT="$RUN/.venv-distill" uv run --extra distill python -m rlm.evaluate \
-    --data "$RUN/data/test.jsonl" --model Qwen/Qwen3-1.7B --backend vllm \
-    --adapters "grpo_elig=$RUN/weights/grpo_elig" --verifier imv --samples 1 --batch-size 16 \
-    --max-new-tokens 1024 --seed 42 --out "$OUT/eval_test_elig.json"
+# Same evaluation backend as job 030 chose (manifest), for a fair comparison.
+BACKEND=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['configuration'].get('eval_backend', 'hf'))" "$RUN/manifest.json")
+EVAL="--data $RUN/data/test.jsonl --model Qwen/Qwen3-1.7B --adapters grpo_elig=$RUN/weights/grpo_elig \
+  --verifier imv --samples 1 --batch-size 16 --max-new-tokens 1024 --seed 42 --out $OUT/eval_test_elig.json"
+echo "eval backend: $BACKEND"
+if [ "$BACKEND" = vllm ]; then
+  UV_PROJECT_ENVIRONMENT="$RUN/.venv-distill" timeout 5400 uv run --extra distill python -m rlm.evaluate $EVAL --backend vllm \
+    || { echo "vLLM eval failed or hung: HF fallback"; uv run --extra train python -m rlm.evaluate $EVAL --backend hf; }
+else
+  uv run --extra train python -m rlm.evaluate $EVAL --backend hf
+fi
 uv run --extra train python -m rlm.curves --runs "domain=$RUN/weights/grpo_lora" \
     "eligibility=$RUN/weights/grpo_elig" --out "$OUT/grpo_curves_domain_vs_eligibility.png"
 cp "$RUN/weights/grpo_elig/log_history.json" "$OUT/grpo_elig_log_history.json"
