@@ -49,8 +49,6 @@ main() {
     push
     step "8 runner up on $BRANCH, every ${INTERVAL}s"
 
-    local self_hash
-    self_hash="$(git hash-object smoke/dgx_runner.sh)"
     while true; do
         # Rebase, never reset: job results whose push failed must survive until a later push.
         if git fetch -q origin "$BRANCH"; then
@@ -58,7 +56,7 @@ main() {
             git log -1 --format=%s | grep -q "^update: dgx" && ! git diff --quiet "origin/$BRANCH" HEAD \
                 && push
         fi
-        if [ "$(git hash-object smoke/dgx_runner.sh)" != "$self_hash" ]; then
+        if [ "$(git hash-object smoke/dgx_runner.sh)" != "$SELF_HASH" ]; then
             step "runner updated on the branch, restarting"
             exec bash smoke/dgx_runner.sh "$@"
         fi
@@ -118,5 +116,7 @@ push() {
     step "pushed $(git rev-parse --short HEAD)"
 }
 
+# Hash of the code actually running, taken before any pull can rewrite the file on disk.
+SELF_HASH="$(git hash-object "$0")"
 main "$@"
 exit
