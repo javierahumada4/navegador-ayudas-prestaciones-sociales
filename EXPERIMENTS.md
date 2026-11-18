@@ -234,3 +234,25 @@ y regla «da siempre IMV, CAPI y total, también si son 0,00 €».
   explicación, 15–16 casos); (2) con datos faltantes el base responde literalmente «PREGUNTA»,
   copiando la palabra en mayúsculas del prompt, y en P2-017 inventa datos y calcula. Corregido en
   v7 (job 022): pregunta explícita por cada dato y aviso de simulación.
+
+**Resultados v7 (job 022, 2026-11-18 20:32) — versión final de la fase 2 por ahora:**
+
+| Métrica (con tools) | base v4 | base v7 | GRPO v4 | GRPO v7 |
+|---|---:|---:|---:|---:|
+| Selección | .750 | .950 | .875 | .950 |
+| Importes correctos | .381 | .857 | .286 | .714 |
+| Aclaración con datos faltantes (5) | .200 | .400 | .400 | .400 |
+| **Éxito extremo a extremo** | .500 | **.675** | .425 | **.625** |
+| Sin tools, extremo a extremo | .150 | .150 | .125 | .125 |
+| Tiempo con tools / caso más lento | 1376 s / 341 s | 365 s / 45 s | 1335 s / 183 s | 280 s / 26 s |
+
+Por categoría (base / GRPO, v7): estructurado 4/4 · 4/4; prosa 4/6 · 3/6; denegaciones 4/6 · 4/6;
+datos faltantes 2/5 · 2/5; BDNS 6/8 · 6/8; multi-step 4/6 · 3/6; sin herramienta 3/5 · 3/5.
+
+**Interpretación.** Las herramientas multiplican por ~4.5 el éxito frente a no usarlas, y los
+cambios v5–v7 (todos de prompt, parser y bucle, sin reentrenar) suben el extremo a extremo
++17.5 / +20 puntos. Base y GRPO siguen empatados (n = 40). Una regresión: el multi-step del GRPO
+baja de .83 (v6) a .50 (v7); con decodificación greedy, cualquier cambio de prompt mueve casos
+individuales, y 6 casos son demasiado pocos para leer tendencia. Fallos que quedan: siglas
+inventadas sin herramienta (0/2 en todas las versiones), P2-005 repite el id `adult` para dos
+personas, y búsquedas BDNS con el tema recortado.
