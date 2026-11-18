@@ -1,7 +1,7 @@
 # Phase 1 v2: full pipeline with the fixed rule sheet (873b2c6). Same seed, sizes, student,
 # SFT and GRPO hyperparameters as results/rlm_final; only differences:
 #   - rule sheet v2 (residence cutoff, CAPI loss, age bands, member count)
-#   - speed: teacher on vLLM batch 64 (was HF batch 1, 4.6 h), eval batch 16 merged (was 2, 4.1 h)
+#   - speed: teacher on vLLM batch 64 (was HF batch 1, 4.6 h), eval on vLLM (was HF batch 2, 4.1 h)
 # Resumable: if the runner timeout kills it, re-queue with RESUME=1 (pipeline --resume).
 set -e
 OUT="$(realpath "$OUT")"
@@ -10,7 +10,7 @@ mkdir -p "$RUN"
 uv sync --extra train -q
 start=$(date +%s)
 uv run --extra train python -m rlm.pipeline --run-dir "$RUN" --quality-gates warn \
-    --teacher-backend vllm --teacher-batch-size 64 --eval-batch-size 16 \
+    --teacher-backend vllm --teacher-batch-size 64 --eval-backend vllm --eval-batch-size 16 \
     ${RESUME:+--resume}
 echo "pipeline wall: $(( $(date +%s) - start )) s"
 cp "$RUN"/manifest.json "$OUT/"
