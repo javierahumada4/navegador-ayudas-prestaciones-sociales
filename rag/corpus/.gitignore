@@ -1,0 +1,5 @@
+# The root .gitignore keeps the template's corpus out of git. Ours is small and public, so the
+# texts and their manifest are versioned: the gold set refers to chunk ids derived from them.
+!*.md
+!MANIFEST.json
+!.gitignore
