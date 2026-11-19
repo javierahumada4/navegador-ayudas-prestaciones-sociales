@@ -10,13 +10,13 @@ Run ``uv run python -m rag.ingest`` to see what gets loaded and how long each do
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 CORPUS_DIR = Path(__file__).parent / "corpus"
 TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
+NOT_CORPUS = {"readme.md"}  # documentation about the corpus, not part of it
 
 
 @dataclass
@@ -41,6 +41,16 @@ def _read_html(path: Path) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def document_id(relative_path: Path) -> str:
+    """Stable, readable id from the path inside the corpus: boe/ley-19.md -> boe-ley-19.
+
+    It depends only on where the file lives, never on its content or on the load order, so the
+    chunk ids derived from it (<doc_id>-<index>) survive re-ingestion and can be cited.
+    """
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", relative_path.with_suffix("").as_posix()).strip("-")
+    return slug.lower()
+
+
 def read_document(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
         return _read_pdf(path)
@@ -53,6 +63,8 @@ def load_corpus(corpus_dir: Path = CORPUS_DIR) -> list[Document]:
     """Every supported file under ``corpus_dir``, recursively, as a ``Document``."""
     documents = []
     for path in sorted(corpus_dir.rglob("*")):
+        if path.name.lower() in NOT_CORPUS:
+            continue
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES | {
             ".pdf",
             ".html",
@@ -62,11 +74,11 @@ def load_corpus(corpus_dir: Path = CORPUS_DIR) -> list[Document]:
         text = read_document(path).strip()
         if not text:
             continue
-        relative = str(path.relative_to(corpus_dir))
+        relative = path.relative_to(corpus_dir)
         documents.append(
             Document(
-                id=hashlib.sha1(relative.encode()).hexdigest()[:10],
-                source=relative,
+                id=document_id(relative),
+                source=relative.as_posix(),
                 text=text,
                 metadata={"chars": len(text), "suffix": path.suffix.lower()},
             )

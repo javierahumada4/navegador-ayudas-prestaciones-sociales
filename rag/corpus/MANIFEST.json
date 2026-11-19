@@ -1,0 +1,84 @@
+[
+  {
+    "file": "ley-19-2021.md",
+    "title": "Ley 19/2021, de 20 de diciembre, por la que se establece el ingreso mínimo vital.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2021-21007",
+    "boe_id": "BOE-A-2021-21007",
+    "in_force": true,
+    "n_blocks": 94,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 241250,
+    "sha256": "e00cf31fbe586f83a2ce5c4d50b273a9e262d61702de571f069a260a585c7364",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "rd-789-2022.md",
+    "title": "Real Decreto 789/2022, de 27 de septiembre, por el que se regula la compatibilidad del Ingreso Mínimo Vital con los ingresos procedentes de rentas del trabajo o de la actividad económica por cuenta propia con el fin de mejorar las oportunidades reales de inclusión social y laboral de las personas beneficiarias de la prestación.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2022-15764",
+    "boe_id": "BOE-A-2022-15764",
+    "in_force": true,
+    "n_blocks": 19,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 45430,
+    "sha256": "bba0fd8d67c27369dca61639f76ddba01d34fcd7e46e231b1578750f5db71f4e",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "rd-635-2022.md",
+    "title": "Real Decreto 635/2022, de 26 de julio, por el que se regulan la organización y funciones del Consejo consultivo del ingreso mínimo vital.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2022-12508",
+    "boe_id": "BOE-A-2022-12508",
+    "in_force": true,
+    "n_blocks": 15,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 14216,
+    "sha256": "8ad25566d029248af357a30f387059f7417ad375efcc3eec12d52b01144de452",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "rd-64-2022.md",
+    "title": "Real Decreto 64/2022, de 25 de enero, por el que se regulan la organización y funciones de la Comisión de seguimiento del ingreso mínimo vital.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2022-1275",
+    "boe_id": "BOE-A-2022-1275",
+    "in_force": true,
+    "n_blocks": 15,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 15247,
+    "sha256": "11c6ef1420a4ccf236c146519afc6daf5de46abd28ed1edf63ad9b921dc28080",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "orden-ism-1375-2021.md",
+    "title": "Orden ISM/1375/2021, de 3 de diciembre, por la que se desarrolla el Registro de Mediadores Sociales del Ingreso Mínimo Vital.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2021-20316",
+    "boe_id": "BOE-A-2021-20316",
+    "in_force": true,
+    "n_blocks": 32,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 39223,
+    "sha256": "138eef95c37bb890ddbd8dde0875881836961659152f1e5ed1addb66b16acf36",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "rdl-20-2020.md",
+    "title": "Real Decreto-ley 20/2020, de 29 de mayo, por el que se establece el ingreso mínimo vital.",
+    "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-5493",
+    "boe_id": "BOE-A-2020-5493",
+    "in_force": false,
+    "n_blocks": 82,
+    "license": "BOE open data: reuse allowed with attribution (Orden PRE/2065/2014)",
+    "chars": 198249,
+    "sha256": "fc220fc7d81abf7fa9c9acfd68cfa872fb65a9118d7f3983cfc8c2a661db110c",
+    "retrieved": "2026-11-19"
+  },
+  {
+    "file": "ss-imv.md",
+    "title": "Seguridad Social: Ingreso mínimo vital (requisitos, cuantías 2026 y solicitud)",
+    "source_url": "https://www.seg-social.es/wps/portal/wss/internet/Trabajadores/PrestacionesPensionesTrabajadores/65850d68-8d06-4645-bde7-05374ee42ac7",
+    "in_force": true,
+    "license": "seg-social.es: reuse of public-sector information with attribution (Ley 37/2007)",
+    "chars": 52195,
+    "sha256": "e7e0ee4a25fdfdc87743d6c030026c292bbec2c7c3f5806bc52f1a63081b3968",
+    "retrieved": "2026-11-19"
+  }
+]
