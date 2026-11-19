@@ -147,6 +147,22 @@ def semantic_chunks(
     return chunks
 
 
+def build_chunks(spec: str, documents: list[Document], embed_fn=None) -> list[Chunk]:
+    """Chunk from a spec: ``recursive:<size>:<overlap>`` or ``semantic:<threshold>:<max_chars>``."""
+    kind, first, second = spec.split(":")
+    if kind == "recursive":
+        return recursive_chunks(documents, chunk_size=int(first), chunk_overlap=int(second))
+    if kind == "semantic":
+        if embed_fn is None:
+            raise ValueError("semantic chunking needs an embedding function")
+        return semantic_chunks(
+            documents, embed_fn, distance_threshold=float(first), max_chunk_chars=int(second)
+        )
+    raise ValueError(
+        f"unknown chunking {spec!r}: use recursive:<size>:<overlap> or semantic:<th>:<max>"
+    )
+
+
 def describe(chunks: list[Chunk]) -> dict[str, float]:
     """Numbers for your chunking comparison table."""
     lengths = [len(c.text) for c in chunks]

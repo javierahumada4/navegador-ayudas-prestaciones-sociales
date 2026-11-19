@@ -22,17 +22,10 @@ from pathlib import Path
 
 import numpy as np
 
-from rag.chunking import (
-    Chunk,
-    consecutive_distances,
-    describe,
-    recursive_chunks,
-    semantic_chunks,
-    sentence_spans,
-)
-from rag.embed import DEFAULT_QUERY_INSTRUCTION, Embedder
+from rag.chunking import build_chunks, consecutive_distances, describe, sentence_spans
+from rag.embed import DEFAULT_QUERY_INSTRUCTION, CachedEmbedFn, Embedder
 from rag.gold import GoldItem, item_recall, item_reciprocal_rank, load_gold, resolve_gold
-from rag.ingest import Document, load_corpus
+from rag.ingest import load_corpus
 from rag.retriever import (
     BM25Retriever,
     DenseRetriever,
@@ -92,30 +85,6 @@ def evaluate_retriever(retriever, items: list[GoldItem]) -> dict[str, float]:
 # ------------------------------------------------------------------------------ setup helpers
 
 
-class CachedEmbedFn:
-    """Sentence embeddings are the same for every threshold: embed each document only once."""
-
-    def __init__(self, embedder: Embedder):
-        self.embedder, self.cache = embedder, {}
-
-    def __call__(self, sentences: list[str]) -> np.ndarray:
-        key = hash(tuple(sentences))
-        if key not in self.cache:
-            self.cache[key] = self.embedder.embed_passages(sentences, batch_size=64)
-        return self.cache[key]
-
-
-def build_chunks(spec: str, documents: list[Document], embed_fn) -> list[Chunk]:
-    kind, first, second = spec.split(":")
-    if kind == "recursive":
-        return recursive_chunks(documents, chunk_size=int(first), chunk_overlap=int(second))
-    if kind == "semantic":
-        return semantic_chunks(
-            documents, embed_fn, distance_threshold=float(first), max_chunk_chars=int(second)
-        )
-    raise ValueError(f"unknown chunking {spec!r}")
-
-
 def make_embedder() -> Embedder:
     import torch
 
@@ -170,12 +139,13 @@ def run_chunking(specs: list[str], weight_bm25: float, persist_dir: str) -> None
             "hybrid": evaluate_ranking(hybrid_rankings(question_pools, weight_bm25), items),
         }
         stats = describe(chunks)
-        report[spec] = {"chunks": stats, "scores": scores}
+        n_split = sum(i.n_split for i in items)
+        report[spec] = {"chunks": stats, "evidence_split_by_boundary": n_split, "scores": scores}
         rows.append(
-            [spec, stats["n_chunks"], round(stats["mean_chars"])]
+            [spec, stats["n_chunks"], round(stats["mean_chars"]), n_split]
             + [scores[r][m] for r in ("bm25", "dense", "hybrid") for m in ("recall@5", "mrr")]
         )
-    headers = ["chunking", "n", "mean chars"] + [
+    headers = ["chunking", "n", "mean chars", "split ev."] + [
         f"{r} {m}" for r in ("bm25", "dense", "hybrid") for m in ("R@5", "MRR")
     ]
     print(f"hybrid weight λ = {weight_bm25}\n")

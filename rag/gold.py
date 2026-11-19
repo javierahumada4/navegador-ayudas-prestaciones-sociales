@@ -57,6 +57,7 @@ class GoldItem:
     notes: str = ""
     # one set of chunk ids per evidence string, filled by ``resolve_gold``
     evidence_chunk_ids: list[set[str]] = field(default_factory=list)
+    n_split: int = 0  # evidence strings cut by a chunk boundary in the resolved chunking
 
     @property
     def relevant_chunk_ids(self) -> set[str]:
@@ -97,20 +98,37 @@ def chunks_containing(evidence: str, chunks: list[Chunk], valid_sources: set[str
     return {c.id for c in chunks if c.source in valid_sources and needle in normalize(c.text)}
 
 
+def chunks_with_part_of(evidence: str, chunks: list[Chunk], valid_sources: set[str]) -> set[str]:
+    """Fallback for evidence cut by a chunk boundary: chunks that hold its first or last half."""
+    words = normalize(evidence).split(" ")
+    middle = len(words) // 2
+    halves = [" ".join(words[:middle]), " ".join(words[middle:])]
+    found: set[str] = set()
+    for half in halves:
+        found |= chunks_containing(half, chunks, valid_sources)
+    return found
+
+
 def resolve_gold(
     items: list[GoldItem], chunks: list[Chunk], valid_sources: set[str] | None = None
 ) -> list[GoldItem]:
-    """Fill ``evidence_chunk_ids`` for a chunking. Raises if an evidence maps to no chunk."""
+    """Fill ``evidence_chunk_ids`` for a chunking.
+
+    An evidence cut by a chunk boundary (small chunks) is resolved to the chunks that hold either
+    half of it and counted in ``item.n_split`` so the report can say how many questions that
+    affects. Raises if an evidence maps to no chunk at all.
+    """
     valid_sources = valid_sources if valid_sources is not None else in_force_documents()
     for item in items:
-        item.evidence_chunk_ids = [
-            chunks_containing(e, chunks, valid_sources) for e in item.evidence
-        ]
-        missing = [
-            e for e, ids in zip(item.evidence, item.evidence_chunk_ids, strict=True) if not ids
-        ]
-        if missing:
-            raise ValueError(f"{item.id}: evidence not found in any chunk: {missing[0][:80]!r}")
+        item.evidence_chunk_ids, item.n_split = [], 0
+        for evidence in item.evidence:
+            ids = chunks_containing(evidence, chunks, valid_sources)
+            if not ids:
+                ids = chunks_with_part_of(evidence, chunks, valid_sources)
+                item.n_split += 1
+            if not ids:
+                raise ValueError(f"{item.id}: evidence not found in any chunk: {evidence[:80]!r}")
+            item.evidence_chunk_ids.append(ids)
     return items
 
 
