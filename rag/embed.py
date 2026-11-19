@@ -35,8 +35,11 @@ class Embedder:
     def embed_queries(
         self, texts: list[str], instruction: str = DEFAULT_QUERY_INSTRUCTION
     ) -> np.ndarray:
-        """Queries are prefixed with the task instruction (instruction-aware embeddings)."""
-        prompt = f"Instruct: {instruction}\nQuery: "
+        """Queries are prefixed with the task instruction (instruction-aware embeddings).
+
+        An empty ``instruction`` embeds the bare query: the control of the instruction ablation.
+        """
+        prompt = f"Instruct: {instruction}\nQuery: " if instruction else None
         return self.model.encode(texts, prompt=prompt, normalize_embeddings=True)
 
 
