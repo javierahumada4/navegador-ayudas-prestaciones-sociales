@@ -1,5 +1,5 @@
-# est-minutes: 210
-# (210 = SFT 25 + GRPO ~170 + vLLM eval ~15, once job 029 has done generate+distill)
+# est-minutes: 200
+# (full run ~270 min; resumable per stage, so starting it even if the deadline cuts it is worth it)
 # Phase 1 v2: full pipeline with the fixed rule sheet (873b2c6). Same seed, sizes, student,
 # SFT and GRPO hyperparameters as results/rlm_final; only differences:
 #   - rule sheet v2 (residence cutoff, CAPI loss, age bands, member count)
@@ -12,9 +12,14 @@ mkdir -p "$RUN"
 uv sync --extra train -q
 # vLLM may hang on this slice (job 011): use it only if a 15-min probe passes, else HF.
 SPEED="--teacher-backend hf --teacher-batch-size 1 --eval-backend hf --eval-batch-size 16"
-if UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv sync --extra distill -q &&
-   UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv run --extra distill \
-       python smoke/vllm_probe.py | tee /dev/stderr | grep -q VLLM_OK; then
+# Probe output goes to a file, never a pipe: an orphaned vLLM engine kept a pipe open and hung
+# job 029 for two sessions (rlm/proc.py now kills it; this is the second guard).
+UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout 900 uv sync --extra distill -q || true
+UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-distill" timeout -k 30 900 uv run --extra distill \
+    python smoke/vllm_probe.py > "$OUT/vllm_probe.txt" 2>&1 || true
+pkill -f "VLLM::EngineCore" || true  # never leave an engine holding the GPU before the pipeline
+cat "$OUT/vllm_probe.txt" | grep -E "tok/s|VLLM_OK|engine up" || true
+if grep -q VLLM_OK "$OUT/vllm_probe.txt"; then
   SPEED="--teacher-backend vllm --teacher-batch-size 64 --eval-backend vllm --eval-batch-size 16"
 fi
 echo "backends: $SPEED"
