@@ -438,9 +438,9 @@ def main() -> None:
     if args.backend == "vllm":
         # vLLM's engine process kept the interpreter alive after every result was written
         # (jobs 011/013 sat there until their timeout): leave as soon as the files exist.
-        import os
+        from rlm.proc import hard_exit
 
-        os._exit(0)
+        hard_exit(0)  # also kills the orphan-prone VLLM::EngineCore child
 
 
 if __name__ == "__main__":

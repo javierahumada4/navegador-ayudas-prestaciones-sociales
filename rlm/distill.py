@@ -694,7 +694,9 @@ def main() -> None:
     if args.backend == "vllm":
         # vLLM's engine process can keep the interpreter alive after the output is complete
         # (seen in evaluation jobs 011/013): exit once the traces are on disk.
-        os._exit(0)
+        from rlm.proc import hard_exit
+
+        hard_exit(0)  # also kills the orphan-prone VLLM::EngineCore child
 
 
 if __name__ == "__main__":

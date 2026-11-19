@@ -34,7 +34,9 @@ def main() -> None:
         print(f"{name}: {tokens} tokens in {time.time() - t1:.1f} s "
               f"= {tokens / (time.time() - t1):.0f} tok/s", flush=True)
     print("VLLM_OK", flush=True)
-    os._exit(0)  # vLLM can keep the interpreter alive at exit
+    from rlm.proc import hard_exit
+
+    hard_exit(0)  # kill VLLM::EngineCore too: a bare os._exit orphaned it (job 029 hung)
 
 
 if __name__ == "__main__":
