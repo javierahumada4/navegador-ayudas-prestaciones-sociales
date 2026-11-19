@@ -9,6 +9,8 @@ sub-command prints a Markdown table and writes its numbers to ``reports/phase3_<
     uv run python -m rag.evaluate instructions        # dense retrieval vs query instruction
     uv run python -m rag.evaluate tokenizer           # BM25 tokenisation ablation
     uv run python -m rag.evaluate failures            # where each retriever misses
+    uv run python -m rag.evaluate calibrate           # the "no lo sé" gate on the dense score
+    uv run python -m rag.evaluate generation          # answers, citations and abstentions
     uv run python -m rag.evaluate plot-distances      # sentence distances + threshold (figure)
 
 Chunking specs: ``recursive:<size>:<overlap>`` and ``semantic:<threshold>:<max_chars>``.
@@ -18,13 +20,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
 
 from rag.chunking import build_chunks, consecutive_distances, describe, sentence_spans
 from rag.embed import DEFAULT_QUERY_INSTRUCTION, CachedEmbedFn, Embedder
-from rag.gold import GoldItem, item_recall, item_reciprocal_rank, load_gold, resolve_gold
+from rag.gold import (
+    GoldItem,
+    item_recall,
+    item_reciprocal_rank,
+    load_gold,
+    load_unanswerable,
+    resolve_gold,
+)
 from rag.ingest import load_corpus
 from rag.retriever import (
     BM25Retriever,
@@ -316,6 +326,117 @@ def run_plot_distances(doc_id: str, thresholds: list[float], out: Path) -> None:
     print(f"{len(sentences)} sentences; median distance {np.median(distances):.3f}; figure: {out}")
 
 
+def run_calibrate(chunking: str, persist_dir: str) -> None:
+    """Top-1 dense cosine of answerable vs unanswerable questions: where the gate goes."""
+    documents = load_corpus()
+    embedder = make_embedder()
+    chunks = build_chunks(chunking, documents, CachedEmbedFn(embedder))
+    dense = DenseRetriever(chunks, embedder, persist_dir)
+    items = load_gold()
+    answerable = np.array([dense.search(i.question, 1)[0].score for i in items])
+    negatives_text = load_unanswerable()
+    negatives = np.array([dense.search(q, 1)[0].score for q in negatives_text])
+    print(
+        f"answerable   (n={len(answerable)}): min {answerable.min():.3f}  "
+        f"p10 {np.percentile(answerable, 10):.3f}  median {np.median(answerable):.3f}"
+    )
+    print(
+        f"unanswerable (n={len(negatives)}): max {negatives.max():.3f}  "
+        f"median {np.median(negatives):.3f}\n"
+    )
+    for question, score in sorted(zip(negatives_text, negatives, strict=True), key=lambda t: -t[1]):
+        print(f"  {score:.3f}  {question}")
+    rows = []
+    for gate in np.round(np.arange(0.40, 0.76, 0.05), 2):
+        kept = float(np.mean(answerable >= gate))
+        rejected = float(np.mean(negatives < gate))
+        rows.append([float(gate), kept, rejected])
+    print("\n" + markdown_table(["gate", "answerable kept", "unanswerable rejected"], rows))
+    save_report(
+        "calibrate", {"answerable": answerable.tolist(), "unanswerable": negatives.tolist()}
+    )
+
+
+NUMBER = re.compile(r"\d[\d.,]*\d|\d")
+
+
+def numbers_in(text: str) -> set[str]:
+    return {n.rstrip(".,") for n in NUMBER.findall(text)}
+
+
+def run_generation(
+    chunking: str, weight_bm25: float, min_score: float, retriever: str, k: int, limit: int | None
+) -> None:
+    """End to end: answers with citations for the gold questions and the unanswerable ones."""
+    from rag.generate import ABSTENTION, RagPipeline, is_abstention
+
+    pipeline = RagPipeline(chunking=chunking, weight_bm25=weight_bm25, min_dense_score=min_score)
+    pipeline.load()
+    items = resolve_gold(load_gold(), pipeline.chunks)[:limit]
+    by_id = {c.id: c for c in pipeline.chunks}
+    records, answered, cited_gold, supported, with_numbers = [], 0, 0, 0, 0
+    for item in items:
+        response = pipeline.answer(item.question, top_k=k, retriever=retriever)
+        abstained = is_abstention(response.answer)
+        answered += not abstained
+        retrieved_ok = bool(item.relevant_chunk_ids & {c.id for c in response.chunks})
+        cited_ok = bool(item.relevant_chunk_ids & set(response.citations))
+        cited_gold += cited_ok and not abstained
+        cited_text = " ".join(by_id[c].text for c in response.citations)
+        answer_numbers = numbers_in(response.answer) - numbers_in(" ".join(response.citations))
+        unsupported = sorted(n for n in answer_numbers if n not in numbers_in(cited_text))
+        if answer_numbers and not abstained:
+            with_numbers += 1
+            supported += not unsupported
+        records.append(
+            {
+                "id": item.id,
+                "question": item.question,
+                "answer": response.answer,
+                "citations": response.citations,
+                "abstained": abstained,
+                "relevant_retrieved": retrieved_ok,
+                "cited_relevant": cited_ok,
+                "unsupported_numbers": unsupported,
+            }
+        )
+    negatives = []
+    for question in load_unanswerable():
+        response = pipeline.answer(question, top_k=k, retriever=retriever)
+        negatives.append(
+            {
+                "question": question,
+                "answer": response.answer,
+                "abstained": is_abstention(response.answer),
+            }
+        )
+    n = len(items)
+    summary = {
+        "n_answerable": n,
+        "answered": answered / n,
+        "false_abstentions": 1 - answered / n,
+        "relevant_chunk_retrieved": float(np.mean([r["relevant_retrieved"] for r in records])),
+        "cited_a_relevant_chunk": cited_gold / n,
+        "numbers_supported_by_citations": supported / max(with_numbers, 1),
+        "n_unanswerable": len(negatives),
+        "correct_abstentions": float(np.mean([r["abstained"] for r in negatives])),
+        "safety_nets": dict(pipeline.stats),
+        "model": pipeline.generator.model_id,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    for record in records[:6] + negatives[:3]:
+        print(f"\nQ: {record['question']}\nA: {record['answer']}")
+    save_report(
+        "generation",
+        {
+            "summary": summary,
+            "answerable": records,
+            "unanswerable": negatives,
+            "abstention_phrase": ABSTENTION,
+        },
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -332,6 +453,14 @@ def main() -> None:
     failures.add_argument("--chunking", default=DEFAULT_CHUNKING)
     failures.add_argument("--weight", type=float, default=0.5)
     failures.add_argument("-k", type=int, default=5)
+    sub.add_parser("calibrate").add_argument("--chunking", default=DEFAULT_CHUNKING)
+    generation = sub.add_parser("generation")
+    generation.add_argument("--chunking", default=DEFAULT_CHUNKING)
+    generation.add_argument("--weight", type=float, default=0.5)
+    generation.add_argument("--min-score", type=float, default=0.0)
+    generation.add_argument("--retriever", default="hybrid")
+    generation.add_argument("-k", type=int, default=5)
+    generation.add_argument("--limit", type=int)
     plot = sub.add_parser("plot-distances")
     plot.add_argument("--doc", default="ley-19-2021")
     plot.add_argument("--thresholds", type=float, nargs="+", default=[0.25, 0.65])
@@ -344,6 +473,12 @@ def main() -> None:
         run_lambda(args.chunking, args.index_dir)
     elif args.command == "instructions":
         run_instructions(args.chunking, args.index_dir)
+    elif args.command == "calibrate":
+        run_calibrate(args.chunking, args.index_dir)
+    elif args.command == "generation":
+        run_generation(
+            args.chunking, args.weight, args.min_score, args.retriever, args.k, args.limit
+        )
     elif args.command == "tokenizer":
         run_tokenizer(args.chunking)
     elif args.command == "failures":

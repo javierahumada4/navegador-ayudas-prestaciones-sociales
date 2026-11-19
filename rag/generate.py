@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+from collections import Counter
 from pathlib import Path
 
 from api.schemas import RagResponse, RetrievedChunk
@@ -201,6 +202,7 @@ class RagPipeline:
         self.embedder = embedder
         self.chunks: list[Chunk] = []
         self.retrievers: dict[str, object] = {}
+        self.stats: Counter[str] = Counter()  # what the safety nets did, for the evaluation
 
     def _get_embedder(self) -> Embedder:
         if self.embedder is None:
@@ -257,18 +259,23 @@ class RagPipeline:
         """Retrieve, build the prompt, generate and verify the citations."""
         hits = self.retrieve(question, top_k, retriever)
         model = self.generator.model_id
+        self.stats["questions"] += 1
         if not self.covers(question):
+            self.stats["abstained_by_gate"] += 1
             return to_response(ABSTENTION, hits, retriever, model)
         valid_ids = {h.chunk.id for h in hits}
         prompt = build_prompt(question, hits)
         answer = self.generator.generate(prompt)
         if not is_abstention(answer) and not extract_citations(answer, valid_ids):
+            self.stats["retries"] += 1
             answer = self.generator.generate(prompt + RETRY_REMINDER)  # one retry, then give up
         bad = invalid_citations(answer, valid_ids)
         if bad:
+            self.stats["answers_with_invented_citations"] += 1
             log.warning("answer cited ids that were not retrieved: %s", bad)
             answer = strip_invalid_citations(answer, valid_ids)
         if not is_abstention(answer) and not extract_citations(answer, valid_ids):
+            self.stats["forced_abstentions"] += 1
             answer = ABSTENTION  # an answer that rests on no retrieved chunk is not an answer
         return to_response(answer, hits, retriever, model)
 
