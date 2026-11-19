@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from datetime import date
 from functools import lru_cache
 
 import requests
@@ -58,8 +59,48 @@ def resolve_boe_block(index: list[dict], articulo: str) -> dict:
     raise ValueError(f"no block {articulo!r} in this law. Available: {available}")
 
 
-def parse_boe_block(xml_text: str) -> dict:
-    """Return the version in force (the last one) of a BOE block as plain text."""
+def _flat_text(element: ET.Element) -> str:
+    return re.sub(r"\s+", " ", "".join(element.itertext())).strip()
+
+
+def _render_element(element: ET.Element) -> str:
+    """Plain text of a version child: paragraphs as one line, tables as one line per row.
+
+    Flattening a table with ``itertext`` glues its cells into running prose ("Un adulto solo.
+    16.614 € Un adulto y un menor. 1,4 ..."), which loses which value belongs to which row.
+    """
+    if element.tag != "table":
+        return _flat_text(element)
+    rows = []
+    for row in element.iter("tr"):
+        cells = [_flat_text(cell) for cell in row if cell.tag in ("th", "td")]
+        line = " | ".join(cells).strip()
+        if line:
+            rows.append(line)
+    return "\n".join(rows)
+
+
+def _version_in_force(versions: list[ET.Element], today: str) -> tuple[ET.Element, bool]:
+    """The latest version whose ``fecha_vigencia`` (YYYYMMDD) is not after ``today``.
+
+    The BOE lists versions that are published but not yet in force (a pending amendment).
+    If every version is still in the future, return the earliest one and flag it.
+    """
+    in_force = [v for v in versions if (v.get("fecha_vigencia") or "") <= today]
+    if in_force:
+        return in_force[-1], True
+    return versions[0], False
+
+
+def parse_boe_block(
+    xml_text: str | bytes, max_chars: int | None = BOE_MAX_CHARS, today: str | None = None
+) -> dict:
+    """Return the version in force today of a BOE block as plain text.
+
+    ``max_chars`` caps the text (the model's context is limited); pass ``None`` to keep it
+    whole, for example when ingesting the law into a corpus. ``today`` (YYYYMMDD) exists so
+    tests do not depend on the calendar.
+    """
     root = ET.fromstring(xml_text)
     block = root.find("data/bloque")
     if block is None:
@@ -67,14 +108,16 @@ def parse_boe_block(xml_text: str) -> dict:
     versions = block.findall("version")
     if not versions:
         raise ValueError("unexpected BOE response: block without versions")
-    current = versions[-1]
-    paragraphs = [re.sub(r"\s+", " ", "".join(p.itertext())).strip() for p in current]
+    today = today or date.today().strftime("%Y%m%d")
+    current, in_force = _version_in_force(versions, today)
+    paragraphs = [_render_element(child) for child in current]
     text = "\n".join(p for p in paragraphs if p)
-    truncated = len(text) > BOE_MAX_CHARS
+    truncated = max_chars is not None and len(text) > max_chars
     return {
         "titulo": block.get("titulo", "").replace("\xa0", " "),
-        "texto": text[:BOE_MAX_CHARS],
+        "texto": text[:max_chars] if truncated else text,
         "truncado": truncated,
+        "en_vigor": in_force,
         "vigente_desde": current.get("fecha_vigencia"),
         "modificado_por": current.get("id_norma"),
         "numero_versiones": len(versions),
@@ -168,6 +211,30 @@ def calculator(expression: str) -> float:
     return float(evaluate(ast.parse(expression, mode="eval").body))
 
 
+def fetch_boe_block(articulo: str, norma: str = LEY_IMV, max_chars: int | None = None) -> dict:
+    """Download one block of a consolidated law and return it as parsed by ``parse_boe_block``.
+
+    Not a model tool: ``consultar_boe`` wraps it with a text cap, while a corpus ingestion
+    calls it with ``max_chars=None`` to keep whole articles. ``articulo`` is anything
+    ``resolve_boe_block`` accepts; ``_boe_index(norma)`` lists every block of the law.
+    """
+    if not BOE_ID_PATTERN.fullmatch(norma):
+        raise ValueError("norma must look like 'BOE-A-2021-21007'")
+    entry = resolve_boe_block(list(_boe_index(norma)), articulo)
+    response = requests.get(
+        f"{BOE_CONSOLIDATED_API}/{norma}/texto/bloque/{entry['id']}",
+        headers={"Accept": "application/xml"},
+        timeout=15,
+    )
+    response.raise_for_status()
+    return {
+        "norma": norma,
+        # Bytes, not ``response.text``: the XML declares UTF-8 and requests may guess otherwise.
+        **parse_boe_block(response.content, max_chars=max_chars),
+        "url": f"https://www.boe.es/buscar/act.php?id={norma}",
+    }
+
+
 @tool
 def consultar_boe(articulo: str, norma: str = LEY_IMV) -> dict:
     """Devuelve el texto vigente de un artículo, anexo o disposición de una ley española,
@@ -184,20 +251,7 @@ def consultar_boe(articulo: str, norma: str = LEY_IMV) -> dict:
             'Disposición transitoria séptima'.
         norma: Identificador BOE de la ley; por defecto 'BOE-A-2021-21007' (Ley 19/2021, IMV).
     """
-    if not BOE_ID_PATTERN.fullmatch(norma):
-        raise ValueError("norma must look like 'BOE-A-2021-21007'")
-    entry = resolve_boe_block(list(_boe_index(norma)), articulo)
-    response = requests.get(
-        f"{BOE_CONSOLIDATED_API}/{norma}/texto/bloque/{entry['id']}",
-        headers={"Accept": "application/xml"},
-        timeout=15,
-    )
-    response.raise_for_status()
-    return {
-        "norma": norma,
-        **parse_boe_block(response.text),
-        "url": f"https://www.boe.es/buscar/act.php?id={norma}",
-    }
+    return fetch_boe_block(articulo, norma, max_chars=BOE_MAX_CHARS)
 
 
 def default_registry() -> ToolRegistry:
