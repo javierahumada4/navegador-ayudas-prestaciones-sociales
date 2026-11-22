@@ -111,7 +111,7 @@ def markdown_table(headers: list[str], rows: list[list]) -> str:
 
 
 def save_report(name: str, payload: dict) -> None:
-    REPORTS_DIR.mkdir(exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / f"phase3_{name}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\nnumbers written to {path}")
@@ -160,7 +160,7 @@ def run_chunking(specs: list[str], weight_bm25: float, persist_dir: str) -> None
     ]
     print(f"hybrid weight λ = {weight_bm25}\n")
     print(markdown_table(headers, rows))
-    save_report("chunking", report)
+    save_report("chunking_" + "+".join(specs).replace(":", "_"), report)
 
 
 def cross_validated_lambda(question_pools, items, folds: int = 5) -> dict[str, float]:
@@ -203,7 +203,7 @@ def run_lambda(chunking: str, persist_dir: str) -> None:
         f"{cv['cv_mrr']:.3f} (vs {report[str(best)]['mrr']:.3f} in-sample)"
     )
     report["best"] = {"lambda": best, **cv}
-    save_report("lambda", report)
+    save_report("lambda_" + chunking.replace(":", "_"), report)
 
 
 INSTRUCTIONS = {
@@ -240,7 +240,7 @@ def run_instructions(chunking: str, persist_dir: str) -> None:
         f"chunking {chunking}; dense retriever; the passages never change, only the query prompt\n"
     )
     print(markdown_table(["instruction"] + [f"R@{k}" for k in KS] + ["MRR"], rows))
-    save_report("instructions", report)
+    save_report("instructions_" + chunking.replace(":", "_"), report)
 
 
 def run_tokenizer(chunking: str) -> None:
@@ -295,7 +295,7 @@ def run_failures(chunking: str, weight_bm25: float, persist_dir: str, k: int) ->
             for name in ("bm25", "dense"):
                 top = rankings[name][position][0]
                 print(f"  {name} top-1: {top}: {by_id[top].text[:110]!r}")
-    save_report("failures", {"k": k, "questions": report})
+    save_report("failures_" + chunking.replace(":", "_"), {"k": k, "questions": report})
 
 
 def run_plot_distances(doc_id: str, thresholds: list[float], out: Path) -> None:
@@ -438,10 +438,12 @@ def run_generation(
 
 
 def main() -> None:
+    global REPORTS_DIR
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--index-dir", default="rag/index")
+    parser.add_argument("--reports-dir", type=Path, default=Path("reports"))
     sub = parser.add_subparsers(dest="command", required=True)
 
     chunking = sub.add_parser("chunking")
@@ -467,6 +469,7 @@ def main() -> None:
     plot.add_argument("--out", type=Path, default=FIGURES_DIR / "distances.png")
 
     args = parser.parse_args()
+    REPORTS_DIR = args.reports_dir
     if args.command == "chunking":
         run_chunking(args.specs, args.weight, args.index_dir)
     elif args.command == "lambda":
