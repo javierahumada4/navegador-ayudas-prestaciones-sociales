@@ -427,7 +427,7 @@ def run_generation(
     for record in records[:6] + negatives[:3]:
         print(f"\nQ: {record['question']}\nA: {record['answer']}")
     save_report(
-        "generation",
+        f"generation_{retriever}_gate{min_score}",
         {
             "summary": summary,
             "answerable": records,
