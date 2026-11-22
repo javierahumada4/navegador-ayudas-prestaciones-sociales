@@ -1,0 +1,37 @@
+{
+  "recursive:1200:150": {
+    "chunks": {
+      "n_chunks": 707,
+      "mean_chars": 867.961810466761,
+      "min_chars": 63,
+      "max_chars": 1200
+    },
+    "evidence_split_by_boundary": 0,
+    "scores": {
+      "bm25": {
+        "recall@1": 0.24,
+        "recall@3": 0.41,
+        "recall@5": 0.55,
+        "recall@10": 0.63,
+        "mrr": 0.37577832255463833,
+        "n_questions": 50
+      },
+      "dense": {
+        "recall@1": 0.32,
+        "recall@3": 0.62,
+        "recall@5": 0.66,
+        "recall@10": 0.74,
+        "mrr": 0.4865369238604533,
+        "n_questions": 50
+      },
+      "hybrid": {
+        "recall@1": 0.33,
+        "recall@3": 0.57,
+        "recall@5": 0.7,
+        "recall@10": 0.8,
+        "mrr": 0.4912455322455322,
+        "n_questions": 50
+      }
+    }
+  }
+}
