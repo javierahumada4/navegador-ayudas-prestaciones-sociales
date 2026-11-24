@@ -1,6 +1,8 @@
+> **Integración definitiva:** esta rama conserva por defecto las tres herramientas evaluadas (`calcular_imv`, `consultar_ayudas`, `guardar_informe`) y añade `consultar_boe` cuando `ARCA_TOOLS_ENABLE_BOE=1`. Ver [despliegue](../docs/deploy_fases_1_2.md).
+
 # Fase 2 — Herramientas y evaluación integral IMV/CAPI
 
-**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tool-use-imv-bdns-informes.
+**Endpoint docente:** POST /tools. **Rama consolidada:** release/fases-1-2-definitiva.
 Motor determinista y ruleset IMV 2026 reutilizados de main, sin tocar la fase 1.
 
 ## Tres herramientas reales

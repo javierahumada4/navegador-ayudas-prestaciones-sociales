@@ -14,3 +14,8 @@ hf_cache
 outputs
 runs
 .DS_Store
+
+reports
+reports/imv
+reports/phase2_artifacts
+reports/phase2_api_traces

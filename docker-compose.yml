@@ -21,12 +21,18 @@ x-arca: &arca
     # Caché de modelos compartida entre ejecuciones. En la DGX apunta HF_CACHE_DIR a un
     # disco grande y compartido para no descargar Qwen cien veces.
     - ${HF_CACHE_DIR:-./hf_cache}:/data/hf_cache
+    - ${ARCA_REPORTS_HOST_DIR:-./reports/imv}:/data/reports
   environment:
     - HF_HOME=/data/hf_cache
     - HF_TOKEN=${HF_TOKEN:-}
     - ARCA_RLM_ADAPTER=${ARCA_RLM_ADAPTER:-}
     - ARCA_RLM_BASE_MODEL=${ARCA_RLM_BASE_MODEL:-}
     - ARCA_RLM_VERIFIER=${ARCA_RLM_VERIFIER:-imv}
+    - ARCA_TOOLS_BRAIN=${ARCA_TOOLS_BRAIN:-base}
+    - ARCA_TOOLS_MODEL_ID=${ARCA_TOOLS_MODEL_ID:-Qwen/Qwen3-1.7B}
+    - ARCA_TOOLS_ADAPTER=${ARCA_TOOLS_ADAPTER:-}
+    - ARCA_TOOLS_ENABLE_BOE=${ARCA_TOOLS_ENABLE_BOE:-1}
+    - ARCA_IMV_REPORTS_DIR=/data/reports
     - ARCA_TEAM=${ARCA_TEAM:-}
     - ARCA_DOMAIN=${ARCA_DOMAIN:-}
     - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
@@ -58,7 +64,7 @@ services:
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
     ports:
-      - "4040:4040"
+      - "127.0.0.1:4040:4040"
     depends_on:
       - api
 
