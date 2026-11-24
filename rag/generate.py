@@ -245,10 +245,28 @@ class RagPipeline:
         self.retrievers = {"bm25": bm25, "dense": dense, "hybrid": hybrid}
 
     def retrieve(self, question: str, top_k: int, retriever: str) -> list[Hit]:
-        """Top ``top_k`` chunks for ``question`` with the dense, bm25 or hybrid retriever."""
+        """Top ``top_k`` chunks for ``question`` with the dense, bm25 or hybrid retriever.
+
+        Documents that are no longer in force (``in_force: false`` in ``MANIFEST.json``, the
+        repealed RDL 20/2020) stay in the index, so the retrieval evaluation can still measure
+        the distractor, but are not served: an answer must never rest on a repealed text.
+        ``ARCA_RAG_INCLUDE_REPEALED=1`` serves them again.
+        """
         if retriever not in {"dense", "bm25", "hybrid"}:
             raise ValueError(f"unknown retriever {retriever!r}: use dense, bm25 or hybrid")
-        return self.retrievers[retriever].search(question, top_k=top_k)
+        search = self.retrievers[retriever].search
+        if os.environ.get("ARCA_RAG_INCLUDE_REPEALED", "0") == "1" or not self.repealed_sources:
+            return search(question, top_k=top_k)
+        hits = search(question, top_k=top_k * 3)
+        return [h for h in hits if h.chunk.source not in self.repealed_sources][:top_k]
+
+    @property
+    def repealed_sources(self) -> set[str]:
+        if not hasattr(self, "_repealed"):
+            manifest = Path(self.corpus_dir) / "MANIFEST.json"
+            entries = json.loads(manifest.read_text(encoding="utf-8")) if manifest.exists() else []
+            self._repealed = {e["file"] for e in entries if not e.get("in_force", True)}
+        return self._repealed
 
     def covers(self, question: str) -> bool:
         """Whether the corpus plausibly answers ``question``: top-1 dense cosine above the gate."""
