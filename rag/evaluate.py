@@ -1,20 +1,56 @@
-"""Phase 3 evaluation: Recall@k and MRR of each retriever on your gold set.
+"""Phase 3 evaluation: Recall@k and MRR of the three retrievers on the gold set.
 
-The gold set is a JSONL file (``rag/gold/example_gold.jsonl`` shows the format) with a
-question and the id(s) of the chunk(s) that answer it. Fifty questions is the minimum;
-write them yourselves while reading the corpus, and note the ones where two chunks are
-equally valid: they will tell you a lot about your chunking.
+The gold set (``rag/gold/gold.jsonl``, see ``rag/gold.py``) stores the evidence that answers each
+question; ``resolve_gold`` turns it into chunk ids for whichever chunking is evaluated. Every
+sub-command prints a Markdown table and writes its numbers to ``reports/phase3_<name>.json``::
 
-Run::
+    uv run python -m rag.evaluate chunking            # recursive vs semantic, 3 retrievers
+    uv run python -m rag.evaluate lambda              # sweep of the hybrid weight, with CV
+    uv run python -m rag.evaluate instructions        # dense retrieval vs query instruction
+    uv run python -m rag.evaluate tokenizer           # BM25 tokenisation ablation
+    uv run python -m rag.evaluate failures            # where each retriever misses
+    uv run python -m rag.evaluate calibrate           # the "no lo sé" gate on the dense score
+    uv run python -m rag.evaluate generation          # answers, citations and abstentions
+    uv run python -m rag.evaluate plot-distances      # sentence distances + threshold (figure)
 
-    uv run python -m rag.evaluate --gold rag/gold/gold.jsonl --k 5
+Chunking specs: ``recursive:<size>:<overlap>`` and ``semantic:<threshold>:<max_chars>``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
+
+import numpy as np
+
+from rag.chunking import build_chunks, consecutive_distances, describe, sentence_spans
+from rag.embed import DEFAULT_QUERY_INSTRUCTION, CachedEmbedFn, Embedder
+from rag.gold import (
+    GoldItem,
+    item_recall,
+    item_reciprocal_rank,
+    load_gold,
+    load_unanswerable,
+    resolve_gold,
+)
+from rag.ingest import load_corpus
+from rag.retriever import (
+    BM25Retriever,
+    DenseRetriever,
+    Hit,
+    fuse,
+    tokenize,
+    tokenize_es,
+)
+
+REPORTS_DIR = Path("reports")
+FIGURES_DIR = Path("docs/fase3_figs")
+KS = (1, 3, 5, 10)
+DEPTH = 20  # ranking depth used for Recall@k and MRR
+DEFAULT_CHUNKING = "recursive:800:100"
+LAMBDA_GRID = [round(0.1 * i, 1) for i in range(11)]
 
 
 def recall_at_k(ranked_ids: list[str], relevant_ids: set[str], k: int) -> float:
@@ -32,39 +68,426 @@ def reciprocal_rank(ranked_ids: list[str], relevant_ids: set[str]) -> float:
     return 0.0
 
 
-def evaluate_retriever(retriever, gold: list[dict], k: int) -> dict[str, float]:
-    recalls, rrs = [], []
-    for item in gold:
-        ranked = [hit.chunk.id for hit in retriever.search(item["question"], top_k=max(k, 10))]
-        relevant = set(item["relevant_chunk_ids"])
-        recalls.append(recall_at_k(ranked, relevant, k))
-        rrs.append(reciprocal_rank(ranked, relevant))
-    n = max(len(gold), 1)
-    return {f"recall@{k}": sum(recalls) / n, "mrr": sum(rrs) / n, "n_questions": len(gold)}
+def evaluate_ranking(rankings: list[list[str]], items: list[GoldItem]) -> dict[str, float]:
+    """Recall@k (k in ``KS``) and MRR of one retriever, given its ranked chunk ids per question."""
+    result = {
+        f"recall@{k}": float(
+            np.mean([item_recall(r, i, k) for r, i in zip(rankings, items, strict=True)])
+        )
+        for k in KS
+    }
+    result["mrr"] = float(
+        np.mean([item_reciprocal_rank(r, i) for r, i in zip(rankings, items, strict=True)])
+    )
+    result["n_questions"] = len(items)
+    return result
 
 
-def load_gold(path: str | Path) -> list[dict]:
+def rank_ids(search, items: list[GoldItem], depth: int = DEPTH) -> list[list[str]]:
+    """Ranked chunk ids of ``search(question, top_k)`` for every gold question."""
+    return [[hit.chunk.id for hit in search(item.question, depth)] for item in items]
+
+
+def evaluate_retriever(retriever, items: list[GoldItem]) -> dict[str, float]:
+    return evaluate_ranking(rank_ids(retriever.search, items), items)
+
+
+# ------------------------------------------------------------------------------ setup helpers
+
+
+def make_embedder() -> Embedder:
+    import torch
+
+    return Embedder(device="cuda" if torch.cuda.is_available() else "cpu")
+
+
+def markdown_table(headers: list[str], rows: list[list]) -> str:
+    def cell(value) -> str:
+        return f"{value:.3f}" if isinstance(value, float) else str(value)
+
+    lines = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
+    lines += ["| " + " | ".join(cell(v) for v in row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
+def save_report(name: str, payload: dict) -> None:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = REPORTS_DIR / f"phase3_{name}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"\nnumbers written to {path}")
+
+
+def pools(bm25, dense, items: list[GoldItem], pool: int = 20) -> list[tuple[list[Hit], list[Hit]]]:
+    """BM25 and dense top-``pool`` hits per question, computed once and reused to fuse."""
+    return [(bm25.search(i.question, pool), dense.search(i.question, pool)) for i in items]
+
+
+def hybrid_rankings(question_pools, weight_bm25: float) -> list[list[str]]:
     return [
-        json.loads(line)
-        for line in Path(path).read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        [h.chunk.id for h in fuse(bm25_hits, dense_hits, weight_bm25, DEPTH)]
+        for bm25_hits, dense_hits in question_pools
     ]
 
 
+# ------------------------------------------------------------------------------- experiments
+
+
+def run_chunking(specs: list[str], weight_bm25: float, persist_dir: str) -> None:
+    documents = load_corpus()
+    embedder = make_embedder()
+    embed_fn = CachedEmbedFn(embedder)
+    rows, report = [], {}
+    for spec in specs:
+        chunks = build_chunks(spec, documents, embed_fn)
+        items = resolve_gold(load_gold(), chunks)
+        bm25 = BM25Retriever(chunks)
+        dense = DenseRetriever(chunks, embedder, persist_dir)
+        question_pools = pools(bm25, dense, items)
+        scores = {
+            "bm25": evaluate_retriever(bm25, items),
+            "dense": evaluate_retriever(dense, items),
+            "hybrid": evaluate_ranking(hybrid_rankings(question_pools, weight_bm25), items),
+        }
+        stats = describe(chunks)
+        n_split = sum(i.n_split for i in items)
+        report[spec] = {"chunks": stats, "evidence_split_by_boundary": n_split, "scores": scores}
+        rows.append(
+            [spec, stats["n_chunks"], round(stats["mean_chars"]), n_split]
+            + [scores[r][m] for r in ("bm25", "dense", "hybrid") for m in ("recall@5", "mrr")]
+        )
+    headers = ["chunking", "n", "mean chars", "split ev."] + [
+        f"{r} {m}" for r in ("bm25", "dense", "hybrid") for m in ("R@5", "MRR")
+    ]
+    print(f"hybrid weight λ = {weight_bm25}\n")
+    print(markdown_table(headers, rows))
+    save_report("chunking_" + "+".join(specs).replace(":", "_"), report)
+
+
+def cross_validated_lambda(question_pools, items, folds: int = 5) -> dict[str, float]:
+    """Choose λ on 4 folds, score on the 5th: the honest estimate of tuning λ on 50 questions."""
+    order = np.random.default_rng(0).permutation(len(items))
+    held_out = []
+    for fold in range(folds):
+        test = set(order[fold::folds].tolist())
+        train = [i for i in range(len(items)) if i not in test]
+
+        def mrr(weight, indices):
+            ranked = hybrid_rankings([question_pools[i] for i in indices], weight)
+            return np.mean(
+                [item_reciprocal_rank(r, items[i]) for r, i in zip(ranked, indices, strict=True)]
+            )
+
+        best = max(LAMBDA_GRID, key=lambda w: (round(mrr(w, train), 9), -abs(w - 0.5)))
+        held_out.append(mrr(best, sorted(test)))
+    return {"cv_mrr": float(np.mean(held_out))}
+
+
+def run_lambda(chunking: str, persist_dir: str) -> None:
+    documents = load_corpus()
+    embedder = make_embedder()
+    chunks = build_chunks(chunking, documents, CachedEmbedFn(embedder))
+    items = resolve_gold(load_gold(), chunks)
+    bm25, dense = BM25Retriever(chunks), DenseRetriever(chunks, embedder, persist_dir)
+    question_pools = pools(bm25, dense, items)
+    rows, report = [], {}
+    for weight in LAMBDA_GRID:
+        scores = evaluate_ranking(hybrid_rankings(question_pools, weight), items)
+        report[str(weight)] = scores
+        rows.append([weight] + [scores[f"recall@{k}"] for k in KS] + [scores["mrr"]])
+    print(f"chunking {chunking}; λ = weight of BM25 (λ=0 is dense alone, λ=1 is BM25 alone)\n")
+    print(markdown_table(["λ"] + [f"R@{k}" for k in KS] + ["MRR"], rows))
+    best = max(LAMBDA_GRID, key=lambda w: (report[str(w)]["mrr"], -abs(w - 0.5)))
+    cv = cross_validated_lambda(question_pools, items)
+    print(
+        f"\nbest λ by MRR: {best}; 5-fold cross-validated MRR with λ chosen on 4 folds: "
+        f"{cv['cv_mrr']:.3f} (vs {report[str(best)]['mrr']:.3f} in-sample)"
+    )
+    report["best"] = {"lambda": best, **cv}
+    save_report("lambda_" + chunking.replace(":", "_"), report)
+
+
+INSTRUCTIONS = {
+    "none": "",
+    "default": DEFAULT_QUERY_INSTRUCTION,
+    "generic": "Given a web search query, retrieve relevant passages that answer the query",
+    "legal-en": (
+        "Given a question about the Spanish minimum income benefit (IMV), retrieve the legal "
+        "provision that answers it"
+    ),
+    "legal-es": (
+        "Dada una pregunta sobre el ingreso mínimo vital, recupera el artículo de la norma que "
+        "la responde"
+    ),
+}
+
+
+def run_instructions(chunking: str, persist_dir: str) -> None:
+    documents = load_corpus()
+    embedder = make_embedder()
+    chunks = build_chunks(chunking, documents, CachedEmbedFn(embedder))
+    items = resolve_gold(load_gold(), chunks)
+    dense = DenseRetriever(chunks, embedder, persist_dir)
+    rows, report = [], {}
+    for name, instruction in INSTRUCTIONS.items():
+        ranked = [
+            [h.chunk.id for h in dense.search(i.question, DEPTH, instruction=instruction)]
+            for i in items
+        ]
+        scores = evaluate_ranking(ranked, items)
+        report[name] = {"instruction": instruction, **scores}
+        rows.append([name] + [scores[f"recall@{k}"] for k in KS] + [scores["mrr"]])
+    print(
+        f"chunking {chunking}; dense retriever; the passages never change, only the query prompt\n"
+    )
+    print(markdown_table(["instruction"] + [f"R@{k}" for k in KS] + ["MRR"], rows))
+    save_report("instructions_" + chunking.replace(":", "_"), report)
+
+
+def run_tokenizer(chunking: str) -> None:
+    documents = load_corpus()
+    chunks = build_chunks(chunking, documents, None)
+    items = resolve_gold(load_gold(), chunks)
+    rows, report = [], {}
+    for name, tokenizer in (
+        ("lower + \\w+", tokenize),
+        ("accents folded + stop words", tokenize_es),
+    ):
+        scores = evaluate_retriever(BM25Retriever(chunks, tokenizer), items)
+        report[name] = scores
+        rows.append([name] + [scores[f"recall@{k}"] for k in KS] + [scores["mrr"]])
+    print(markdown_table(["BM25 tokenisation"] + [f"R@{k}" for k in KS] + ["MRR"], rows))
+    save_report("tokenizer", report)
+
+
+def run_failures(chunking: str, weight_bm25: float, persist_dir: str, k: int) -> None:
+    documents = load_corpus()
+    embedder = make_embedder()
+    chunks = build_chunks(chunking, documents, CachedEmbedFn(embedder))
+    items = resolve_gold(load_gold(), chunks)
+    by_id = {c.id: c for c in chunks}
+    bm25, dense = BM25Retriever(chunks), DenseRetriever(chunks, embedder, persist_dir)
+    question_pools = pools(bm25, dense, items)
+    rankings = {
+        "bm25": rank_ids(bm25.search, items),
+        "dense": rank_ids(dense.search, items),
+        "hybrid": hybrid_rankings(question_pools, weight_bm25),
+    }
+    report = []
+    for position, item in enumerate(items):
+        ranks = {}
+        for name, ranked in rankings.items():
+            relevant = item.relevant_chunk_ids
+            ranks[name] = next(
+                (r for r, cid in enumerate(ranked[position], 1) if cid in relevant), None
+            )
+        report.append(
+            {
+                "id": item.id,
+                "question": item.question,
+                "category": item.category,
+                "style": item.style,
+                "first_relevant_rank": ranks,
+            }
+        )
+        if any(r is None or r > k for r in ranks.values()):
+            print(f"\n{item.id} [{item.category}/{item.style}] {item.question}")
+            print(f"  rank of the first relevant chunk: {ranks}")
+            for name in ("bm25", "dense"):
+                top = rankings[name][position][0]
+                print(f"  {name} top-1: {top}: {by_id[top].text[:110]!r}")
+    save_report("failures_" + chunking.replace(":", "_"), {"k": k, "questions": report})
+
+
+def run_plot_distances(doc_id: str, thresholds: list[float], out: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    documents = [d for d in load_corpus() if d.id == doc_id]
+    if not documents:
+        raise SystemExit(f"no document {doc_id!r} in the corpus")
+    text = documents[0].text
+    sentences = [text[a:b] for a, b in sentence_spans(text)]
+    distances = consecutive_distances(sentences, CachedEmbedFn(make_embedder()))
+    figure, (top, bottom) = plt.subplots(2, 1, figsize=(10, 6), constrained_layout=True)
+    top.plot(distances, linewidth=0.6, color="#4c72b0")
+    for threshold in thresholds:
+        top.axhline(threshold, linestyle="--", linewidth=1, label=f"threshold {threshold}")
+    top.set(title=f"Cosine distance between consecutive sentences: {doc_id}", ylabel="distance")
+    top.set_xlabel("sentence index")
+    top.legend()
+    bottom.hist(distances, bins=60, color="#4c72b0")
+    for threshold in thresholds:
+        bottom.axvline(threshold, linestyle="--", linewidth=1)
+    bottom.set(xlabel="distance", ylabel="pairs of sentences")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(out, dpi=130)
+    print(f"{len(sentences)} sentences; median distance {np.median(distances):.3f}; figure: {out}")
+
+
+def run_calibrate(chunking: str, persist_dir: str) -> None:
+    """Top-1 dense cosine of answerable vs unanswerable questions: where the gate goes."""
+    documents = load_corpus()
+    embedder = make_embedder()
+    chunks = build_chunks(chunking, documents, CachedEmbedFn(embedder))
+    dense = DenseRetriever(chunks, embedder, persist_dir)
+    items = load_gold()
+    answerable = np.array([dense.search(i.question, 1)[0].score for i in items])
+    negatives_text = load_unanswerable()
+    negatives = np.array([dense.search(q, 1)[0].score for q in negatives_text])
+    print(
+        f"answerable   (n={len(answerable)}): min {answerable.min():.3f}  "
+        f"p10 {np.percentile(answerable, 10):.3f}  median {np.median(answerable):.3f}"
+    )
+    print(
+        f"unanswerable (n={len(negatives)}): max {negatives.max():.3f}  "
+        f"median {np.median(negatives):.3f}\n"
+    )
+    for question, score in sorted(zip(negatives_text, negatives, strict=True), key=lambda t: -t[1]):
+        print(f"  {score:.3f}  {question}")
+    rows = []
+    for gate in np.round(np.arange(0.40, 0.76, 0.05), 2):
+        kept = float(np.mean(answerable >= gate))
+        rejected = float(np.mean(negatives < gate))
+        rows.append([float(gate), kept, rejected])
+    print("\n" + markdown_table(["gate", "answerable kept", "unanswerable rejected"], rows))
+    save_report(
+        "calibrate", {"answerable": answerable.tolist(), "unanswerable": negatives.tolist()}
+    )
+
+
+NUMBER = re.compile(r"\d[\d.,]*\d|\d")
+
+
+def numbers_in(text: str) -> set[str]:
+    return {n.rstrip(".,") for n in NUMBER.findall(text)}
+
+
+def run_generation(
+    chunking: str, weight_bm25: float, min_score: float, retriever: str, k: int, limit: int | None
+) -> None:
+    """End to end: answers with citations for the gold questions and the unanswerable ones."""
+    from rag.generate import ABSTENTION, RagPipeline, is_abstention
+
+    pipeline = RagPipeline(chunking=chunking, weight_bm25=weight_bm25, min_dense_score=min_score)
+    pipeline.load()
+    items = resolve_gold(load_gold(), pipeline.chunks)[:limit]
+    by_id = {c.id: c for c in pipeline.chunks}
+    records, answered, cited_gold, supported, with_numbers = [], 0, 0, 0, 0
+    for item in items:
+        response = pipeline.answer(item.question, top_k=k, retriever=retriever)
+        abstained = is_abstention(response.answer)
+        answered += not abstained
+        retrieved_ok = bool(item.relevant_chunk_ids & {c.id for c in response.chunks})
+        cited_ok = bool(item.relevant_chunk_ids & set(response.citations))
+        cited_gold += cited_ok and not abstained
+        cited_text = " ".join(by_id[c].text for c in response.citations)
+        answer_numbers = numbers_in(response.answer) - numbers_in(" ".join(response.citations))
+        unsupported = sorted(n for n in answer_numbers if n not in numbers_in(cited_text))
+        if answer_numbers and not abstained:
+            with_numbers += 1
+            supported += not unsupported
+        records.append(
+            {
+                "id": item.id,
+                "question": item.question,
+                "answer": response.answer,
+                "citations": response.citations,
+                "abstained": abstained,
+                "relevant_retrieved": retrieved_ok,
+                "cited_relevant": cited_ok,
+                "unsupported_numbers": unsupported,
+            }
+        )
+    negatives = []
+    for question in load_unanswerable():
+        response = pipeline.answer(question, top_k=k, retriever=retriever)
+        negatives.append(
+            {
+                "question": question,
+                "answer": response.answer,
+                "abstained": is_abstention(response.answer),
+            }
+        )
+    n = len(items)
+    summary = {
+        "n_answerable": n,
+        "answered": answered / n,
+        "false_abstentions": 1 - answered / n,
+        "relevant_chunk_retrieved": float(np.mean([r["relevant_retrieved"] for r in records])),
+        "cited_a_relevant_chunk": cited_gold / n,
+        "numbers_supported_by_citations": supported / max(with_numbers, 1),
+        "n_unanswerable": len(negatives),
+        "correct_abstentions": float(np.mean([r["abstained"] for r in negatives])),
+        "safety_nets": dict(pipeline.stats),
+        "model": pipeline.generator.model_id,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    for record in records[:6] + negatives[:3]:
+        print(f"\nQ: {record['question']}\nA: {record['answer']}")
+    save_report(
+        f"generation_{retriever}_gate{min_score}",
+        {
+            "summary": summary,
+            "answerable": records,
+            "unanswerable": negatives,
+            "abstention_phrase": ABSTENTION,
+        },
+    )
+
+
 def main() -> None:
+    global REPORTS_DIR
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--gold", default="rag/gold/example_gold.jsonl")
-    parser.add_argument("--k", type=int, default=5)
-    parser.add_argument("--out", default="reports/phase3_eval.json")
-    args = parser.parse_args()
-    gold = load_gold(args.gold)
-    print(f"{len(gold)} gold questions loaded; results will go to {args.out}")
+    parser.add_argument("--index-dir", default="rag/index")
+    parser.add_argument("--reports-dir", type=Path, default=Path("reports"))
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    # Tu turno: build the three retrievers over your chunks (both chunking strategies!) and
-    # call evaluate_retriever(retriever, gold, args.k) on each. Sweep λ for the hybrid one.
-    raise NotImplementedError("Build your retrievers here, then evaluate them on the gold set.")
+    chunking = sub.add_parser("chunking")
+    chunking.add_argument("--specs", nargs="+", default=[DEFAULT_CHUNKING, "semantic:0.65:1000"])
+    chunking.add_argument("--weight", type=float, default=0.5)
+    for name in ("lambda", "instructions", "tokenizer"):
+        sub.add_parser(name).add_argument("--chunking", default=DEFAULT_CHUNKING)
+    failures = sub.add_parser("failures")
+    failures.add_argument("--chunking", default=DEFAULT_CHUNKING)
+    failures.add_argument("--weight", type=float, default=0.5)
+    failures.add_argument("-k", type=int, default=5)
+    sub.add_parser("calibrate").add_argument("--chunking", default=DEFAULT_CHUNKING)
+    generation = sub.add_parser("generation")
+    generation.add_argument("--chunking", default=DEFAULT_CHUNKING)
+    generation.add_argument("--weight", type=float, default=0.5)
+    generation.add_argument("--min-score", type=float, default=0.0)
+    generation.add_argument("--retriever", default="hybrid")
+    generation.add_argument("-k", type=int, default=5)
+    generation.add_argument("--limit", type=int)
+    plot = sub.add_parser("plot-distances")
+    plot.add_argument("--doc", default="ley-19-2021")
+    plot.add_argument("--thresholds", type=float, nargs="+", default=[0.25, 0.65])
+    plot.add_argument("--out", type=Path, default=FIGURES_DIR / "distances.png")
+
+    args = parser.parse_args()
+    REPORTS_DIR = args.reports_dir
+    if args.command == "chunking":
+        run_chunking(args.specs, args.weight, args.index_dir)
+    elif args.command == "lambda":
+        run_lambda(args.chunking, args.index_dir)
+    elif args.command == "instructions":
+        run_instructions(args.chunking, args.index_dir)
+    elif args.command == "calibrate":
+        run_calibrate(args.chunking, args.index_dir)
+    elif args.command == "generation":
+        run_generation(
+            args.chunking, args.weight, args.min_score, args.retriever, args.k, args.limit
+        )
+    elif args.command == "tokenizer":
+        run_tokenizer(args.chunking)
+    elif args.command == "failures":
+        run_failures(args.chunking, args.weight, args.index_dir, args.k)
+    else:
+        run_plot_distances(args.doc, args.thresholds, args.out)
 
 
 if __name__ == "__main__":

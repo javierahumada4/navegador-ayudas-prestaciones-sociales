@@ -35,9 +35,29 @@ class Embedder:
     def embed_queries(
         self, texts: list[str], instruction: str = DEFAULT_QUERY_INSTRUCTION
     ) -> np.ndarray:
-        """Queries are prefixed with the task instruction (instruction-aware embeddings)."""
-        prompt = f"Instruct: {instruction}\nQuery: "
+        """Queries are prefixed with the task instruction (instruction-aware embeddings).
+
+        An empty ``instruction`` embeds the bare query: the control of the instruction ablation.
+        """
+        prompt = f"Instruct: {instruction}\nQuery: " if instruction else None
         return self.model.encode(texts, prompt=prompt, normalize_embeddings=True)
+
+
+class CachedEmbedFn:
+    """``embed_fn`` for the semantic chunker that embeds each list of sentences only once.
+
+    Sweeping the distance threshold re-chunks the same sentences over and over; the sentence
+    embeddings do not change, so they are computed once per document.
+    """
+
+    def __init__(self, embedder: Embedder, batch_size: int = 64):
+        self.embedder, self.batch_size, self.cache = embedder, batch_size, {}
+
+    def __call__(self, sentences: list[str]) -> np.ndarray:
+        key = hash(tuple(sentences))
+        if key not in self.cache:
+            self.cache[key] = self.embedder.embed_passages(sentences, self.batch_size)
+        return self.cache[key]
 
 
 def cosine_similarity(queries: np.ndarray, passages: np.ndarray) -> np.ndarray:
