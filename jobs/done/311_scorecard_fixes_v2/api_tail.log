@@ -1,0 +1,200 @@
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.21it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.63it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 65.90it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.66it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.73it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.40it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.63it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.57it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 66.03it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 72.15it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 48.56it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 66.37it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 72.11it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.59it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.51it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.22it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 65.52it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.64it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.80it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.92it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 65.03it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.98it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 64.63it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.74it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.52it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 50.67it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.10it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.35it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.84it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.62it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 68.68it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.36it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.81it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.62it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 56.51it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 72.12it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.55it/s]
+INFO:     127.0.0.1:54910 - "POST /rag HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 61.81it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:33:10,198 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=alquiler&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.87it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.81it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 67.98it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.04it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.65it/s]
+2026-11-24 11:34:42,563 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=empleo&descripcionTipoBusqueda=1&page=0&pageSize=2&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:35:24,692 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=material+escolar&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.25it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.47it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 67.89it/s]
+2026-11-24 11:37:19,685 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=asignaci%C3%B3n+por+hijo+a+cargo&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:37:30,365 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=IMV&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.37it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 66.96it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:38:38,770 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=IMV&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.17it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 63.64it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:38:49,763 INFO httpx: HTTP Request: GET https://huggingface.co/api/models/JES0406/imv-sft-lora/revision/main "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:39:46,485 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=alquiler&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 61.58it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.22it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:41:14,211 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=empleo&descripcionTipoBusqueda=1&page=0&pageSize=2&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.47it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.15it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.29it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:42:32,133 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=material+escolar&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 59.90it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 66.95it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 69.60it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 64.77it/s]
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 68.35it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:45:15,657 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=infancia&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 67.82it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 63.94it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:46:43,599 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=complemento+de+ayuda+para+la+infancia&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 66.71it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 62.82it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:52:07,137 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=material+escolar&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 65.90it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:55:28,131 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=infancia&descripcionTipoBusqueda=1&page=0&pageSize=3&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:56:50,396 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=domicilio&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+2026-11-24 11:56:58,530 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=co_residentes&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:57:12,395 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=IMV&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 67.45it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+2026-11-24 11:57:45,120 INFO httpx: HTTP Request: GET https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda?descripcion=IMV&descripcionTipoBusqueda=1&page=0&pageSize=5&order=fechaRecepcion&direccion=desc "HTTP/1.1 200 "
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 61.40it/s]
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54910 - "POST /agent HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10256]
