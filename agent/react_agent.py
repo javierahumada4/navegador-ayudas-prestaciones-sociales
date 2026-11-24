@@ -114,6 +114,32 @@ def agent_registry() -> ToolRegistry:
     return registry
 
 
+def call_with_timeout(registry: ToolRegistry, name: str, arguments: dict, limit: float):
+    """Run ``registry.call`` in its own daemon thread; None if it did not finish in ``limit`` s.
+
+    Shared by the JSON agent and the code agent so both have the same timeouts.
+    """
+    if not _STUCK.acquire(blocking=False):
+        from api.schemas import ToolCallRecord
+
+        return ToolCallRecord(
+            name=name, arguments=arguments, ok=False, latency_ms=0.0,
+            error="demasiadas herramientas bloqueadas en este momento",
+        )
+    box: dict = {}
+
+    def target() -> None:
+        try:
+            box["record"] = registry.call(name, arguments)
+        finally:
+            _STUCK.release()
+
+    thread = threading.Thread(target=target, name=f"agent-tool-{name}", daemon=True)
+    thread.start()
+    thread.join(timeout=limit)
+    return box.get("record")
+
+
 Generator = Callable[[list[dict], BrainSpec, list[dict]], tuple[str, int, int]]
 
 
@@ -182,25 +208,12 @@ class ReActAgent:
 
     def execute(self, name: str, arguments: dict) -> str:
         limit = self.timeouts.get(name, 30)
-        if not _STUCK.acquire(blocking=False):
-            return "Error: demasiadas herramientas bloqueadas en este momento; responde con lo que tengas."
-        box: dict = {}
-
-        def target() -> None:
-            try:
-                box["record"] = self.registry.call(name, arguments)
-            finally:
-                _STUCK.release()
-
-        thread = threading.Thread(target=target, name=f"agent-tool-{name}", daemon=True)
-        thread.start()
-        thread.join(timeout=limit)
-        if "record" not in box:
+        record = call_with_timeout(self.registry, name, arguments, limit)
+        if record is None:
             return (
                 f"TimeoutError: la herramienta {name} no respondió en {limit:g} s. "
                 "Prueba otra herramienta o responde con lo que tengas, indicando el fallo."
             )
-        record = box["record"]
         if record.ok:
             return format_tool_result(name, record.result)
         return f"Error: {record.error}"
