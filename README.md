@@ -1,5 +1,7 @@
 # ARCA — Agente con Razonamiento, Conocimiento y Acción
 
+> **Rama de entrega de las fases 1 y 2:** [`release/fases-1-2-definitiva`](https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales/tree/release/fases-1-2-definitiva). Conserva el RLM de `main` e integra cálculo IMV/CAPI, BDNS, informes y BOE opcional. [Guía de arranque y limitaciones](docs/deploy_fases_1_2.md). Los pesos del LoRA se configuran externamente y las fases 3 y 4 no forman parte de esta entrega.
+
 **Práctica final de Modelos Generativos Profundos · Máster en Inteligencia Artificial · ICAI · 2026-2027**
 
 Durante el cuatrimestre hemos visto cómo un modelo de lenguaje aprende a razonar, cómo se
@@ -90,7 +92,7 @@ Necesitáis Python 3.11 y [`uv`](https://docs.astral.sh/uv/). Con eso:
 ```bash
 git clone https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales.git
 cd navegador-ayudas-prestaciones-sociales
-git switch fix/rlm-reproducible-pipeline
+git switch release/fases-1-2-definitiva
 uv sync --extra train --extra rag --extra agent   # o `make setup`
 uv run --extra train pytest                       # batería completa con extras de fase 1
 uv run arca-check-gpu                             # ¿ve torch la GPU?
