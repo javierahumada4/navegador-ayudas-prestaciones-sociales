@@ -1,9 +1,7 @@
 """Consolidated phase-1/2 tool registry contract and optional BOE integration."""
 
 from tool_use.registry import ToolRegistry
-from tool_use.tools import (
-    calcular_imv, consultar_ayudas, consultar_boe, default_registry, guardar_informe,
-)
+from tool_use.tools import consultar_boe, default_registry
 
 
 def test_default_tools_keep_phase2_benchmark_contract(monkeypatch):
