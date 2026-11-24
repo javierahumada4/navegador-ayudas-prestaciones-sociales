@@ -1,0 +1,29 @@
+name: IMV phase 2 tool-use checks
+
+on:
+  push:
+    branches:
+      - 'feat/fase2-tool-use-imv-bdns-informes'
+  pull_request:
+    paths:
+      - 'tool_use/**'
+      - 'tests/test_phase2_imv_tools.py'
+      - '.github/workflows/phase2-checks.yml'
+
+jobs:
+  phase2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install core dependencies
+        run: python -m pip install pydantic httpx requests pytest fastapi uvicorn python-dotenv rich ruff
+      - name: Syntax check
+        run: python -m compileall -q tool_use tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py
+      - name: Run offline tool tests
+        run: python -m pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py tests/test_tool_registry.py tests/test_tool_parser.py
+      - name: Critical lint checks
+        run: python -m ruff check --select E4,E7,E9,F tool_use tests/test_phase2_workflows.py tests/test_phase2_stages.py tests/test_phase2_tracing.py
