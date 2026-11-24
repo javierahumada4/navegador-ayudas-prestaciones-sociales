@@ -1,8 +1,8 @@
-2026-11-24T10:31:01+01:00
+2026-11-24T11:19:31+01:00
 dgx
 4
                total        used        free      shared  buff/cache   available
-Mem:            2015          78        1459           0         477        1926
+Mem:            2015          82        1449           0         483        1922
 Swap:              0           0           0
 /dev/md127       28T   17T   11T  62% /home/202200872
 max locked memory           (kbytes, -l) 8192
