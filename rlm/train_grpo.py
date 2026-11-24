@@ -38,6 +38,26 @@ def domain_reward(prompts: Sequence, completions: Sequence, **kwargs) -> list[fl
     return scores
 
 
+def eligibility_reward(
+    prompts: Sequence, completions: Sequence, answer: Sequence[str], **kwargs
+) -> list[float]:
+    """1.0 when the answer gets eligibility right: 0 exactly when the oracle says 0.
+
+    Ablation of domain_reward, which only re-checked the two-decimal format already enforced
+    by imv_format_reward. A wrong amount on an eligible case still earns this partial
+    signal, so ineligibility groups stop being all-zero.
+    """
+    scores: list[float] = []
+    for completion, expected in zip(completions, answer, strict=True):
+        predicted = parse_imv_decimal(extract_unique_final_answer(_completion_text(completion)))
+        gold = parse_imv_decimal(expected)
+        scores.append(
+            1.0 if predicted is not None and gold is not None and (predicted == 0) == (gold == 0)
+            else 0.0
+        )
+    return scores
+
+
 def zero_answer_rate(prompts: Sequence, completions: Sequence, **kwargs) -> list[float]:
     """Monitor, not a reward: 1.0 when the model answers 0.
 
@@ -87,6 +107,8 @@ class ZeroSignalMonitor:
 
 def train(args: argparse.Namespace) -> None:
     import torch
+
+    torch.backends.cuda.enable_cudnn_sdp(False)  # crashes on padded batches (see inference.py)
     from peft import LoraConfig
     from transformers import AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
@@ -109,7 +131,8 @@ def train(args: argparse.Namespace) -> None:
         )
         # Critical: do not use generic accuracy_reward here. IMV money is rounded
         # HALF_UP to cents by the oracle and verifier.
-        reward_funcs = [imv_format_reward, imv_accuracy_reward, domain_reward]
+        third = eligibility_reward if args.third_reward == "eligibility" else domain_reward
+        reward_funcs = [imv_format_reward, imv_accuracy_reward, third]
         default_weights = [1.0, 2.0, 0.5]
         monitors = [zero_answer_rate]
 
@@ -246,6 +269,11 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--beta", type=float, default=0.0)
+    parser.add_argument(
+        "--third-reward", choices=("domain", "eligibility"), default="domain",
+        help="IMV third reward (weight 0.5): domain = two-decimal answer (redundant with "
+             "imv_format_reward); eligibility = answers 0 exactly when the oracle does",
+    )
     parser.add_argument("--epsilon", type=float, default=0.2, help="PPO/GRPO clipping range")
     parser.add_argument(
         "--reward-weights",

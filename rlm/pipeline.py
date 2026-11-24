@@ -82,6 +82,8 @@ def parse_args(argv=None):
                         help="shared SFT/GRPO/evaluation completion budget")
     parser.add_argument("--grpo-zero-signal-patience", type=int, default=5)
     parser.add_argument("--eval-batch-size", type=int, default=2)
+    parser.add_argument("--eval-backend", choices=("hf", "vllm"), default="hf",
+                        help="vllm runs evaluation in the distill venv (10x+ faster on MIG)")
     args = parser.parse_args(argv)
     if args.resume and args.from_stage not in {"distill", "sft", "grpo"}:
         parser.error("--resume needs --from-stage distill, sft or grpo")
@@ -245,12 +247,13 @@ def build_plan(args):
     adapters = ["base=none", f"sft={sft}", f"grpo={grpo}"]
     evaluation = [
         Step(f"evaluate {name}", uv(
-            "train", "rlm.evaluate", "--data", input_path, "--model", args.student,
+            "distill" if args.eval_backend == "vllm" else "train",
+            "rlm.evaluate", "--data", input_path, "--model", args.student,
             "--adapters", *adapters, "--verifier", "imv", "--samples", 1,
-            "--batch-size", args.eval_batch_size,
+            "--batch-size", args.eval_batch_size, "--backend", args.eval_backend,
             "--max-new-tokens", args.completion_tokens,
             "--seed", args.seed, "--out", reports / f"eval_{name}.json"
-        ), env_train)
+        ), env_distill if args.eval_backend == "vllm" else env_train)
         for name, input_path in (
             ("test", test), ("ood", ood), *extra_ood.items()
         )

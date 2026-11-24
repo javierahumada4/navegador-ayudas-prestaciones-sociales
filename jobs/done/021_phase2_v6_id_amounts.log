@@ -1,0 +1,286 @@
+commit c7db562 start 2026-11-18T19:53:26+01:00
+bb8ca26 fix: id example maps role+id to the id with names absent from the bench; answers always state the three amounts
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]Fetching 2 files:  50%|█████     | 1/2 [00:26<00:26, 26.43s/it]Fetching 2 files: 100%|██████████| 2/2 [00:37<00:00, 17.22s/it]Fetching 2 files: 100%|██████████| 2/2 [00:37<00:00, 18.60s/it]
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   0%|          | 1/311 [00:00<00:50,  6.12it/s]Loading weights:  23%|██▎       | 70/311 [00:00<00:00, 322.70it/s]Loading weights:  46%|████▌     | 142/311 [00:00<00:00, 479.05it/s]Loading weights:  69%|██████▉   | 214/311 [00:00<00:00, 563.70it/s]Loading weights:  89%|████████▊ | 276/311 [00:00<00:00, 578.36it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 502.46it/s]
+[01/40] Qwen/Qwen3-1.7B tools=True structured_calculation: first=1 workflow=1
+[02/40] Qwen/Qwen3-1.7B tools=True structured_calculation: first=1 workflow=1
+[03/40] Qwen/Qwen3-1.7B tools=True structured_calculation: first=1 workflow=0
+[04/40] Qwen/Qwen3-1.7B tools=True structured_calculation: first=1 workflow=1
+[05/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=1
+[06/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=1
+[07/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=0
+[08/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=0
+[09/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=0
+[10/40] Qwen/Qwen3-1.7B tools=True natural_calculation: first=1 workflow=0
+[11/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[12/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[13/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[14/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[15/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[16/40] Qwen/Qwen3-1.7B tools=True negative_eligibility: first=1 workflow=0
+[17/40] Qwen/Qwen3-1.7B tools=True missing_facts: first=0 workflow=0
+[18/40] Qwen/Qwen3-1.7B tools=True missing_facts: first=1 workflow=0
+[19/40] Qwen/Qwen3-1.7B tools=True missing_facts: first=1 workflow=0
+[20/40] Qwen/Qwen3-1.7B tools=True missing_facts: first=1 workflow=0
+[21/40] Qwen/Qwen3-1.7B tools=True missing_facts: first=1 workflow=0
+[22/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[23/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[24/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[25/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=0
+[26/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[27/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=0
+[28/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[29/40] Qwen/Qwen3-1.7B tools=True bdns_natural: first=1 workflow=1
+[30/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=0
+[31/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=0
+[32/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=0
+[33/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=0
+[34/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=1
+[35/40] Qwen/Qwen3-1.7B tools=True multi_step: first=1 workflow=1
+[36/40] Qwen/Qwen3-1.7B tools=True no_tool: first=1 workflow=0
+[37/40] Qwen/Qwen3-1.7B tools=True no_tool: first=1 workflow=0
+[38/40] Qwen/Qwen3-1.7B tools=True no_tool: first=1 workflow=1
+[39/40] Qwen/Qwen3-1.7B tools=True no_tool: first=1 workflow=1
+[40/40] Qwen/Qwen3-1.7B tools=True no_tool: first=1 workflow=1
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   1%|          | 2/311 [00:00<00:27, 11.22it/s]Loading weights:  23%|██▎       | 71/311 [00:00<00:00, 310.86it/s]Loading weights:  46%|████▌     | 142/311 [00:00<00:00, 462.86it/s]Loading weights:  69%|██████▉   | 215/311 [00:00<00:00, 555.04it/s]Loading weights:  92%|█████████▏| 285/311 [00:00<00:00, 600.71it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 502.70it/s]
+[01/40] Qwen/Qwen3-1.7B tools=False structured_calculation: first=0 workflow=0
+[02/40] Qwen/Qwen3-1.7B tools=False structured_calculation: first=0 workflow=0
+[03/40] Qwen/Qwen3-1.7B tools=False structured_calculation: first=0 workflow=0
+[04/40] Qwen/Qwen3-1.7B tools=False structured_calculation: first=0 workflow=0
+[05/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[06/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[07/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[08/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[09/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[10/40] Qwen/Qwen3-1.7B tools=False natural_calculation: first=0 workflow=0
+[11/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[12/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[13/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[14/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[15/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[16/40] Qwen/Qwen3-1.7B tools=False negative_eligibility: first=0 workflow=0
+[17/40] Qwen/Qwen3-1.7B tools=False missing_facts: first=1 workflow=1
+[18/40] Qwen/Qwen3-1.7B tools=False missing_facts: first=1 workflow=0
+[19/40] Qwen/Qwen3-1.7B tools=False missing_facts: first=1 workflow=1
+[20/40] Qwen/Qwen3-1.7B tools=False missing_facts: first=1 workflow=0
+[21/40] Qwen/Qwen3-1.7B tools=False missing_facts: first=1 workflow=1
+[22/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[23/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[24/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[25/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[26/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[27/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[28/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[29/40] Qwen/Qwen3-1.7B tools=False bdns_natural: first=0 workflow=0
+[30/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[31/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[32/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[33/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[34/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[35/40] Qwen/Qwen3-1.7B tools=False multi_step: first=0 workflow=0
+[36/40] Qwen/Qwen3-1.7B tools=False no_tool: first=1 workflow=0
+[37/40] Qwen/Qwen3-1.7B tools=False no_tool: first=1 workflow=0
+[38/40] Qwen/Qwen3-1.7B tools=False no_tool: first=1 workflow=1
+[39/40] Qwen/Qwen3-1.7B tools=False no_tool: first=1 workflow=1
+[40/40] Qwen/Qwen3-1.7B tools=False no_tool: first=1 workflow=1
+Trazas y archivos persistentes: /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-fase2/reports/phase2_artifacts/phase2_base_v6/20261118T185328Z-0ecda3b7
+with_tools {
+  "tool_selection_accuracy": 0.975,
+  "argument_accuracy": 0.875,
+  "n_cases": 40,
+  "tool_sequence_success": 0.95,
+  "tool_sequence_success_n": 40,
+  "multi_step_success": 0.8333333333333334,
+  "multi_step_success_n": 6,
+  "all_tool_arguments_correct": 0.9,
+  "all_tool_arguments_correct_n": 30,
+  "conceptual_fact_accuracy": 0.0,
+  "conceptual_fact_accuracy_n": 2,
+  "amount_fidelity": 0.9047619047619048,
+  "amount_fidelity_n": 21,
+  "report_created_and_verified": 0.75,
+  "report_created_and_verified_n": 4,
+  "report_amount_fidelity": 0.75,
+  "report_amount_fidelity_n": 4,
+  "explanation_heuristic_accuracy": 0.2857142857142857,
+  "explanation_heuristic_accuracy_n": 21,
+  "failed_reason_coverage": 0.9523809523809523,
+  "failed_reason_coverage_n": 21,
+  "clarification_accuracy": 0.0,
+  "clarification_accuracy_n": 5,
+  "end_to_end_success": 0.4,
+  "end_to_end_success_n": 40,
+  "unverified_save_claims": 0
+}
+without_tools {
+  "tool_selection_accuracy": 0.25,
+  "argument_accuracy": 0.25,
+  "n_cases": 40,
+  "tool_sequence_success": 0.25,
+  "tool_sequence_success_n": 40,
+  "multi_step_success": 0.0,
+  "multi_step_success_n": 6,
+  "all_tool_arguments_correct": 0.0,
+  "all_tool_arguments_correct_n": 30,
+  "conceptual_fact_accuracy": 0.0,
+  "conceptual_fact_accuracy_n": 2,
+  "amount_fidelity": 0.19047619047619047,
+  "amount_fidelity_n": 21,
+  "report_created_and_verified": 0.0,
+  "report_created_and_verified_n": 4,
+  "report_amount_fidelity": 0.0,
+  "report_amount_fidelity_n": 4,
+  "explanation_heuristic_accuracy": 0.2857142857142857,
+  "explanation_heuristic_accuracy_n": 21,
+  "failed_reason_coverage": 0.9761904761904762,
+  "failed_reason_coverage_n": 21,
+  "clarification_accuracy": 0.6,
+  "clarification_accuracy_n": 5,
+  "end_to_end_success": 0.15,
+  "end_to_end_success_n": 40,
+  "unverified_save_claims": 0
+}
+phase2 base wall: 615 s
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]Fetching 2 files:  50%|█████     | 1/2 [00:00<00:00,  3.90it/s]Fetching 2 files: 100%|██████████| 2/2 [00:02<00:00,  1.62s/it]Fetching 2 files: 100%|██████████| 2/2 [00:02<00:00,  1.41s/it]
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   1%|          | 2/311 [00:00<00:25, 11.95it/s]Loading weights:  23%|██▎       | 71/311 [00:00<00:00, 322.32it/s]Loading weights:  46%|████▌     | 142/311 [00:00<00:00, 474.73it/s]Loading weights:  69%|██████▉   | 215/311 [00:00<00:00, 560.04it/s]Loading weights:  91%|█████████ | 282/311 [00:00<00:00, 596.88it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 511.84it/s]
+[01/40] Qwen/Qwen3-1.7B+LoRA tools=True structured_calculation: first=1 workflow=0
+[02/40] Qwen/Qwen3-1.7B+LoRA tools=True structured_calculation: first=1 workflow=0
+[03/40] Qwen/Qwen3-1.7B+LoRA tools=True structured_calculation: first=1 workflow=1
+[04/40] Qwen/Qwen3-1.7B+LoRA tools=True structured_calculation: first=1 workflow=0
+[05/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=0
+[06/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=1
+[07/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=0
+[08/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=0
+[09/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=0
+[10/40] Qwen/Qwen3-1.7B+LoRA tools=True natural_calculation: first=1 workflow=0
+[11/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[12/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[13/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[14/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[15/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[16/40] Qwen/Qwen3-1.7B+LoRA tools=True negative_eligibility: first=1 workflow=0
+[17/40] Qwen/Qwen3-1.7B+LoRA tools=True missing_facts: first=1 workflow=0
+[18/40] Qwen/Qwen3-1.7B+LoRA tools=True missing_facts: first=1 workflow=0
+[19/40] Qwen/Qwen3-1.7B+LoRA tools=True missing_facts: first=1 workflow=0
+[20/40] Qwen/Qwen3-1.7B+LoRA tools=True missing_facts: first=1 workflow=1
+[21/40] Qwen/Qwen3-1.7B+LoRA tools=True missing_facts: first=1 workflow=0
+[22/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[23/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[24/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[25/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=0
+[26/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[27/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=0
+[28/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[29/40] Qwen/Qwen3-1.7B+LoRA tools=True bdns_natural: first=1 workflow=1
+[30/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=0
+[31/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=0
+[32/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=0
+[33/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=1
+[34/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=1
+[35/40] Qwen/Qwen3-1.7B+LoRA tools=True multi_step: first=1 workflow=1
+[36/40] Qwen/Qwen3-1.7B+LoRA tools=True no_tool: first=1 workflow=0
+[37/40] Qwen/Qwen3-1.7B+LoRA tools=True no_tool: first=1 workflow=0
+[38/40] Qwen/Qwen3-1.7B+LoRA tools=True no_tool: first=1 workflow=1
+[39/40] Qwen/Qwen3-1.7B+LoRA tools=True no_tool: first=1 workflow=1
+[40/40] Qwen/Qwen3-1.7B+LoRA tools=True no_tool: first=1 workflow=1
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]Fetching 2 files: 100%|██████████| 2/2 [00:00<00:00, 1197.35it/s]
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   1%|          | 2/311 [00:00<00:27, 11.22it/s]Loading weights:  23%|██▎       | 71/311 [00:00<00:00, 310.74it/s]Loading weights:  46%|████▌     | 142/311 [00:00<00:00, 463.11it/s]Loading weights:  69%|██████▉   | 215/311 [00:00<00:00, 552.61it/s]Loading weights:  91%|█████████ | 282/311 [00:00<00:00, 591.58it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 502.23it/s]
+[01/40] Qwen/Qwen3-1.7B+LoRA tools=False structured_calculation: first=0 workflow=0
+[02/40] Qwen/Qwen3-1.7B+LoRA tools=False structured_calculation: first=0 workflow=0
+[03/40] Qwen/Qwen3-1.7B+LoRA tools=False structured_calculation: first=0 workflow=0
+[04/40] Qwen/Qwen3-1.7B+LoRA tools=False structured_calculation: first=0 workflow=0
+[05/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[06/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[07/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[08/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[09/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[10/40] Qwen/Qwen3-1.7B+LoRA tools=False natural_calculation: first=0 workflow=0
+[11/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[12/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[13/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[14/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[15/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[16/40] Qwen/Qwen3-1.7B+LoRA tools=False negative_eligibility: first=0 workflow=0
+[17/40] Qwen/Qwen3-1.7B+LoRA tools=False missing_facts: first=1 workflow=0
+[18/40] Qwen/Qwen3-1.7B+LoRA tools=False missing_facts: first=1 workflow=0
+[19/40] Qwen/Qwen3-1.7B+LoRA tools=False missing_facts: first=1 workflow=1
+[20/40] Qwen/Qwen3-1.7B+LoRA tools=False missing_facts: first=1 workflow=0
+[21/40] Qwen/Qwen3-1.7B+LoRA tools=False missing_facts: first=1 workflow=1
+[22/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[23/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[24/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[25/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[26/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[27/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[28/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[29/40] Qwen/Qwen3-1.7B+LoRA tools=False bdns_natural: first=0 workflow=0
+[30/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[31/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[32/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[33/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[34/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[35/40] Qwen/Qwen3-1.7B+LoRA tools=False multi_step: first=0 workflow=0
+[36/40] Qwen/Qwen3-1.7B+LoRA tools=False no_tool: first=1 workflow=0
+[37/40] Qwen/Qwen3-1.7B+LoRA tools=False no_tool: first=1 workflow=0
+[38/40] Qwen/Qwen3-1.7B+LoRA tools=False no_tool: first=1 workflow=1
+[39/40] Qwen/Qwen3-1.7B+LoRA tools=False no_tool: first=1 workflow=1
+[40/40] Qwen/Qwen3-1.7B+LoRA tools=False no_tool: first=1 workflow=1
+Trazas y archivos persistentes: /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-fase2/reports/phase2_artifacts/phase2_grpo_v6/20261118T190344Z-acfcc2f7
+with_tools {
+  "tool_selection_accuracy": 1.0,
+  "argument_accuracy": 0.9,
+  "n_cases": 40,
+  "tool_sequence_success": 0.975,
+  "tool_sequence_success_n": 40,
+  "multi_step_success": 0.8333333333333334,
+  "multi_step_success_n": 6,
+  "all_tool_arguments_correct": 0.8666666666666667,
+  "all_tool_arguments_correct_n": 30,
+  "conceptual_fact_accuracy": 0.0,
+  "conceptual_fact_accuracy_n": 2,
+  "amount_fidelity": 0.7619047619047619,
+  "amount_fidelity_n": 21,
+  "report_created_and_verified": 0.75,
+  "report_created_and_verified_n": 4,
+  "report_amount_fidelity": 0.75,
+  "report_amount_fidelity_n": 4,
+  "explanation_heuristic_accuracy": 0.23809523809523808,
+  "explanation_heuristic_accuracy_n": 21,
+  "failed_reason_coverage": 0.9523809523809523,
+  "failed_reason_coverage_n": 21,
+  "clarification_accuracy": 0.2,
+  "clarification_accuracy_n": 5,
+  "end_to_end_success": 0.375,
+  "end_to_end_success_n": 40,
+  "unverified_save_claims": 0
+}
+without_tools {
+  "tool_selection_accuracy": 0.25,
+  "argument_accuracy": 0.25,
+  "n_cases": 40,
+  "tool_sequence_success": 0.25,
+  "tool_sequence_success_n": 40,
+  "multi_step_success": 0.0,
+  "multi_step_success_n": 6,
+  "all_tool_arguments_correct": 0.0,
+  "all_tool_arguments_correct_n": 30,
+  "conceptual_fact_accuracy": 0.0,
+  "conceptual_fact_accuracy_n": 2,
+  "amount_fidelity": 0.09523809523809523,
+  "amount_fidelity_n": 21,
+  "report_created_and_verified": 0.0,
+  "report_created_and_verified_n": 4,
+  "report_amount_fidelity": 0.0,
+  "report_amount_fidelity_n": 4,
+  "explanation_heuristic_accuracy": 0.2857142857142857,
+  "explanation_heuristic_accuracy_n": 21,
+  "failed_reason_coverage": 1.0,
+  "failed_reason_coverage_n": 21,
+  "clarification_accuracy": 0.4,
+  "clarification_accuracy_n": 5,
+  "end_to_end_success": 0.125,
+  "end_to_end_success_n": 40,
+  "unverified_save_claims": 0
+}
+phase2 grpo wall: 495 s
+exit=0 end 2026-11-18T20:11:58+01:00

@@ -1,0 +1,150 @@
+commit df04487 start 2026-11-18T00:37:57+01:00
+{
+  "n_problems": 200,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "disability": 20,
+      "patrimony_fail": 20,
+      "income_fail": 20,
+      "director_fail": 20,
+      "boundary": 20,
+      "monoparental": 20,
+      "ordinary": 20,
+      "individual": 20,
+      "residence_fail": 20,
+      "monoparental_institution": 20
+    },
+    "status": {
+      "eligible": 136,
+      "ineligible": 64
+    },
+    "imv_eligible": {
+      "True": 108,
+      "False": 92
+    },
+    "capi_eligible": {
+      "True": 111,
+      "False": 89
+    },
+    "has_disability_complement": {
+      "True": 20,
+      "False": 180
+    },
+    "monoparental": {
+      "False": 160,
+      "True": 40
+    },
+    "boundary_type": {
+      "residence": 2,
+      "net_worth": 5,
+      "imv_minimum": 4,
+      "non_corporate_assets": 7,
+      "capi_net_worth": 1,
+      "capi_income": 1
+    },
+    "boundary_side": {
+      "1": 7,
+      "0": 9,
+      "-1": 4
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+200 problemas -> jobs/done/010_eval_rulesheet_v1_v2/test_v2.jsonl
+Ejemplo:
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 5 personas en el mismo domicilio desde 2025-03-16. Personas: p1: nacido el 1999-11-19, 26 años a fecha de solicitud; p2: nacido el 1997-03-04, 29 años a fecha de solicitud; p3: nacido el 1996-04-18, 30 años a fecha de solicitud, discapacidad reconocida del 80 %; p4: nacido el 2008-12-11, 17 años a fecha de solicitud y 17 años a 1 de enero de 2026; p5: nacido el 2025-03-16, 1 años a fecha de solicitud y 0 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen parentesco de 1º grado; p1 y p4 tienen relación progenitor-hijo con custodia compartida (no exclusiva); p1 y p5 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2018-01-01; p3: legal y efectiva, continuada desde 2018-01-01; p4: legal y efectiva, continuada desde 2018-01-01; p5: legal y efectiva, continuada desde 2025-03-16. Ingresos computables anuales de la unidad: 15426.37 €. Patrimonio neto sin vivienda habitual: 30029.00 €. Activos no societarios sin vivienda habitual: 13786.30 €. Aplica las reglas del IMV y del complemento de ayuda para la infancia. Si no corresponde ninguna de las dos prestaciones, indica cero euros. Indica el total mensual con dos decimales.
+Respuesta: 662.28
+rows v1=200 v2=200 identical problems=200
+200 problems x 1 samples from results/rlm_final/data/test.jsonl
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]Fetching 2 files:  50%|█████     | 1/2 [00:12<00:12, 12.21s/it]Fetching 2 files: 100%|██████████| 2/2 [00:32<00:00, 17.07s/it]Fetching 2 files: 100%|██████████| 2/2 [00:32<00:00, 16.34s/it]
+Loading weights:   0%|          | 0/311 [00:00<?, ?it/s]Loading weights:   1%|          | 2/311 [00:00<00:28, 10.70it/s]Loading weights:  26%|██▌       | 81/311 [00:00<00:00, 348.25it/s]Loading weights:  51%|█████     | 158/311 [00:00<00:00, 508.98it/s]Loading weights:  74%|███████▎  | 229/311 [00:00<00:00, 578.87it/s]Loading weights:  97%|█████████▋| 303/311 [00:00<00:00, 631.60it/s]Loading weights: 100%|██████████| 311/311 [00:00<00:00, 525.01it/s]
+  16/200 generations
+  32/200 generations
+  48/200 generations
+  64/200 generations
+  80/200 generations
+  96/200 generations
+  112/200 generations
+  128/200 generations
+  144/200 generations
+  160/200 generations
+  176/200 generations
+  192/200 generations
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/202200872/arca-runner/rlm/evaluate.py", line 359, in <module>
+    main()
+  File "/home/202200872/arca-runner/rlm/evaluate.py", line 327, in main
+    rows = evaluate_model(
+           ^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runner/rlm/evaluate.py", line 129, in evaluate_model
+    outputs = model.generate_batch(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runner/rlm/inference.py", line 189, in generate_batch
+    out = self.model.generate(**inputs, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/generation/utils.py", line 2802, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/generation/utils.py", line 3030, in _sample
+    outputs = model_forward(**model_inputs, return_dict=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/utils/generic.py", line 939, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 482, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 286, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 413, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/modeling_layers.py", line 109, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 307, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 266, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-train/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py", line 158, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected mha_graph.execute(handle, variant_pack, workspace_ptr.get()).is_good() to be true, but got false.  (Could this error message be improved?  If so, please report an enhancement request to PyTorch.)
+exit=1 end 2026-11-18T01:36:04+01:00

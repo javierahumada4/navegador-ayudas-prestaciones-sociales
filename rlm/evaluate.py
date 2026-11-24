@@ -101,6 +101,70 @@ def diagnose_failure(row: dict, params: dict | None) -> tuple[str, dict]:
     return "wrong_amount", details
 
 
+_VLLM_ENGINES: dict = {}
+_LORA_IDS: dict[str, int] = {}
+
+
+def _generate_vllm(
+    base_model: str,
+    adapter: str | None,
+    problems: list[dict],
+    verifier_name: str,
+    *,
+    max_new_tokens: int,
+    samples: int,
+    do_sample: bool,
+    temperature: float,
+    seed: int,
+) -> list[list[tuple[str, int]]]:
+    """Same prompts and sampling as the HF path, served by vLLM: one engine per base model,
+    the LoRA applied per request (no merge, no reload between base/SFT/GRPO).
+
+    HF ``generate`` is launch-bound on the 16-SM MIG slice (the base model needed > 1 h for
+    200 problems at batch 16); vLLM keeps every sequence in flight with paged KV cache.
+    Returns one list of (raw, n_tokens) per sample index.
+    """
+    import os
+
+    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    from vllm import LLM, SamplingParams
+    from vllm.lora.request import LoRARequest
+
+    from rlm.chat_template import render_thinking_prompt, restore_thinking_prefix
+    from rlm.inference import ReasoningModel, _resolve_adapter
+
+    if base_model not in _VLLM_ENGINES:
+        _VLLM_ENGINES[base_model] = LLM(
+            # max_loras=4: base+SFT+GRPO share one engine without LoRA swapping; with the default
+            # (1) the engine hung when the second adapter (GRPO) replaced the first (job 011).
+            model=base_model, dtype="bfloat16", enable_lora=True, max_lora_rank=64, max_loras=4,
+            gpu_memory_utilization=0.85, max_model_len=8192, seed=seed,
+        )
+    llm = _VLLM_ENGINES[base_model]
+    prompter = ReasoningModel(base_model=base_model, verifier_name=verifier_name)
+    tokenizer = llm.get_tokenizer()
+    texts = [
+        render_thinking_prompt(tokenizer, prompter._prompt(p["question"], p.get("rule_context")))
+        for p in problems
+    ]
+    lora = None
+    if adapter:
+        lora_id = _LORA_IDS.setdefault(adapter, len(_LORA_IDS) + 1)
+        lora = LoRARequest(adapter, lora_id, _resolve_adapter(adapter))
+    per_sample = []
+    for sample_idx in range(samples):
+        params = SamplingParams(
+            temperature=temperature if do_sample else 0.0, top_p=0.95 if do_sample else 1.0,
+            max_tokens=max_new_tokens, seed=seed + sample_idx,
+        )
+        outputs = llm.generate(texts, params, lora_request=lora, use_tqdm=False)
+        per_sample.append([
+            (restore_thinking_prefix(text, out.outputs[0].text), len(out.outputs[0].token_ids))
+            for text, out in zip(texts, outputs, strict=True)
+        ])
+    return per_sample
+
+
 def evaluate_model(
     base_model: str,
     adapter: str | None,
@@ -113,7 +177,19 @@ def evaluate_model(
     temperature: float,
     batch_size: int,
     seed: int,
+    backend: str = "hf",
 ) -> list[dict]:
+    if backend == "vllm":
+        per_sample = _generate_vllm(
+            base_model, adapter, problems, verifier.name, max_new_tokens=max_new_tokens,
+            samples=samples, do_sample=do_sample, temperature=temperature, seed=seed,
+        )
+        return [
+            score_row(problem, raw, n_tokens, verifier, max_new_tokens, sample_idx)
+            for sample_idx, outputs in enumerate(per_sample)
+            for problem, (raw, n_tokens) in zip(problems, outputs, strict=True)
+        ]
+
     import torch
 
     from rlm.inference import ReasoningModel
@@ -286,6 +362,10 @@ def main() -> None:
     parser.add_argument("--greedy", action="store_true", help="greedy decoding (may loop)")
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument(
+        "--backend", choices=("hf", "vllm"), default="hf",
+        help="vllm needs the distill extra (UV_PROJECT_ENVIRONMENT of a distill venv)",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n-failures", type=int, default=5, help="failures kept for analysis")
     parser.add_argument(
@@ -307,6 +387,7 @@ def main() -> None:
             "greedy",
             "temperature",
             "seed",
+            "backend",
         )
     }
     out = Path(args.out)
@@ -335,6 +416,7 @@ def main() -> None:
             temperature=args.temperature,
             batch_size=args.batch_size,
             seed=args.seed,
+            backend=args.backend,
         )
         summary = summarize(rows)
         results["models"][name] = {
@@ -352,7 +434,13 @@ def main() -> None:
 
     table = out.with_suffix(".md")
     table.write_text(render_markdown(results), encoding="utf-8")
-    print(f"details -> {out}\ntables  -> {table}")
+    print(f"details -> {out}\ntables  -> {table}", flush=True)
+    if args.backend == "vllm":
+        # vLLM's engine process kept the interpreter alive after every result was written
+        # (jobs 011/013 sat there until their timeout): leave as soon as the files exist.
+        from rlm.proc import hard_exit
+
+        hard_exit(0)  # also kills the orphan-prone VLLM::EngineCore child
 
 
 if __name__ == "__main__":
