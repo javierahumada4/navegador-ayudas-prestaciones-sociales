@@ -1,5 +1,6 @@
 """RagPipeline on the committed corpus: BM25 retrieval and stable chunk ids (CPU, no network)."""
 
+import numpy as np
 import pytest
 
 pytest.importorskip("rank_bm25")
@@ -8,12 +9,29 @@ pytest.importorskip("langchain_text_splitters")
 from rag.generate import RagPipeline  # noqa: E402
 from rag.retriever import Hit  # noqa: E402
 
+# The dense index needs an embedder; a fake one keeps these BM25/id tests offline (the real
+# Qwen3-Embedding is a 1.2 GB download) and a temporary index dir keeps rag/index/ untouched.
 
-@pytest.fixture(scope="module")
-def pipeline() -> RagPipeline:
-    pipe = RagPipeline()
+
+class FakeEmbedder:
+    model_id = "fake-embedder"
+
+    def embed_passages(self, texts):
+        return np.ones((len(texts), 4), dtype=np.float32) / 2
+
+    def embed_queries(self, texts, instruction=""):
+        return np.ones((len(texts), 4), dtype=np.float32) / 2
+
+
+def make_pipeline(index_dir) -> RagPipeline:
+    pipe = RagPipeline(chunking="recursive:800:100", index_dir=index_dir, embedder=FakeEmbedder())
     pipe.load()
     return pipe
+
+
+@pytest.fixture(scope="module")
+def pipeline(tmp_path_factory) -> RagPipeline:
+    return make_pipeline(tmp_path_factory.mktemp("rag-index"))
 
 
 def test_bm25_returns_hits_with_the_phase4_contract(pipeline):
@@ -32,11 +50,10 @@ def test_bm25_finds_the_guaranteed_income_in_the_law(pipeline):
     )
 
 
-def test_chunk_ids_are_unique_and_stable_across_loads(pipeline):
+def test_chunk_ids_are_unique_and_stable_across_loads(pipeline, tmp_path):
     ids = [c.id for c in pipeline.chunks]
     assert len(ids) == len(set(ids)) > 300
-    other = RagPipeline()
-    other.load()
+    other = make_pipeline(tmp_path)
     assert ids == [c.id for c in other.chunks]
 
 
