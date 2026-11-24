@@ -81,3 +81,16 @@ def test_errors_and_markdown(client):
         "phase1": sc.summarize_phase1([{**res, "correct": True, "format": True, "truncated": False,
                                         "tokens": 1}])}}
     assert "## phase1" in sc.markdown(card)
+
+
+def test_compare_marks_direction_per_metric():
+    from pipeline_eval.compare import table, verdict
+
+    assert verdict("pass@1", 0.4, 0.5) == "mejor" and verdict("p50_s", 10, 20) == "peor"
+    before = {"label": "baseline", "summary": {"phase1": {"pass@1": 0.4, "n": 40},
+                                               "phase4": {"base": {"success": 0.3}}}}
+    after = {"label": "fixes", "summary": {"phase1": {"pass@1": 0.5, "n": 40},
+                                           "phase4": {"base": {"success": 0.5}}}}
+    text = table(before, after)
+    assert "| phase1 | pass@1 | 0.400 | 0.500 | 0.100 | mejor |" in text
+    assert "| phase4 base | success | 0.300 | 0.500 | 0.200 | mejor |" in text
