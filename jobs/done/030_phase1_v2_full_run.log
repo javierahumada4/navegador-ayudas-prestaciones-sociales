@@ -1,0 +1,560 @@
+commit 3d649a2 start 2026-11-19T01:58:34+01:00
+backends: --teacher-backend hf --teacher-batch-size 1 --eval-backend hf --eval-batch-size 16
+resume: fresh run
+
+== GENERATE ==
+/home/202200872/.venvs/arca-train/bin/python -m rlm.generate_problems --n 800 --split train --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.generate_problems --n 200 --split test --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.generate_problems --n 50 --split ood --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.generate_problems --n 50 --split ood_threshold --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_threshold.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.generate_problems --n 50 --split ood_wording --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_wording.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.validate_data --train /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl --test /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test.jsonl --ood /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood.jsonl --ood-extra ood_threshold /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_threshold.jsonl --ood-extra ood_wording /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_wording.jsonl --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/dataset_validation.json
+
+== DISTILL ==
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill uv run --extra distill python -m rlm.distill --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl --teacher Qwen/Qwen3-4B --backend hf --samples 8 --seed 42 --max-new-tokens 1024 --max-model-len 8192 --batch-size 1 --gpu-memory-utilization 0.85 --verifier imv --output /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/sft_traces.jsonl --log-path /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/logs/distillation.jsonl
+/home/202200872/.venvs/arca-train/bin/python -m rlm.validate_data --train /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl --traces /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/sft_traces.jsonl --expected-trace-samples 8 --min-verified-traces 100 --min-unique-trace-problems 50 --min-verified-families 5 --warn-low-coverage --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/distillation_validation.json
+
+== SFT ==
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.train_sft --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/sft_traces.jsonl --model Qwen/Qwen3-1.7B --output /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora --epochs 2.0 --batch-size 1 --grad-accum 8 --max-length 8192 --max-completion-tokens 1024 --min-problem-coverage 0.7 --min-families 5 --warn-low-coverage --max-traces-per-problem 2 --selection-report /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/sft_selection.json --save-steps 50
+
+== GRPO ==
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.train_grpo --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl --model Qwen/Qwen3-1.7B --init-adapter /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora --output /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --steps 300 --num-generations 4 --temperature 0.6 --top-p 0.95 --top-k 20 --micro-batch-size 1 --max-completion-length 1024 --zero-signal-patience 0 --seed 42
+
+== EVALUATE ==
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.evaluate --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test.jsonl --model Qwen/Qwen3-1.7B --adapters base=none sft=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora grpo=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --verifier imv --samples 1 --batch-size 16 --backend hf --max-new-tokens 1024 --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/eval_test.json
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.evaluate --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood.jsonl --model Qwen/Qwen3-1.7B --adapters base=none sft=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora grpo=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --verifier imv --samples 1 --batch-size 16 --backend hf --max-new-tokens 1024 --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/eval_ood.json
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.evaluate --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_threshold.jsonl --model Qwen/Qwen3-1.7B --adapters base=none sft=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora grpo=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --verifier imv --samples 1 --batch-size 16 --backend hf --max-new-tokens 1024 --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/eval_ood_threshold.json
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.evaluate --data /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_wording.jsonl --model Qwen/Qwen3-1.7B --adapters base=none sft=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/sft_lora grpo=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --verifier imv --samples 1 --batch-size 16 --backend hf --max-new-tokens 1024 --seed 42 --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/eval_ood_wording.json
+UV_PROJECT_ENVIRONMENT=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-train uv run --extra train python -m rlm.curves --runs grpo=/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/weights/grpo_lora --out /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/reports/grpo_curves.png
+
+RUN generate: generate train
+{
+  "n_problems": 800,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "director_fail": 80,
+      "individual": 80,
+      "ordinary": 80,
+      "disability": 80,
+      "monoparental_institution": 80,
+      "income_fail": 80,
+      "monoparental": 80,
+      "patrimony_fail": 80,
+      "residence_fail": 80,
+      "boundary": 80
+    },
+    "status": {
+      "ineligible": 252,
+      "eligible": 548
+    },
+    "imv_eligible": {
+      "False": 364,
+      "True": 436
+    },
+    "capi_eligible": {
+      "False": 372,
+      "True": 428
+    },
+    "has_disability_complement": {
+      "False": 720,
+      "True": 80
+    },
+    "monoparental": {
+      "False": 640,
+      "True": 160
+    },
+    "boundary_type": {
+      "net_worth": 14,
+      "residence": 15,
+      "imv_minimum": 15,
+      "capi_net_worth": 13,
+      "non_corporate_assets": 11,
+      "capi_income": 12
+    },
+    "boundary_side": {
+      "-1": 38,
+      "1": 21,
+      "0": 21
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+800 problemas -> /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl
+Ejemplo:
+Caso para resolver sobre IMV 2026. Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 2 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1973-12-04, 52 años a fecha de solicitud; p2: nacido el 2008-11-06, 17 años a fecha de solicitud y 17 años a 1 de enero de 2026. Relaciones: p1 y p2 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2018-01-01. Ingresos computables anuales de la unidad: 8734.77 €. Patrimonio neto sin vivienda habitual: 16463.92 €. Activos no societarios sin vivienda habitual: 20461.89 €. Hay un administrador de una sociedad mercantil activa. ¿Cuál sería la suma mensual de IMV y CAPI? Da únicamente el número con dos decimales.
+Respuesta: 0.00
+
+RUN generate: generate test
+{
+  "n_problems": 200,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "disability": 20,
+      "patrimony_fail": 20,
+      "income_fail": 20,
+      "director_fail": 20,
+      "boundary": 20,
+      "monoparental": 20,
+      "ordinary": 20,
+      "individual": 20,
+      "residence_fail": 20,
+      "monoparental_institution": 20
+    },
+    "status": {
+      "eligible": 136,
+      "ineligible": 64
+    },
+    "imv_eligible": {
+      "True": 108,
+      "False": 92
+    },
+    "capi_eligible": {
+      "True": 111,
+      "False": 89
+    },
+    "has_disability_complement": {
+      "True": 20,
+      "False": 180
+    },
+    "monoparental": {
+      "False": 160,
+      "True": 40
+    },
+    "boundary_type": {
+      "residence": 2,
+      "net_worth": 5,
+      "imv_minimum": 4,
+      "non_corporate_assets": 7,
+      "capi_net_worth": 1,
+      "capi_income": 1
+    },
+    "boundary_side": {
+      "1": 7,
+      "0": 9,
+      "-1": 4
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+200 problemas -> /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test.jsonl
+Ejemplo:
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 5 personas en el mismo domicilio desde 2025-03-16. Personas: p1: nacido el 1999-11-19, 26 años a fecha de solicitud; p2: nacido el 1997-03-04, 29 años a fecha de solicitud; p3: nacido el 1996-04-18, 30 años a fecha de solicitud, discapacidad reconocida del 80 %; p4: nacido el 2008-12-11, 17 años a fecha de solicitud y 17 años a 1 de enero de 2026; p5: nacido el 2025-03-16, 1 años a fecha de solicitud y 0 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen parentesco de 1º grado; p1 y p4 tienen relación progenitor-hijo con custodia compartida (no exclusiva); p1 y p5 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2018-01-01; p3: legal y efectiva, continuada desde 2018-01-01; p4: legal y efectiva, continuada desde 2018-01-01; p5: legal y efectiva, continuada desde 2025-03-16. Ingresos computables anuales de la unidad: 15426.37 €. Patrimonio neto sin vivienda habitual: 30029.00 €. Activos no societarios sin vivienda habitual: 13786.30 €. Aplica las reglas del IMV y del complemento de ayuda para la infancia. Si no corresponde ninguna de las dos prestaciones, indica cero euros. Indica el total mensual con dos decimales.
+Respuesta: 662.28
+
+RUN generate: generate ood
+{
+  "n_problems": 50,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "capi_only": 50
+    },
+    "status": {
+      "eligible": 50
+    },
+    "imv_eligible": {
+      "False": 50
+    },
+    "capi_eligible": {
+      "True": 50
+    },
+    "has_disability_complement": {
+      "False": 50
+    },
+    "monoparental": {
+      "False": 50
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+50 problemas -> /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood.jsonl
+Ejemplo:
+Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 2 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1995-06-07, 31 años a fecha de solicitud; p2: nacido el 2022-05-17, 4 años a fecha de solicitud y 3 años a 1 de enero de 2026. Relaciones: p1 y p2 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2022-05-17. Ingresos computables anuales de la unidad: 14823.14 €. Patrimonio neto sin vivienda habitual: 10862.68 €. Activos no societarios sin vivienda habitual: 25013.88 €. Determina primero si hay derecho al IMV y/o al CAPI y calcula el total mensual a percibir. Responde solo con el importe total en euros, con dos decimales.
+Respuesta: 80.50
+
+RUN generate: generate ood_threshold
+{
+  "n_problems": 50,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "threshold_ood": 50
+    },
+    "status": {
+      "eligible": 31,
+      "ineligible": 19
+    },
+    "imv_eligible": {
+      "True": 15,
+      "False": 35
+    },
+    "capi_eligible": {
+      "True": 31,
+      "False": 19
+    },
+    "has_disability_complement": {
+      "False": 50
+    },
+    "monoparental": {
+      "False": 50
+    },
+    "boundary_type": {
+      "imv_minimum": 8,
+      "capi_net_worth": 12,
+      "capi_income": 6,
+      "non_corporate_assets": 11,
+      "net_worth": 6,
+      "residence": 7
+    },
+    "boundary_side": {
+      "0": 15,
+      "-1": 20,
+      "1": 15
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+50 problemas -> /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_threshold.jsonl
+Ejemplo:
+Analiza esta solicitud de IMV/CAPI: Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 3 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1998-09-24, 28 años a fecha de solicitud; p2: nacido el 1970-12-21, 55 años a fecha de solicitud; p3: nacido el 2009-07-16, 17 años a fecha de solicitud y 16 años a 1 de enero de 2026. Relaciones: p1 y p2 son cónyuges; p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2018-01-01; p3: legal y efectiva, continuada desde 2018-01-01. Ingresos computables anuales de la unidad: 13965.12 €. Patrimonio neto sin vivienda habitual: 9355.39 €. Activos no societarios sin vivienda habitual: 95074.55 €. Calcula el importe mensual final (IMV + CAPI) y contesta únicamente con la cifra.
+Respuesta: 67.50
+
+RUN generate: generate ood_wording
+{
+  "n_problems": 50,
+  "n_templates": 4,
+  "branches": {
+    "family": {
+      "wording_ood": 50
+    },
+    "status": {
+      "eligible": 50
+    },
+    "imv_eligible": {
+      "True": 50
+    },
+    "capi_eligible": {
+      "True": 37,
+      "False": 13
+    },
+    "has_disability_complement": {
+      "False": 50
+    },
+    "monoparental": {
+      "False": 50
+    }
+  },
+  "answer_leaked_in_statement": 0
+}
+
+50 problemas -> /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/test_ood_wording.jsonl
+Ejemplo:
+Se facilita esta documentación de una solicitud. Solicitud a fecha 2026-09-26. Solicitante: p1. Conviven 4 personas en el mismo domicilio desde 2023-01-01. Personas: p1: nacido el 1994-07-07, 32 años a fecha de solicitud; p2: nacido el 2020-10-05, 5 años a fecha de solicitud y 5 años a 1 de enero de 2026; p3: nacido el 2022-07-07, 4 años a fecha de solicitud y 3 años a 1 de enero de 2026; p4: nacido el 2019-05-17, 7 años a fecha de solicitud y 6 años a 1 de enero de 2026. Relaciones: p1 y p2 tienen relación progenitor-hijo con custodia compartida (no exclusiva); p1 y p3 tienen relación progenitor-hijo con custodia compartida (no exclusiva); p1 y p4 tienen relación progenitor-hijo con custodia compartida (no exclusiva). Residencia legal y efectiva continuada por miembro: p1: legal y efectiva, continuada desde 2018-01-01; p2: legal y efectiva, continuada desde 2020-10-05; p3: legal y efectiva, continuada desde 2022-07-07; p4: legal y efectiva, continuada desde 2019-05-17. Ingresos computables anuales de la unidad: 11802.09 €. Patrimonio neto sin vivienda habitual: 17690.35 €. Activos no societarios sin vivienda habitual: 2427.96 €. Resuelve la concesión y el cálculo de las dos partidas y comunica la suma mensual final con dos decimales.
+Respuesta: 628.83
+
+RUN generate: validate splits
+{
+  "splits": {
+    "train": {
+      "count": 800,
+      "families": {
+        "director_fail": 80,
+        "individual": 80,
+        "ordinary": 80,
+        "disability": 80,
+        "monoparental_institution": 80,
+        "income_fail": 80,
+        "monoparental": 80,
+        "patrimony_fail": 80,
+        "residence_fail": 80,
+        "boundary": 80
+      }
+    },
+    "test": {
+      "count": 200,
+      "families": {
+        "disability": 20,
+        "patrimony_fail": 20,
+        "income_fail": 20,
+        "director_fail": 20,
+        "boundary": 20,
+        "monoparental": 20,
+        "ordinary": 20,
+        "individual": 20,
+        "residence_fail": 20,
+        "monoparental_institution": 20
+      }
+    },
+    "ood": {
+      "count": 50,
+      "families": {
+        "capi_only": 50
+      }
+    },
+    "ood_threshold": {
+      "count": 50,
+      "families": {
+        "threshold_ood": 50
+      }
+    },
+    "ood_wording": {
+      "count": 50,
+      "families": {
+        "wording_ood": 50
+      }
+    }
+  }
+}
+
+RUN distill: teacher traces
+warning: `VIRTUAL_ENV=/home/202200872/.venvs/arca-train` does not match the project environment path `/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill` and will be ignored; use `--active` to target the active environment instead
+Downloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)
+ Downloaded cpython-3.12.14-linux-x86_64-gnu (download)
+Using CPython 3.12.14
+Creating virtual environment at: /home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill
+   Building dgm-arca @ file:///home/202200872/arca-runner
+Downloading nvidia-cublas (403.5MiB)
+Downloading torch (502.2MiB)
+ Downloaded nvidia-cublas
+Downloading nvidia-cudnn-cu13 (349.2MiB)
+ Downloaded torch
+Downloading vllm (300.3MiB)
+ Downloaded nvidia-cudnn-cu13
+Downloading nvidia-cufft (204.2MiB)
+ Downloaded nvidia-cufft
+Downloading nvidia-nccl-cu13 (196.4MiB)
+ Downloaded vllm
+Downloading nvidia-cusolver (191.6MiB)
+ Downloaded nvidia-nccl-cu13
+Downloading triton (188.6MiB)
+ Downloaded nvidia-cusolver
+Downloading nvidia-cusparselt-cu13 (162.3MiB)
+ Downloaded triton
+Downloading nvidia-cusparse (139.2MiB)
+ Downloaded nvidia-cusparselt-cu13
+Downloading tokenspeed-triton (95.3MiB)
+ Downloaded nvidia-cusparse
+Downloading nvidia-cuda-nvrtc (86.0MiB)
+ Downloaded nvidia-cuda-nvrtc
+Downloading nvidia-cutlass-dsl-libs-cu12 (84.6MiB)
+ Downloaded tokenspeed-triton
+Downloading nvidia-cutlass-dsl-libs-cu13 (84.2MiB)
+ Downloaded nvidia-cutlass-dsl-libs-cu12
+Downloading nvidia-nvvm (69.2MiB)
+ Downloaded nvidia-cutlass-dsl-libs-cu13
+Downloading opencv-python-headless (58.4MiB)
+ Downloaded opencv-python-headless
+Downloading nvidia-nvshmem-cu13 (57.6MiB)
+ Downloaded nvidia-nvvm
+Downloading nvidia-curand (56.8MiB)
+ Downloaded nvidia-nvshmem-cu13
+Downloading llvmlite (53.7MiB)
+ Downloaded nvidia-curand
+Downloading tilelang (48.2MiB)
+ Downloaded llvmlite
+Downloading pyarrow (47.8MiB)
+ Downloaded tilelang
+Downloading nvidia-cuda-nvcc (45.5MiB)
+ Downloaded pyarrow
+Downloading pynvvideocodec (41.2MiB)
+ Downloaded nvidia-cuda-nvcc
+Downloading nvidia-nvjitlink (40.5MiB)
+ Downloaded pynvvideocodec
+Downloading z3-solver (27.9MiB)
+ Downloaded z3-solver
+Downloading flashinfer-python (17.5MiB)
+ Downloaded flashinfer-python
+Downloading numpy (15.8MiB)
+ Downloaded nvidia-nvjitlink
+Downloading transformers (11.7MiB)
+ Downloaded numpy
+Downloading pandas (10.5MiB)
+ Downloaded transformers
+Downloading nvidia-cuda-cupti (10.2MiB)
+ Downloaded pandas
+Downloading ruff (9.9MiB)
+ Downloaded nvidia-cuda-cupti
+ Downloaded ruff
+Downloading nvidia-cudnn-frontend (8.4MiB)
+Downloading torchcodec (9.0MiB)
+ Downloaded torchcodec
+Downloading pycountry (7.7MiB)
+ Downloaded nvidia-cudnn-frontend
+Downloading torchvision (7.3MiB)
+ Downloaded pycountry
+Downloading cuda-bindings (6.8MiB)
+ Downloaded torchvision
+Downloading grpcio (6.8MiB)
+ Downloaded grpcio
+Downloading pillow (6.6MiB)
+ Downloaded cuda-bindings
+ Downloaded pillow
+Downloading mistral-common (6.3MiB)
+ Downloaded mistral-common
+Downloading sympy (6.0MiB)
+ Downloaded sympy
+Downloading instanttensor (5.9MiB)
+ Downloaded instanttensor
+Downloading nvidia-cuda-nvdisasm (5.0MiB)
+ Downloaded nvidia-cuda-nvdisasm
+Downloading cryptography (4.5MiB)
+Downloading cuda-core (6.3MiB)
+ Downloaded cryptography
+Downloading hf-xet (4.3MiB)
+ Downloaded hf-xet
+ Downloaded cuda-core
+Downloading uvloop (4.2MiB)
+Downloading nvidia-cuda-cccl (3.7MiB)
+ Downloaded uvloop
+Downloading numba (3.6MiB)
+ Downloaded nvidia-cuda-cccl
+Downloading nccl4py (3.5MiB)
+ Downloaded numba
+Downloading tokenizers (3.2MiB)
+ Downloaded nccl4py
+Downloading llguidance (2.9MiB)
+ Downloaded tokenizers
+Downloading openai-harmony (2.8MiB)
+ Downloaded llguidance
+ Downloaded openai-harmony
+Downloading apache-tvm-ffi (2.6MiB)
+ Downloaded apache-tvm-ffi
+Downloading outlines-core (2.2MiB)
+ Downloaded outlines-core
+Downloading nvidia-cuda-runtime (2.1MiB)
+Downloading nvidia-cutlass-dsl-libs-base (2.7MiB)
+ Downloaded nvidia-cuda-runtime
+Downloading fastsafetensors (2.0MiB)
+ Downloaded nvidia-cutlass-dsl-libs-base
+Downloading openai (2.0MiB)
+ Downloaded fastsafetensors
+Downloading networkx (2.0MiB)
+ Downloaded openai
+ Downloaded networkx
+Downloading aiohttp (1.7MiB)
+Downloading pydantic-core (2.0MiB)
+ Downloaded aiohttp
+Downloading torchaudio (1.7MiB)
+ Downloaded pydantic-core
+Downloading sentencepiece (1.3MiB)
+ Downloaded torchaudio
+Downloading anthropic (1.3MiB)
+ Downloaded sentencepiece
+Downloading xgrammar (1.3MiB)
+ Downloaded xgrammar
+Downloading pygments (1.2MiB)
+ Downloaded anthropic
+Downloading nvidia-cutlass-dsl-libs-core (1.2MiB)
+ Downloaded pygments
+Downloading nvidia-cufile (1.2MiB)
+ Downloaded nvidia-cutlass-dsl-libs-core
+Downloading tiktoken (1.1MiB)
+ Downloaded nvidia-cufile
+Downloading setuptools (1.0MiB)
+ Downloaded tiktoken
+ Downloaded setuptools
+      Built dgm-arca @ file:///home/202200872/arca-runner
+Installed 208 packages in 503ms
+Generating train split: 0 examples [00:00, ? examples/s]Generating train split: 800 examples [00:00, 8768.05 examples/s]
+Map:   0%|          | 0/800 [00:00<?, ? examples/s]Map: 100%|██████████| 800/800 [00:00<00:00, 20460.77 examples/s]
+Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files:  33%|███▎      | 1/3 [00:03<00:06,  3.42s/it]Fetching 3 files:  67%|██████▋   | 2/3 [01:02<00:36, 36.29s/it]Fetching 3 files: 100%|██████████| 3/3 [01:03<00:00, 20.05s/it]Fetching 3 files: 100%|██████████| 3/3 [01:03<00:00, 21.15s/it]
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights:   1%|▏         | 5/398 [00:00<00:07, 49.84it/s]Loading weights:  11%|█         | 43/398 [00:00<00:01, 242.21it/s]Loading weights:  22%|██▏       | 89/398 [00:00<00:00, 340.93it/s]Loading weights:  32%|███▏      | 126/398 [00:00<00:00, 350.15it/s]Loading weights:  42%|████▏     | 169/398 [00:00<00:00, 372.55it/s]Loading weights:  53%|█████▎    | 211/398 [00:00<00:00, 367.56it/s]Loading weights:  65%|██████▍   | 257/398 [00:00<00:00, 393.14it/s]Loading weights:  75%|███████▌  | 299/398 [00:00<00:00, 398.28it/s]Loading weights:  85%|████████▌ | 340/398 [00:00<00:00, 398.21it/s]Loading weights:  95%|█████████▌| 380/398 [00:01<00:00, 393.61it/s]Loading weights: 100%|██████████| 398/398 [00:01<00:00, 371.15it/s]
+distill:   0%|          | 0/800 [00:00<?, ?example/s]distill [prepending]:   0%|          | 0/800 [00:00<?, ?example/s]distill [tokenizing]:   0%|          | 0/800 [00:00<?, ?example/s]distill [generating]:   0%|          | 0/800 [00:00<?, ?example/s]distill [verifying ]:   0%|          | 0/800 [00:56<?, ?example/s]distill [verifying ]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example]distill [verifying ]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example, accept=50%, verified=4/8]distill [logging   ]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example, accept=50%, verified=4/8]distill [prepending]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example, accept=50%, verified=4/8]distill [tokenizing]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example, accept=50%, verified=4/8]distill [generating]:   0%|          | 1/800 [00:56<12:26:53, 56.09s/example, accept=50%, verified=4/8][W1119 02:01:51.303257371 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 580911104 bytes (free: 572522496, total: 17179869184).
+distill [verifying ]:   0%|          | 1/800 [02:06<12:26:53, 56.09s/example, accept=50%, verified=4/8]distill [verifying ]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=50%, verified=4/8]distill [verifying ]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [logging   ]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [prepending]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [tokenizing]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [generating]:   0%|          | 2/800 [02:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [verifying ]:   0%|          | 2/800 [03:06<14:14:47, 64.27s/example, accept=62%, verified=10/16]distill [verifying ]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=62%, verified=10/16]distill [verifying ]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=58%, verified=14/24]distill [logging   ]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=58%, verified=14/24]distill [prepending]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=58%, verified=14/24]distill [tokenizing]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=58%, verified=14/24]distill [generating]:   0%|          | 3/800 [03:06<13:50:01, 62.49s/example, accept=58%, verified=14/24][W1119 02:03:59.368367990 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 595591168 bytes (free: 4194304, total: 17179869184).
+[W1119 02:04:02.726953343 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 595591168 bytes (free: 538968064, total: 17179869184).
+[W1119 02:04:04.741383300 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 595591168 bytes (free: 543162368, total: 17179869184).
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/202200872/arca-runner/rlm/distill.py", line 703, in <module>
+    main()
+  File "/home/202200872/arca-runner/rlm/distill.py", line 668, in main
+    generate_traces(
+  File "/home/202200872/arca-runner/rlm/distill.py", line 455, in generate_traces
+    completions, prompt_lens = generate(texts)
+                               ^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runner/rlm/distill.py", line 425, in generate
+    return _generate_hf(model, tokenizer, texts, samples, max_new_tokens)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runner/rlm/distill.py", line 273, in _generate_hf
+    generated = model.generate(
+                ^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/generation/utils.py", line 2802, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/generation/utils.py", line 3002, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/generation/utils.py", line 4109, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/utils/generic.py", line 939, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 482, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 286, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 413, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/modeling_layers.py", line 109, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 321, in forward
+    hidden_states = self.mlp(hidden_states)
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/.venv-distill/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 82, in forward
+    down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 568.00 MiB. GPU 0 has a total capacity of 16.00 GiB of which 518.00 MiB is free. Including non-PyTorch memory, this process has 15.47 GiB memory in use. Of the allocated memory 13.31 GiB is allocated by PyTorch, and 1.89 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+distill [generating]:   0%|          | 3/800 [03:11<14:06:17, 63.71s/example, accept=58%, verified=14/24]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/202200872/arca-runner/rlm/pipeline.py", line 350, in <module>
+    main()
+  File "/home/202200872/arca-runner/rlm/pipeline.py", line 332, in main
+    subprocess.run(step.command, cwd=ROOT, env=environment, check=True)
+  File "/home/202200872/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['uv', 'run', '--extra', 'distill', 'python', '-m', 'rlm.distill', '--data', '/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/train.jsonl', '--teacher', 'Qwen/Qwen3-4B', '--backend', 'hf', '--samples', '8', '--seed', '42', '--max-new-tokens', '1024', '--max-model-len', '8192', '--batch-size', '1', '--gpu-memory-utilization', '0.85', '--verifier', 'imv', '--output', '/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/data/sft_traces.jsonl', '--log-path', '/home/202200872/Master/Courses/MGP/navegador-ayudas-prestaciones-sociales/arca-runs/rlm-v2/logs/distillation.jsonl']' returned non-zero exit status 1.
+exit=1 end 2026-11-19T02:04:05+01:00
