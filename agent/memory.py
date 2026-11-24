@@ -38,19 +38,53 @@ class ConversationMemory:
             system += f"\n\nSummary of the conversation so far:\n{self.summary}"
         return [{"role": "system", "content": system}, *self.messages]
 
-    def compress(self, summarize: Callable[[list[dict]], str]) -> bool:
-        """Tu turno (the policy): decide *what* to summarise and *when*.
+    pinned: int = 1  # first messages that stay verbatim: the user's task
+    max_observation_chars: int = 1500  # tool outputs are cut to this before summarising
+    compressions: int = 0
 
-        The mechanics are here: if over budget, take everything except the last
-        ``keep_last`` messages, turn it into a summary with ``summarize`` (a call to your
-        model with ``SUMMARY_PROMPT``) and prepend it to the existing summary. Return True
-        if a compression happened. Then think: should tool observations be truncated
-        before summarising? Should the first user message always stay verbatim?
+    def compress(self, summarize: Callable[[list[dict]], str]) -> bool:
+        """Our policy: what is summarised and when.
+
+        - When: only when the rendered context exceeds ``token_budget``.
+        - Always kept verbatim: the first ``pinned`` messages (the user's task: losing its exact
+          wording, numbers or dates is the worst failure of a summary) and the last
+          ``keep_last`` messages (the step in progress and its observation).
+        - Summarised: everything in between, with every tool observation cut to
+          ``max_observation_chars`` first. Observations are the bulk of the context (a BOE
+          article, a list of grants) and the model only needs the facts it already used.
+        - If the summary call fails, the middle is replaced by a mechanical digest (tool names,
+          arguments and the start of each observation): the loop must never die on memory.
+        Returns True if a compression happened.
         """
-        if not self.over_budget() or len(self.messages) <= self.keep_last:
+        if not self.over_budget() or len(self.messages) <= self.pinned + self.keep_last:
             return False
-        old, recent = self.messages[: -self.keep_last], self.messages[-self.keep_last :]
-        new_summary = summarize(old)
+        head = self.messages[: self.pinned]
+        middle = self.messages[self.pinned : -self.keep_last]
+        recent = self.messages[-self.keep_last :]
+        trimmed = [self._trim(m) for m in middle]
+        try:
+            new_summary = summarize(trimmed).strip()
+        except Exception:  # noqa: BLE001 - fall back to a digest that needs no model
+            new_summary = ""
+        if not new_summary:
+            new_summary = digest(trimmed, max_chars=200)
         self.summary = f"{self.summary}\n{new_summary}".strip()
-        self.messages = recent
+        self.messages = head + recent
+        self.compressions += 1
         return True
+
+    def _trim(self, message: dict) -> dict:
+        if message.get("role") != "tool" or len(message["content"]) <= self.max_observation_chars:
+            return message
+        cut = message["content"][: self.max_observation_chars]
+        return {**message, "content": f"{cut} [... observación recortada]"}
+
+
+def digest(messages: list[dict], max_chars: int = 200) -> str:
+    """A model-free summary: one line per message, observations shortened."""
+    lines = []
+    for m in messages:
+        text = " ".join(m["content"].split())[:max_chars]
+        who = m.get("name") or m["role"]
+        lines.append(f"- {who}: {text}")
+    return "\n".join(lines)
