@@ -1,0 +1,8 @@
+commit d7f9335 start 2026-11-24T09:12:07+01:00
+waiting for the API (baseline, /home/202200872/arca-runs/scorecard/baseline-code) on port 8899
+API up in 91 s
+first /health: 0 s
+          phase1 P1-000: status=200 341s --
+          phase1 P1-001: status=200 122s OK
+          phase1 P1-002: status=200 21s OK
+          phase1 P1-003: status=200 18s --
