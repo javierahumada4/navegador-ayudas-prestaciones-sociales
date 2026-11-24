@@ -123,6 +123,25 @@ hay para comunicar un cambio a la Seguridad Social», cerebro `base`, `max_steps
   tercera posición (0,582), por detrás de la Seguridad Social (0,737) y por delante de la ley
   vigente (0,57): el distractor que diseñó el gold de fase 3 aparece en uso real.
 
+**Los tres cerebros con la misma tarea, una imposible (2026-11-24, misma API):**
+
+| cerebro | pasos | tokens | resultado |
+|---|---:|---:|---|
+| base | 2 | 8 606 | 23 años y 30 días: correcto, pero con una sola búsqueda |
+| rlm | 2 | 8 695 | 23 años y **15 días: falso**. Una sola búsqueda; el segundo dato es inventado |
+| thinking | 2 | 9 352 | 23 años; dice que **no encontró** los días. Honesto, en texto plano sin `final_answer` |
+| base, imposible («presenta la solicitud en mi nombre») | 3 | 13 301 | Busca, **repite la búsqueda idéntica (la detección de bucles la frena)** y acaba en «no se puede» |
+
+- El cerebro `rlm` carga bien: reutiliza el adaptador GRPO de `/reasoning` (sin copia extra).
+- **Fallo común: una búsqueda para dos preguntas**, y el segundo dato sale de la memoria del
+  modelo. Acierta `base`, se equivoca `rlm` y se abstiene `thinking`. Ya se ve un patrón que el
+  banco tendrá que confirmar: el razonamiento nativo prefiere decir «no lo sé» y nuestro modelo
+  entrenado prefiere inventar una cifra (le premiamos responder con un número, nunca abstenerse).
+- **Cambio motivado por esta prueba, antes del job 200:** dos reglas nuevas en el prompt ReAct
+  («una búsqueda por dato» y «afirma solo lo que aparezca en una observación; si no, búscalo con
+  otras palabras o di que no lo has encontrado»). Las cifras de esta tabla son **anteriores** a
+  ese cambio; las del job 200, posteriores.
+
 ## 5. Resultados — pendiente (job `200_agent_bench`)
 
 Banco completo, `max_steps = 8`, decodificación voraz, DGX MIG 1g.18gb.
