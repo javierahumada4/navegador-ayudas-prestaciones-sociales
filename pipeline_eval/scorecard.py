@@ -309,7 +309,8 @@ def main() -> None:
         out.with_suffix(".md").write_text(markdown(card), encoding="utf-8")
 
     def section(name: str, items, runner, summarizer, label=lambda x: x["id"]):
-        rows = card["rows"].setdefault(name, [])
+        # Resume keeps only successful rows: an HTTP error (OOM, a cut run) is retried.
+        rows = card["rows"][name] = [r for r in card["rows"].get(name, []) if r.get("status") == 200]
         done = {r["id"] for r in rows}
         for item in items:
             if label(item) in done:
@@ -355,7 +356,7 @@ def main() -> None:
                 f"phase4_{brain}", tasks,
                 lambda t, b=brain: run_phase4(client, t, b, args.agent_max_steps), summarize_phase4,
             )
-        convs = card["rows"].setdefault("memory", [])
+        convs = card["rows"]["memory"] = [c for c in card["rows"].get("memory", []) if c.get("status") == 200]
         if not convs:
             for conv in CONVERSATIONS:
                 convs.append(run_conversation(client, conv, "base"))

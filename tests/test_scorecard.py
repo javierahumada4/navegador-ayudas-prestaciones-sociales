@@ -94,3 +94,23 @@ def test_compare_marks_direction_per_metric():
     text = table(before, after)
     assert "| phase1 | pass@1 | 0.400 | 0.500 | 0.100 | mejor |" in text
     assert "| phase4 base | success | 0.300 | 0.500 | 0.200 | mejor |" in text
+
+
+def test_resume_retries_rows_that_failed(tmp_path, monkeypatch):
+    out = tmp_path / "card.json"
+    out.write_text(json.dumps({"rows": {"phase1": [
+        {"id": "P1-000", "status": 200, "wall_s": 1, "over_ngrok_limit": False, "correct": True,
+         "format": True, "truncated": False, "tokens": 1},
+        {"id": "P1-001", "status": 500, "wall_s": 0, "over_ngrok_limit": False, "correct": False,
+         "format": False, "truncated": False, "tokens": 0}]}}))
+    called = []
+    monkeypatch.setattr(sc, "phase1_items", lambda n: [{"id": "P1-000"}, {"id": "P1-001"}])
+    monkeypatch.setattr(sc, "run_phase1", lambda client, it: called.append(it["id"]) or {
+        "id": it["id"], "status": 200, "wall_s": 1, "over_ngrok_limit": False, "correct": True,
+        "format": True, "truncated": False, "tokens": 1})
+    monkeypatch.setattr(sc.Client, "call", lambda self, m, p, b=None: {
+        "status": 200, "body": {"phases": {}}, "wall_s": 0, "over_ngrok_limit": False})
+    monkeypatch.setattr("sys.argv", ["x", "--out", str(out), "--phases", "1", "--resume"])
+    sc.main()
+    assert called == ["P1-001"]
+    assert json.loads(out.read_text())["summary"]["phase1"]["pass@1"] == 1.0

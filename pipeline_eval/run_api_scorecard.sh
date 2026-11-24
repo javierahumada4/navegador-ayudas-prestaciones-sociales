@@ -27,6 +27,17 @@ until curl -s "localhost:$PORT/health" >/dev/null; do
   sleep 10
 done
 echo "API up in $(( $(date +%s) - start )) s"
+# Code with a start-up warm-up (eval/pipeline-fixes): wait for it, so the scorecard measures the
+# warm API the grader would meet. The baseline has none and is measured cold, as it is deployed.
+if grep -q "def warmup" "$CODE_DIR/api/app.py"; then
+  t=$(date +%s)
+  until grep -q "warm-up agent" "$OUT_DIR/api.log"; do
+    [ $(( $(date +%s) - t )) -gt 900 ] && { echo "warm-up not finished after 15 min"; break; }
+    sleep 10
+  done
+  grep "warm-up" "$OUT_DIR/api.log" | sed 's/^/  /'
+  echo "warm-up wait: $(( $(date +%s) - t )) s"
+fi
 # The first /health loads every phase (embedder + corpus index): time it separately.
 t=$(date +%s); curl -s "localhost:$PORT/health" > "$OUT_DIR/health.json"; echo "first /health: $(( $(date +%s) - t )) s"
 cd "$HERE"
