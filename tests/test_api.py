@@ -1,4 +1,4 @@
-"""The API must start with every phase pending and answer 501 with a useful message."""
+"""HTTP contract checks without requiring a GPU or downloading model weights."""
 
 from fastapi.testclient import TestClient
 
@@ -16,12 +16,19 @@ def test_health_lists_all_phases():
         assert phase["status"] in {"ready", "pending", "error"}
 
 
-def test_pending_phase_returns_501_with_phase_name():
-    response = client.post("/tools", json={"query": "¿Qué tiempo hace en Madrid?"})
-    if response.status_code == 501:
-        assert response.json()["detail"]["phase"] == "tools"
-    else:
-        assert response.status_code == 200
+def test_tools_endpoint_contract_without_real_model(monkeypatch):
+    from api.app import backends
+    from api.schemas import ToolsResponse
+
+    class StubToolLoop:
+        def run(self, query, max_turns=5):
+            return ToolsResponse(answer="Respuesta simulada", tool_calls=[], turns=1, model="stub")
+
+    monkeypatch.setattr(backends, "tools", lambda: StubToolLoop())
+    response = client.post("/tools", json={"query": "Consulta de prueba"})
+    assert response.status_code == 200
+    assert response.json()["answer"] == "Respuesta simulada"
+    assert response.json()["tool_calls"] == []
 
 
 def test_request_validation():
