@@ -14,6 +14,11 @@ Metrics per (agent, brain):
 - ``required_tools_rate``: runs that used every tool the task needs (the chain really happened).
 - ``mean_steps`` / ``mean_tokens`` / ``mean_wall_s``: cost of a run.
 
+Ablations: ``--break-tool consultar_ayudas`` makes that tool raise ``ConnectionError`` on every
+call (how does the agent react to a broken tool?), ``--only T03 T09`` restricts the tasks and
+``--tag`` names the run (``json:base@broken``); the memory ablation is the same bench with a
+smaller ``ARCA_AGENT_TOKEN_BUDGET``.
+
 Results are written after every task (``--resume`` continues a cut run) as JSON plus a Markdown
 table next to it.
 """
@@ -118,6 +123,17 @@ def markdown(results: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def break_tool(registry, name: str):
+    """Replace ``name`` with a copy that always fails like a dead HTTP service."""
+    from dataclasses import replace
+
+    def broken(**_kwargs):
+        raise ConnectionError(f"{name}: servicio no disponible (fallo simulado para la evaluación)")
+
+    registry.tools[name] = replace(registry.tools[name], fn=broken)
+    return registry
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -129,6 +145,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0, help="first N tasks only (smoke runs)")
     parser.add_argument("--out", default="reports/phase4_eval.json")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--only", nargs="+", default=[], help="task ids to run")
+    parser.add_argument("--break-tool", default="", help="tool that always fails")
+    parser.add_argument("--tag", default="", help="suffix of the run name, e.g. @broken")
     args = parser.parse_args()
 
     tasks = [
@@ -136,6 +155,8 @@ def main() -> None:
         for line in Path(args.bench).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    if args.only:
+        tasks = [t for t in tasks if t["id"] in set(args.only)]
     if args.limit:
         tasks = tasks[: args.limit]
     out = Path(args.out)
@@ -145,7 +166,7 @@ def main() -> None:
     json_agent = None
     for agent_kind in args.agents:
         for brain in args.brains:
-            key = f"{agent_kind}:{brain}"
+            key = f"{agent_kind}:{brain}{args.tag}"
             done = {r["id"]: r for r in results.get(key, {}).get("rows", [])}
             rows = []
             for task in tasks:
@@ -158,12 +179,21 @@ def main() -> None:
                         from agent.react_agent import ReActAgent
 
                         json_agent = ReActAgent.from_env()
+                        if args.break_tool:
+                            break_tool(json_agent.registry, args.break_tool)
                     response = json_agent.run(task["task"], max_steps=args.max_steps, brain=brain)
                     response = response.model_dump()
                 else:
                     from agent.code_agent import run_code_agent
 
-                    response = run_code_agent(task["task"], max_steps=args.max_steps, brain=brain)
+                    from agent.react_agent import agent_registry
+
+                    def factory():
+                        registry = agent_registry()
+                        return break_tool(registry, args.break_tool) if args.break_tool else registry
+
+                    response = run_code_agent(task["task"], max_steps=args.max_steps, brain=brain,
+                                              registry_factory=factory)
                 wall = round(time.perf_counter() - started, 1)
                 row = {**task, **response, **score(task, response), "wall_s": wall}
                 row.pop("check", None)

@@ -57,3 +57,13 @@ def test_summary_separates_chained_and_impossible():
     s = summarize(rows)
     assert s["success_rate"] == 0.5 and s["impossible_ok"] == 1.0 and s["required_tools_rate"] == 0.5
     assert s["mean_steps"] == 4.0
+
+
+def test_break_tool_makes_the_tool_fail_like_a_dead_service():
+    from agent.evaluate import break_tool
+    from agent.react_agent import agent_registry
+
+    registry = break_tool(agent_registry(), "consultar_ayudas")
+    record = registry.call("consultar_ayudas", {"tema": "alquiler", "max_resultados": 3})
+    assert not record.ok and "ConnectionError" in record.error
+    assert agent_registry().tools["consultar_ayudas"].fn is not registry.tools["consultar_ayudas"].fn
