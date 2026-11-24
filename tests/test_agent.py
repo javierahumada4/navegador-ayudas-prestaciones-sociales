@@ -238,3 +238,18 @@ def test_summary_is_capped():
         memory.add("tool", "y" * 50, name="t")
         memory.compress(lambda msgs: "z" * 80)
     assert len(memory.summary) <= 106
+
+
+def test_rlm_brain_borrows_the_phase1_model_by_resolved_adapter_path(monkeypatch):
+    import sys
+
+    from agent.models import BrainSpec, ModelPool
+
+    fake_inference = SimpleNamespace(_resolve_adapter=lambda a: "/cache/snap/grpo_final")
+    monkeypatch.setitem(sys.modules, "rlm.inference", fake_inference)
+    reasoning = SimpleNamespace(model="M", tokenizer="T", base_model="Qwen/Qwen3-1.7B",
+                                adapter_path="/cache/snap/grpo_final")
+    fake_app = SimpleNamespace(backends=SimpleNamespace(reasoning=lambda: reasoning))
+    monkeypatch.setitem(sys.modules, "api.app", fake_app)
+    spec = BrainSpec("rlm", "Qwen/Qwen3-1.7B", "JES0406/imv-sft-lora/grpo_final", False, 1024)
+    assert ModelPool._borrow(spec) == ("T", "M")

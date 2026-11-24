@@ -72,26 +72,38 @@ class ModelPool:
 
     @staticmethod
     def _borrow(spec: BrainSpec) -> tuple[object, object] | None:
-        """A model another phase of this process already holds with the same weights."""
-        executor = sys.modules.get("tool_use.executor")
-        loop = getattr(executor, "_loop", None) if executor else None
-        if (
-            spec.adapter is None
-            and loop is not None
-            and getattr(loop, "model", None) is not None
-            and loop.brain == "base"
-            and loop.model_id == spec.model_id
-        ):
+        """Load through the phase that owns the same weights, so the process holds one copy.
+
+        Base weights: the phase-2 ``ToolLoop`` (when it runs the base brain on the same model).
+        Base + phase-1 LoRA: the API's ``ReasoningModel`` (when the API is the process).
+        Inside the API either phase may be called first; whichever comes first loads, the
+        other reuses. Outside the API (evaluation scripts) the pool loads its own copy.
+        """
+        if spec.adapter is None:
+            if os.environ.get("ARCA_TOOLS_BRAIN", "base").lower() != "base":
+                return None
+            if os.environ.get("ARCA_TOOLS_MODEL_ID", DEFAULT_MODEL) != spec.model_id:
+                return None
+            if "api.app" not in sys.modules and "tool_use.executor" not in sys.modules:
+                return None
+            from tool_use.executor import build_tool_loop
+
+            loop = build_tool_loop()
+            loop.load()
             return loop.tokenizer, loop.model
         app = sys.modules.get("api.app")
-        reasoning = getattr(getattr(app, "backends", None), "_cache", {}).get("reasoning")
-        if (
-            spec.adapter is not None
-            and reasoning is not None
-            and getattr(reasoning, "model", None) is not None
-            and reasoning.adapter_path == spec.adapter
-            and reasoning.base_model == spec.model_id
-        ):
+        backends = getattr(app, "backends", None)
+        if backends is None:
+            return None
+        try:
+            reasoning = backends.reasoning()
+        except Exception:  # noqa: BLE001 - phase 1 not configured: load our own copy
+            return None
+        if getattr(reasoning, "base_model", None) != spec.model_id:
+            return None
+        from rlm.inference import _resolve_adapter
+
+        if reasoning.adapter_path in {spec.adapter, _resolve_adapter(spec.adapter)}:
             return reasoning.tokenizer, reasoning.model
         return None
 
