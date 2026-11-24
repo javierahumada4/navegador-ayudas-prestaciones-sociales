@@ -126,6 +126,16 @@ forzada); ambas costaron un job entero antes de diagnosticarlas.
 por una de elegibilidad (acierta si responde 0 cuando el oracle da 0), y subir a 8 generaciones
 por prompt para reducir los grupos sin señal.
 
+**Estado de los jobs 030 y 040 (2026-11-19, logs en `jobs/done/`): sin resultados.** El job 030
+(pipeline completo con la hoja v2) falló a los 26 min: la sonda de vLLM no pudo arrancar el
+motor (`Engine core initialization failed`, `030_phase1_v2_full_run/vllm_probe.txt`), el job cayó
+al profesor en HF y la destilación se quedó sin memoria en la GPU de 16 GB (`CUDA out of memory`,
+3/800 problemas). El job 040 (recompensa de elegibilidad) depende del SFT v2 y abortó al empezar.
+Por tanto el v2 reentrenado y la ablación de recompensa **no se han medido**; los resultados de
+fase 1 que valen son los del run final (`results/rlm_final`). Las salidas extra del job 011
+(evaluación v1 con vLLM, pass@1 .045/.410/.480) quedan en `jobs/done/011_eval_rulesheet_v1_v2_retry/`
+y caen dentro del ruido de ±3.5 puntos de las otras pasadas v1.
+
 ## 2026-11-17 — Fase 2: herramientas, base frente a GRPO, con y sin tools (v4)
 
 - Rama: `feat/fase2-tool-use-imv-bdns-informes` (Ahumada). DGX, MIG 1g.16gb, greedy, `max_turns=5`.
