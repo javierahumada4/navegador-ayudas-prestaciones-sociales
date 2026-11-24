@@ -221,3 +221,20 @@ def test_knowledge_base_hits_are_rendered_with_citable_ids():
     text = render_hits([SimpleNamespace(chunk=chunk, score=0.9)])
     assert text.startswith("[ley-19-2021-0137] (ley-19-2021.md)\n") and text.endswith("[...]")
     assert render_hits([]).startswith("Sin resultados")
+
+
+def test_hung_tools_do_not_block_later_calls():
+    agent = make_agent(timeouts={"slow_tool": 0.05, "calcular_imv": 5})
+    for _ in range(6):  # more hung calls than a small worker pool would hold
+        assert agent.execute("slow_tool", {"seconds": 0.5}).startswith("TimeoutError")
+    assert '"total_monthly_eur": 733.6' in agent.execute("calcular_imv", {"case": CASE})
+
+
+def test_summary_is_capped():
+    memory = ConversationMemory("sys", count_tokens=len, token_budget=10, keep_last=1,
+                                max_summary_chars=100)
+    for i in range(5):
+        memory.add("user" if i == 0 else "assistant", f"m{i}")
+        memory.add("tool", "y" * 50, name="t")
+        memory.compress(lambda msgs: "z" * 80)
+    assert len(memory.summary) <= 106

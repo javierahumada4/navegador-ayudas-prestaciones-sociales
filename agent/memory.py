@@ -40,6 +40,7 @@ class ConversationMemory:
 
     pinned: int = 1  # first messages that stay verbatim: the user's task
     max_observation_chars: int = 1500  # tool outputs are cut to this before summarising
+    max_summary_chars: int = 4000  # the summary itself must not grow without bound
     compressions: int = 0
 
     def compress(self, summarize: Callable[[list[dict]], str]) -> bool:
@@ -69,6 +70,8 @@ class ConversationMemory:
         if not new_summary:
             new_summary = digest(trimmed, max_chars=200)
         self.summary = f"{self.summary}\n{new_summary}".strip()
+        if len(self.summary) > self.max_summary_chars:  # keep the most recent facts
+            self.summary = "[...]\n" + self.summary[-self.max_summary_chars :]
         self.messages = head + recent
         self.compressions += 1
         return True

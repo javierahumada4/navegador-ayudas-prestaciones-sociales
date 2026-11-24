@@ -10,10 +10,12 @@ Decisions (and why):
 - **One action per step.** If the model writes several ``<tool_call>`` blocks only the first is
   executed and the observation says so: the trace stays a clean Thought/Action/Observation
   sequence and every step can be checked.
-- **Timeouts per tool** (``TOOL_TIMEOUTS``, overridable with ``ARCA_AGENT_TOOL_TIMEOUT``): the
-  call runs in a worker thread and the agent stops waiting after the limit. Python cannot kill
-  the thread; a slow HTTP call finishes in the background (``requests`` has its own 15 s limit)
-  and its result is discarded. The model sees ``TimeoutError`` and decides.
+- **Timeouts per tool** (``TOOL_TIMEOUTS``, overridable with ``ARCA_AGENT_TOOL_TIMEOUT``): each
+  call runs in its own daemon thread and the agent stops waiting after the limit. Python cannot
+  kill the thread; a slow HTTP call finishes in the background (``requests`` has its own 15 s
+  limit) and its result is discarded. The model sees ``TimeoutError`` and decides. At most
+  ``MAX_STUCK_CALLS`` timed-out calls may still be running; beyond that, tools are refused
+  immediately instead of piling up threads.
 - **Error recovery.** Malformed JSON, unknown tools, invalid arguments, exceptions and timeouts
   all become observations (``ToolRegistry.call`` never raises); nothing kills the loop.
 - **Loop detection.** An identical call (same name and arguments) is not executed again: the
@@ -34,8 +36,7 @@ import json
 import os
 from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
+import threading
 from dataclasses import dataclass, field, replace
 
 from agent.memory import ConversationMemory
@@ -55,7 +56,10 @@ TOOL_TIMEOUTS = {  # seconds; the first search loads the embedder and may index 
     "consultar_boe": 30,
     "search_knowledge_base": 180,
 }
-_WORKERS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-tool")
+# One daemon thread per call (a hung tool never blocks the next call), and a cap on threads
+# still running after their timeout so a stuck dependency cannot pile up threads forever.
+MAX_STUCK_CALLS = 16
+_STUCK = threading.BoundedSemaphore(MAX_STUCK_CALLS)
 
 
 @tool
@@ -178,14 +182,25 @@ class ReActAgent:
 
     def execute(self, name: str, arguments: dict) -> str:
         limit = self.timeouts.get(name, 30)
-        future = _WORKERS.submit(self.registry.call, name, arguments)
-        try:
-            record = future.result(timeout=limit)
-        except FutureTimeout:
+        if not _STUCK.acquire(blocking=False):
+            return "Error: demasiadas herramientas bloqueadas en este momento; responde con lo que tengas."
+        box: dict = {}
+
+        def target() -> None:
+            try:
+                box["record"] = self.registry.call(name, arguments)
+            finally:
+                _STUCK.release()
+
+        thread = threading.Thread(target=target, name=f"agent-tool-{name}", daemon=True)
+        thread.start()
+        thread.join(timeout=limit)
+        if "record" not in box:
             return (
                 f"TimeoutError: la herramienta {name} no respondió en {limit:g} s. "
                 "Prueba otra herramienta o responde con lo que tengas, indicando el fallo."
             )
+        record = box["record"]
         if record.ok:
             return format_tool_result(name, record.result)
         return f"Error: {record.error}"
