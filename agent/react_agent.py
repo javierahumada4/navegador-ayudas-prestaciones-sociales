@@ -40,7 +40,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
+import time
 from collections import Counter, OrderedDict
 from collections.abc import Callable
 import threading
@@ -146,6 +148,35 @@ def call_with_timeout(registry: ToolRegistry, name: str, arguments: dict, limit:
     thread.start()
     thread.join(timeout=limit)
     return box.get("record")
+
+
+CITATION = re.compile(r"\[([a-z0-9]+(?:-[a-z0-9]+)*-\d{4})\]")
+THOUGHT_LABEL = re.compile(r"^\s*(?:Pensamiento|Thought)\s*:\s*", re.IGNORECASE)
+
+
+def ungrounded_numbers(answer: str, sources: list[str]) -> list[str]:
+    """Numbers of the answer (>= 10, so not list markers) found in no observation or task."""
+    from agent.evaluate import NUMBER, parse_number
+
+    known = set()
+    for text in sources:
+        known |= {round(n, 2) for n in (parse_number(t) for t in NUMBER.findall(text)) if n is not None}
+    missing = []
+    for token in NUMBER.findall(CITATION.sub("", answer)):
+        value = parse_number(token)
+        if value is not None and abs(value) >= 10 and round(value, 2) not in known:
+            missing.append(token)
+    return missing
+
+
+def cited_ids(observations: list[str]) -> list[str]:
+    """Ids of the first passage of every knowledge-base observation, in order, without repeats."""
+    ids: list[str] = []
+    for text in observations:
+        match = re.match(r"\[([^\]]+)\]", text)
+        if match and match.group(1) not in ids:
+            ids.append(match.group(1))
+    return ids
 
 
 class UnknownSession(LookupError):
@@ -285,14 +316,29 @@ class ReActAgent:
             token_budget=self.token_budget,
         )
         memory.add("user", task)
+        started = time.monotonic()
+        budget_s = float(os.environ.get("ARCA_AGENT_TIME_BUDGET", "240"))
+        observations: list[str] = []  # every tool result, for the grounding check
+        kb_observations: list[str] = []
+        verified = False
 
         def finish(answer: str, n: int, ok: bool) -> AgentResponse:
+            if ok and kb_observations and not CITATION.search(answer):
+                ids = cited_ids(kb_observations)
+                if ids:  # the model used the knowledge base but did not cite it
+                    answer = f"{answer}\n\nFragmentos consultados: " + ", ".join(f"[{i}]" for i in ids)
             return AgentResponse(
                 final_answer=answer, steps=steps, n_steps=n, succeeded=ok,
                 model=f"{spec.name}:{spec.label}", tokens_used=usage["tokens"],
             )
 
         for step in range(max_steps):
+            if time.monotonic() - started > budget_s:  # ngrok cuts requests at 300 s
+                last = observations[-1][:400] if observations else ""
+                return finish(
+                    "No he podido terminar a tiempo." + (f" Último resultado obtenido: {last}" if last else ""),
+                    step, False,
+                )
             raw, prompt_tokens, completion_tokens = self.generate(memory.render(), spec)
             usage["tokens"] += prompt_tokens + completion_tokens
             parsed = parse_tool_calls(raw)
@@ -312,7 +358,7 @@ class ReActAgent:
                     continue
                 if parsed.text:  # plain-text answer: accept it, flag it
                     steps.append(AgentStep(thought=f"{thought}\n(respuesta sin final_answer)".strip()))
-                    return finish(parsed.text, step + 1, True)
+                    return finish(THOUGHT_LABEL.sub("", parsed.text), step + 1, True)
                 observation = "Respuesta vacía: llama a una herramienta o a final_answer."
                 steps.append(AgentStep(thought=thought or "(vacío)", observation=observation))
                 memory.add("assistant", raw)
@@ -323,6 +369,20 @@ class ReActAgent:
             action = AgentAction(name=call.name, arguments=call.arguments)
             if call.name == "final_answer":
                 answer = str(call.arguments.get("answer") or parsed.text or "").strip()
+                missing = ungrounded_numbers(answer, [task, history, *observations])
+                if missing and not verified and step + 1 < max_steps:
+                    # One chance to check figures that no tool returned ("15 días" invented).
+                    verified = True
+                    observation = (
+                        "Comprobación: tu respuesta incluye cifras que no aparecen en ninguna "
+                        f"observación ni en la tarea: {', '.join(missing[:5])}. Si es un dato, "
+                        "búscalo con una herramienta; si lo has calculado a partir de datos "
+                        "observados o no lo encuentras, dilo y vuelve a llamar a final_answer."
+                    )
+                    steps.append(AgentStep(thought=thought, action=action, observation=observation))
+                    memory.add("assistant", raw)
+                    memory.add("tool", observation, name="final_answer")
+                    continue
                 steps.append(AgentStep(thought=thought, action=action))
                 return finish(answer, step + 1, bool(answer))
 
@@ -342,6 +402,9 @@ class ReActAgent:
                 )
             else:
                 observation = self.execute(call.name, call.arguments)
+                observations.append(observation)
+                if call.name == "search_knowledge_base":
+                    kb_observations.append(observation)
             if len(valid) > 1:
                 observation += "\n(Solo se ejecuta una herramienta por paso; las demás se ignoraron.)"
             steps.append(AgentStep(thought=thought, action=action, observation=observation))

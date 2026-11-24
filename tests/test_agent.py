@@ -257,6 +257,7 @@ def test_rlm_brain_borrows_the_phase1_model_by_resolved_adapter_path(monkeypatch
 
 def test_sessions_carry_previous_turns_into_the_next_run():
     agent = make_agent(
+        call("calcular_imv", case=CASE),
         call("final_answer", answer="Le corresponden 733,60 €/mes."),
         call("final_answer", answer="Sí, la misma cifra."),
     )
