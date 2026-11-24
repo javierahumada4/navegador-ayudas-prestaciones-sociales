@@ -8,7 +8,7 @@ from datetime import date
 import httpx
 import pytest
 
-from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe, rules_for_date
+from tool_use.domain_tools import rules_for_date
 from tool_use.executor import ToolLoop
 from tool_use.tools import default_registry
 
