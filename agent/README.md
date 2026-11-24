@@ -1,5 +1,10 @@
 # Fase 4 — El agente: todo junto en un bucle
 
+> **Nuestra implementación** (rama `feat/fase4-agent`): bucle propio en `react_agent.py`, cerebros
+> y pool de modelos en `models.py`, política de memoria y sesiones en `memory.py`, banco de 20+3
+> tareas en `bench/` (generado con el motor) y contraste con smolagents en `code_agent.py`.
+> Decisiones, hipótesis y resultados: [`docs/experiments_fase4.md`](../docs/experiments_fase4.md).
+
 **Endpoint que se evalúa:** `POST /agent` · **Clase:** The augmented LLM, bloque de agentes
 
 ## De qué va

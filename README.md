@@ -1,6 +1,8 @@
 # ARCA — Agente con Razonamiento, Conocimiento y Acción
 
 > **Rama de entrega de las fases 1 y 2:** [`release/fases-1-2-definitiva`](https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales/tree/release/fases-1-2-definitiva). Conserva el RLM de `main` e integra cálculo IMV/CAPI, BDNS, informes y BOE opcional. [Guía de arranque y limitaciones](docs/deploy_fases_1_2.md). Los pesos del LoRA se configuran externamente y las fases 3 y 4 no forman parte de esta entrega.
+>
+> **Fases 3 y 4:** rama [`feat/fase4-agent`](https://github.com/javierahumada4/navegador-ayudas-prestaciones-sociales/tree/feat/fase4-agent) (RAG del BOE con citas y agente ReAct con tres cerebros). [Guía de arranque](docs/deploy_fases_1_4.md) · cuadernos [fase 3](docs/experiments_fase3.md) y [fase 4](docs/experiments_fase4.md).
 
 **Práctica final de Modelos Generativos Profundos · Máster en Inteligencia Artificial · ICAI · 2026-2027**
 
