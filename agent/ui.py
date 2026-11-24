@@ -47,14 +47,20 @@ def render_trace(response: dict) -> str:
     return "\n".join(blocks)
 
 
-def run(task: str, brain: str, max_steps: int) -> tuple[str, str]:
-    reply = httpx.post(
-        f"{API_URL}/agent", json={"task": task, "brain": brain, "max_steps": max_steps}, timeout=600
-    )
+def run(task: str, brain: str, max_steps: int, session_id: str = "") -> tuple[str, str]:
+    payload = {"task": task, "brain": brain, "max_steps": int(max_steps)}
+    if session_id.strip():
+        payload["session_id"] = session_id.strip()  # same id = multi-turn conversation
+    reply = httpx.post(f"{API_URL}/agent", json=payload, timeout=600)
     if reply.status_code != 200:
         return f"API error {reply.status_code}: {reply.text}", ""
     body = reply.json()
-    return body["final_answer"], render_trace(body)
+    header = (
+        f"<p><b>{html.escape(body.get('model', ''))}</b> · {body['n_steps']} pasos · "
+        f"{body.get('tokens_used', 0)} tokens · "
+        f"{'terminó' if body.get('succeeded', True) else 'NO terminó'}</p>"
+    )
+    return body["final_answer"], header + render_trace(body)
 
 
 def main() -> None:
@@ -66,10 +72,11 @@ def main() -> None:
         with gr.Row():
             brain = gr.Dropdown(["base", "rlm", "thinking"], value="rlm", label="Brain")
             max_steps = gr.Slider(1, 30, value=10, step=1, label="Max steps")
+            session = gr.Textbox(label="Session id (optional, multi-turn)", value="")
         button = gr.Button("Run", variant="primary")
         answer = gr.Textbox(label="Final answer", lines=4, interactive=False)
         trace = gr.HTML(label="Trace")
-        button.click(run, inputs=[task, brain, max_steps], outputs=[answer, trace])
+        button.click(run, inputs=[task, brain, max_steps, session], outputs=[answer, trace])
     demo.launch()
 
 
