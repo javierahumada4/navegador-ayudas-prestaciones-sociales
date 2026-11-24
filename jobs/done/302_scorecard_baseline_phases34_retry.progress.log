@@ -1,0 +1,36 @@
+commit b24fd40 start 2026-11-24T10:31:04+01:00
+GPU free before start: 16274 MiB
+waiting for the API (baseline, /home/202200872/arca-runs/scorecard/baseline-code) on port 8899
+API up in 94 s
+first /health: 0 s
+     phase4_base T01: status=200 14s OK
+     phase4_base T03: status=200 21s --
+     phase4_base T04: status=200 13s OK
+     phase4_base T05: status=200 9s --
+     phase4_base T06: status=200 9s OK
+     phase4_base T07: status=200 10s --
+     phase4_base T08: status=200 10s --
+     phase4_base T09: status=200 13s OK
+     phase4_base T10: status=200 13s --
+     phase4_base T11: status=200 24s OK
+     phase4_base T12: status=200 12s OK
+     phase4_base T13: status=200 15s --
+     phase4_base T14: status=200 34s --
+     phase4_base T15: status=200 10s --
+     phase4_base T16: status=200 15s OK
+     phase4_base T17: status=200 10s --
+     phase4_base T18: status=200 9s OK
+     phase4_base T19: status=200 11s --
+     phase4_base T20: status=200 27s --
+     phase4_base I01: status=200 35s --
+     phase4_base I02: status=200 6s --
+     phase4_base I03: status=200 9s --
+      phase4_rlm T01: status=200 14s --
+      phase4_rlm T02: status=200 21s OK
+      phase4_rlm T03: status=200 29s OK
+      phase4_rlm T04: status=200 14s OK
+      phase4_rlm T05: status=200 6s --
+      phase4_rlm T06: status=200 20s OK
+      phase4_rlm T07: status=200 21s --
+      phase4_rlm T08: status=200 19s --
+      phase4_rlm T09: status=200 21s OK
