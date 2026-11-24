@@ -125,14 +125,21 @@ def rag(request: RagRequest):
 @app.post("/agent", response_model=AgentResponse, tags=["fase 4"])
 def agent(request: AgentRequest):
     """Phase 4: the full ReAct loop with every tool, including the knowledge base."""
-    return _run(
-        "agent",
-        backends.agent,
-        lambda a: a.run(
-            request.task, max_steps=request.max_steps, brain=request.brain,
-            session_id=request.session_id,
-        ),
-    )
+    from agent.react_agent import UnknownSession
+
+    try:
+        return _run(
+            "agent",
+            backends.agent,
+            lambda a: a.run(
+                request.task, max_steps=request.max_steps, brain=request.brain,
+                session_id=request.session_id,
+            ),
+        )
+    except HTTPException as exc:
+        if isinstance(exc.__cause__, UnknownSession):
+            raise HTTPException(status_code=404, detail={"phase": "agent", "message": str(exc.__cause__)}) from None
+        raise
 
 
 def main() -> None:

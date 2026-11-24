@@ -9,6 +9,7 @@ compress the oldest turns into a summary that stays at the top of the conversati
 from __future__ import annotations
 
 from collections.abc import Callable
+import threading
 from dataclasses import dataclass, field
 
 
@@ -111,6 +112,7 @@ class SessionMemory:
     turns: list[tuple[str, str]] = field(default_factory=list)
     summary: str = ""
     compressions: int = 0
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def context(self) -> str:
         parts = []

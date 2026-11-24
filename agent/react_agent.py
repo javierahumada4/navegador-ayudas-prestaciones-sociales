@@ -29,7 +29,9 @@ Decisions (and why):
 - **Memory** (``agent/memory.py``), two levels. Within a run: the task stays verbatim, old steps
   are summarised by the same brain when the context exceeds ``ARCA_AGENT_TOKEN_BUDGET`` (default
   6000 tokens). Across runs (``session_id``): each turn's task and final answer are kept and the
-  oldest turns are summarised past ``ARCA_AGENT_SESSION_BUDGET`` (default 1500 tokens). Sessions
+  oldest turns are summarised past ``ARCA_AGENT_SESSION_BUDGET`` (default 1500 tokens). The server
+  issues session ids (send ``session_id="new"``, read it back from the response); client-chosen
+  ids are rejected so nobody can read someone else's conversation by guessing an id. Sessions
   live in process memory only (at most ``MAX_SESSIONS``, least recently used dropped first): they
   may hold personal data and are never written to disk.
 """
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from collections import Counter, OrderedDict
 from collections.abc import Callable
 import threading
@@ -145,6 +148,10 @@ def call_with_timeout(registry: ToolRegistry, name: str, arguments: dict, limit:
     return box.get("record")
 
 
+class UnknownSession(LookupError):
+    """A session_id the server did not issue or has already dropped."""
+
+
 Generator = Callable[[list[dict], BrainSpec, list[dict]], tuple[str, int, int]]
 
 
@@ -158,6 +165,7 @@ class ReActAgent:
     token_counter: Callable[[BrainSpec, str], int] | None = None
     timeouts: dict[str, float] = field(default_factory=lambda: dict(TOOL_TIMEOUTS))
     sessions: OrderedDict = field(default_factory=OrderedDict)
+    _sessions_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
     def from_env(cls) -> ReActAgent:
@@ -226,28 +234,41 @@ class ReActAgent:
 
     # -- loop ----------------------------------------------------------------
 
-    def session(self, session_id: str, spec: BrainSpec) -> SessionMemory:
-        if session_id in self.sessions:
-            self.sessions.move_to_end(session_id)
-        else:
-            self.sessions[session_id] = SessionMemory(
-                count_tokens=lambda text: self.count_tokens(spec, text),
-                token_budget=int(os.environ.get("ARCA_AGENT_SESSION_BUDGET", "1500")),
-            )
-            while len(self.sessions) > MAX_SESSIONS:
-                self.sessions.popitem(last=False)
-        return self.sessions[session_id]
+    def session(self, session_id: str, spec: BrainSpec) -> tuple[str, SessionMemory]:
+        """``"new"`` opens a session with a server-issued id; any other id must have been issued.
+
+        Ids are 32 random URL-safe characters (``secrets.token_urlsafe(24)``), so a caller cannot
+        guess another person's session; an id the server did not issue (or already dropped)
+        raises ``UnknownSession`` and the API answers 404.
+        """
+        with self._sessions_lock:
+            if session_id == "new":
+                session_id = secrets.token_urlsafe(24)
+                self.sessions[session_id] = SessionMemory(
+                    count_tokens=lambda text: self.count_tokens(spec, text),
+                    token_budget=int(os.environ.get("ARCA_AGENT_SESSION_BUDGET", "1500")),
+                )
+                while len(self.sessions) > MAX_SESSIONS:
+                    self.sessions.popitem(last=False)
+            elif session_id in self.sessions:
+                self.sessions.move_to_end(session_id)
+            else:
+                raise UnknownSession("unknown or expired session_id: start one with session_id='new'")
+            return session_id, self.sessions[session_id]
 
     def run(self, task: str, max_steps: int = 10, brain: str = "rlm",
             session_id: str | None = None) -> AgentResponse:
         spec = brain_spec(brain)
-        session = self.session(session_id, spec) if session_id else None
-        response = self._run(task, max_steps, spec, session.context() if session else "")
-        if session is not None:
+        if not session_id:
+            return self._run(task, max_steps, spec, "")
+        session_id, session = self.session(session_id, spec)
+        with session.lock:  # one turn at a time per conversation
+            response = self._run(task, max_steps, spec, session.context())
             usage = Counter()
             session.add_turn(task, response.final_answer,
                              lambda msgs: self.summarize(msgs, spec, usage))
-            response.tokens_used += usage["tokens"]
+        response.tokens_used += usage["tokens"]
+        response.session_id = session_id
         return response
 
     def _run(self, task: str, max_steps: int, spec: BrainSpec, history: str) -> AgentResponse:

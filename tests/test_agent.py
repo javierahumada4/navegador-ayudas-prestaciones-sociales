@@ -260,13 +260,24 @@ def test_sessions_carry_previous_turns_into_the_next_run():
         call("final_answer", answer="Le corresponden 733,60 €/mes."),
         call("final_answer", answer="Sí, la misma cifra."),
     )
-    agent.run("¿Cuánto IMV para el caso A?", max_steps=3, brain="base", session_id="s1")
-    agent.run("¿Y si lo pide mañana?", max_steps=3, brain="base", session_id="s1")
+    first = agent.run("¿Cuánto IMV para el caso A?", max_steps=3, brain="base", session_id="new")
+    assert first.session_id and len(first.session_id) >= 32  # issued by the server
+    second = agent.run("¿Y si lo pide mañana?", max_steps=3, brain="base", session_id=first.session_id)
+    assert second.session_id == first.session_id
     system = agent.generator.seen[-1][0]["content"]
     assert "Usuario: ¿Cuánto IMV para el caso A?" in system and "733,60" in system
-    # another session starts clean
-    agent.run("otra cosa", max_steps=3, brain="base", session_id="s2")
+    # another session starts clean, and a run without session keeps nothing
+    agent.run("otra cosa", max_steps=3, brain="base", session_id="new")
     assert "Conversación anterior" not in agent.generator.seen[-1][0]["content"]
+    assert agent.run("sin sesión", max_steps=3, brain="base").session_id is None
+
+
+def test_client_chosen_or_expired_session_ids_are_rejected():
+    from agent.react_agent import UnknownSession
+
+    agent = make_agent(call("final_answer", answer="ok"))
+    with pytest.raises(UnknownSession):
+        agent.run("t", max_steps=2, brain="base", session_id="s1")
 
 
 def test_old_turns_are_summarised_and_sessions_are_bounded(monkeypatch):
@@ -281,6 +292,5 @@ def test_old_turns_are_summarised_and_sessions_are_bounded(monkeypatch):
 
     monkeypatch.setattr(react_agent, "MAX_SESSIONS", 2)
     agent = make_agent(call("final_answer", answer="ok"))
-    for sid in ("a", "b", "c"):
-        agent.run("t", max_steps=2, brain="base", session_id=sid)
-    assert list(agent.sessions) == ["b", "c"]
+    ids = [agent.run("t", max_steps=2, brain="base", session_id="new").session_id for _ in range(3)]
+    assert list(agent.sessions) == ids[1:]

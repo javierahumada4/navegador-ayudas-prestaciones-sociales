@@ -123,8 +123,11 @@ class AgentRequest(BaseModel):
         description="Model driving the loop: base model, your phase-1 RLM, or a thinking model",
     )
     session_id: str | None = Field(
-        default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$",
-        description="Optional: reuse it across calls for a multi-turn conversation (in-memory).",
+        default=None, min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_-]+$",
+        description=(
+            "Optional multi-turn conversation: send 'new' to open one and then the id the server "
+            "returns in the response. Ids are issued by the server; unknown ids get 404."
+        ),
     )
 
 
@@ -146,3 +149,6 @@ class AgentResponse(BaseModel):
     succeeded: bool = True
     model: str = ""
     tokens_used: int = 0
+    session_id: str | None = Field(
+        default=None, description="Id of the conversation, when the request opened or used one."
+    )
