@@ -1,0 +1,256 @@
+commit 26f66d1 start 2026-11-24T11:58:42+01:00
+export ARCA_RAG_CHUNKING=recursive:1200:150
+export ARCA_RAG_LAMBDA=0.4
+export ARCA_RAG_MIN_SCORE=0.54
+GPU free before start: 16274 MiB
+waiting for the API (fixes-v3, /home/202200872/arca-eval-runner) on port 8899
+API up in 14 s
+  2026-11-24 11:59:04,230 INFO arca.api: warm-up reasoning: 19.8 s
+  2026-11-24 11:59:06,817 INFO arca.api: warm-up tools: 2.6 s
+  2026-11-24 11:59:08,040 INFO arca.api: warm-up rag: 1.2 s
+  2026-11-24 11:59:13,099 INFO arca.api: warm-up agent: 5.1 s
+warm-up wait: 20 s
+first /health: 1 s
+          phase1 P1-000: status=200 29s --
+          phase1 P1-001: status=200 19s OK
+          phase1 P1-002: status=200 20s OK
+          phase1 P1-003: status=200 14s OK
+          phase1 P1-004: status=200 19s --
+          phase1 P1-005: status=200 28s --
+          phase1 P1-006: status=200 18s --
+          phase1 P1-007: status=200 28s --
+          phase1 P1-008: status=200 18s OK
+          phase1 P1-009: status=200 20s OK
+          phase1 P1-010: status=200 24s OK
+          phase1 P1-011: status=200 21s OK
+          phase1 P1-012: status=200 23s OK
+          phase1 P1-013: status=200 14s OK
+          phase1 P1-014: status=200 20s OK
+          phase1 P1-015: status=200 18s OK
+          phase1 P1-016: status=200 22s --
+          phase1 P1-017: status=200 14s OK
+          phase1 P1-018: status=200 25s --
+          phase1 P1-019: status=200 28s --
+          phase1 P1-020: status=200 15s --
+          phase1 P1-021: status=200 16s OK
+          phase1 P1-022: status=200 19s --
+          phase1 P1-023: status=200 24s --
+          phase1 P1-024: status=200 24s --
+          phase1 P1-025: status=200 12s --
+          phase1 P1-026: status=200 7s OK
+          phase1 P1-027: status=200 22s OK
+          phase1 P1-028: status=200 29s OK
+          phase1 P1-029: status=200 12s OK
+          phase1 P1-030: status=200 20s --
+          phase1 P1-031: status=200 9s OK
+          phase1 P1-032: status=200 25s OK
+          phase1 P1-033: status=200 23s --
+          phase1 P1-034: status=200 18s --
+          phase1 P1-035: status=200 12s OK
+          phase1 P1-036: status=200 18s OK
+          phase1 P1-037: status=200 18s OK
+          phase1 P1-038: status=200 17s OK
+          phase1 P1-039: status=200 23s --
+          phase2 P2-001: status=200 6s OK
+          phase2 P2-002: status=200 8s OK
+          phase2 P2-003: status=200 9s OK
+          phase2 P2-004: status=200 6s OK
+          phase2 P2-005: status=200 5s OK
+          phase2 P2-006: status=200 8s OK
+          phase2 P2-007: status=200 11s OK
+          phase2 P2-008: status=200 7s OK
+          phase2 P2-009: status=200 5s OK
+          phase2 P2-010: status=200 7s OK
+          phase2 P2-011: status=200 6s OK
+          phase2 P2-012: status=200 6s OK
+          phase2 P2-013: status=200 6s OK
+          phase2 P2-014: status=200 5s OK
+          phase2 P2-015: status=200 6s OK
+          phase2 P2-016: status=200 6s OK
+          phase2 P2-017: status=200 1s OK
+          phase2 P2-018: status=200 1s OK
+          phase2 P2-019: status=200 1s OK
+          phase2 P2-020: status=200 4s OK
+          phase2 P2-021: status=200 1s OK
+          phase2 P2-022: status=200 14s OK
+          phase2 P2-023: status=200 16s OK
+          phase2 P2-024: status=200 2s OK
+          phase2 P2-025: status=200 16s OK
+          phase2 P2-026: status=200 20s OK
+          phase2 P2-027: status=200 16s OK
+          phase2 P2-028: status=200 13s OK
+          phase2 P2-029: status=200 16s OK
+          phase2 P2-030: status=200 9s OK
+          phase2 P2-031: status=200 1s OK
+          phase2 P2-032: status=200 11s OK
+          phase2 P2-033: status=200 18s OK
+          phase2 P2-034: status=200 18s OK
+          phase2 P2-035: status=200 27s OK
+          phase2 P2-036: status=200 4s OK
+          phase2 P2-037: status=200 2s OK
+          phase2 P2-038: status=200 2s OK
+          phase2 P2-039: status=200 2s OK
+          phase2 P2-040: status=200 1s OK
+   phase3_hybrid g01: status=200 2s OK
+   phase3_hybrid g02: status=200 2s OK
+   phase3_hybrid g03: status=200 2s --
+   phase3_hybrid g04: status=200 0s OK
+   phase3_hybrid g05: status=200 4s OK
+   phase3_hybrid g06: status=200 6s --
+   phase3_hybrid g07: status=200 1s OK
+   phase3_hybrid g08: status=200 3s OK
+   phase3_hybrid g09: status=200 0s OK
+   phase3_hybrid g10: status=200 2s OK
+   phase3_hybrid g11: status=200 1s --
+   phase3_hybrid g12: status=200 5s OK
+   phase3_hybrid g13: status=200 2s OK
+   phase3_hybrid g14: status=200 1s OK
+   phase3_hybrid g15: status=200 2s OK
+   phase3_hybrid g16: status=200 1s OK
+   phase3_hybrid g17: status=200 1s OK
+   phase3_hybrid g18: status=200 1s OK
+   phase3_hybrid g19: status=200 2s OK
+   phase3_hybrid g20: status=200 1s OK
+   phase3_hybrid g21: status=200 1s OK
+   phase3_hybrid g22: status=200 1s OK
+   phase3_hybrid g23: status=200 1s --
+   phase3_hybrid g24: status=200 1s OK
+   phase3_hybrid g25: status=200 1s OK
+   phase3_hybrid g26: status=200 1s OK
+   phase3_hybrid g27: status=200 1s OK
+   phase3_hybrid g28: status=200 3s OK
+   phase3_hybrid g29: status=200 1s OK
+   phase3_hybrid g30: status=200 1s OK
+   phase3_hybrid g31: status=200 1s OK
+   phase3_hybrid g32: status=200 6s OK
+   phase3_hybrid g33: status=200 1s --
+   phase3_hybrid g34: status=200 0s --
+   phase3_hybrid g35: status=200 0s --
+   phase3_hybrid g36: status=200 4s --
+   phase3_hybrid g37: status=200 1s OK
+   phase3_hybrid g38: status=200 1s OK
+   phase3_hybrid g39: status=200 1s --
+   phase3_hybrid g40: status=200 2s OK
+   phase3_hybrid g41: status=200 0s --
+   phase3_hybrid g42: status=200 0s OK
+   phase3_hybrid g43: status=200 2s --
+   phase3_hybrid g44: status=200 1s OK
+   phase3_hybrid g45: status=200 1s OK
+   phase3_hybrid g46: status=200 0s OK
+   phase3_hybrid g47: status=200 2s --
+   phase3_hybrid g48: status=200 0s --
+   phase3_hybrid g49: status=200 3s OK
+   phase3_hybrid g50: status=200 1s OK
+   phase3_hybrid U-¿Cuál es la cuantía de la pens: status=200 0s OK
+   phase3_hybrid U-¿Qué requisitos exige la Renta: status=200 2s OK
+   phase3_hybrid U-¿Hasta qué fecha puedo present: status=200 0s OK
+   phase3_hybrid U-¿Cuántas personas cobran actua: status=200 0s OK
+   phase3_hybrid U-¿Cómo se tramita la tarjeta sa: status=200 0s OK
+   phase3_hybrid U-¿Qué ayudas hay para el alquil: status=200 0s OK
+   phase3_hybrid U-¿Cuál es el sueldo del Ministr: status=200 0s OK
+   phase3_hybrid U-¿Qué importe tiene el subsidio: status=200 0s OK
+     phase4_base T01: status=200 12s OK
+     phase4_base T02: status=200 19s OK
+     phase4_base T03: status=200 21s OK
+     phase4_base T04: status=200 13s OK
+     phase4_base T05: status=200 24s --
+     phase4_base T06: status=200 9s OK
+     phase4_base T07: status=200 10s --
+     phase4_base T08: status=200 8s OK
+     phase4_base T09: status=200 10s OK
+     phase4_base T10: status=200 13s --
+     phase4_base T11: status=200 21s OK
+     phase4_base T12: status=200 12s OK
+     phase4_base T13: status=200 15s --
+     phase4_base T14: status=200 34s --
+     phase4_base T15: status=200 11s --
+     phase4_base T16: status=200 15s OK
+     phase4_base T17: status=200 10s --
+     phase4_base T18: status=200 8s OK
+     phase4_base T19: status=200 16s --
+     phase4_base T20: status=200 25s OK
+     phase4_base I01: status=200 35s --
+     phase4_base I02: status=200 9s --
+     phase4_base I03: status=200 14s OK
+      phase4_rlm T01: status=200 12s OK
+      phase4_rlm T02: status=200 21s OK
+      phase4_rlm T03: status=200 28s OK
+      phase4_rlm T04: status=200 13s OK
+      phase4_rlm T05: status=200 6s --
+      phase4_rlm T06: status=200 12s --
+      phase4_rlm T07: status=200 20s --
+      phase4_rlm T08: status=200 18s OK
+      phase4_rlm T09: status=200 14s OK
+      phase4_rlm T10: status=200 28s --
+      phase4_rlm T11: status=200 39s --
+      phase4_rlm T12: status=200 18s OK
+      phase4_rlm T13: status=200 24s --
+      phase4_rlm T14: status=200 37s --
+      phase4_rlm T15: status=200 20s --
+      phase4_rlm T16: status=200 28s OK
+      phase4_rlm T17: status=200 30s --
+      phase4_rlm T18: status=200 17s --
+      phase4_rlm T19: status=200 19s --
+      phase4_rlm T20: status=200 30s OK
+      phase4_rlm I01: status=200 4s OK
+      phase4_rlm I02: status=200 27s OK
+      phase4_rlm I03: status=200 4s OK
+ phase4_thinking T01: status=200 21s OK
+ phase4_thinking T02: status=200 46s OK
+ phase4_thinking T03: status=200 21s OK
+ phase4_thinking T04: status=200 43s OK
+ phase4_thinking T05: status=200 20s --
+ phase4_thinking T06: status=200 10s OK
+ phase4_thinking T07: status=200 19s --
+ phase4_thinking T08: status=200 12s OK
+ phase4_thinking T09: status=200 19s OK
+ phase4_thinking T10: status=200 33s --
+ phase4_thinking T11: status=200 53s OK
+ phase4_thinking T12: status=200 16s OK
+ phase4_thinking T13: status=200 35s --
+ phase4_thinking T14: status=200 74s --
+ phase4_thinking T15: status=200 12s --
+ phase4_thinking T16: status=200 23s --
+ phase4_thinking T17: status=200 24s --
+ phase4_thinking T18: status=200 39s OK
+ phase4_thinking T19: status=200 26s --
+ phase4_thinking T20: status=200 51s --
+ phase4_thinking I01: status=200 16s OK
+ phase4_thinking I02: status=200 14s --
+ phase4_thinking I03: status=200 22s OK
+# Scorecard — fixes-v3
+
+API: `http://localhost:8899` · 2026-11-24 12:44
+
+**Health:** 4/4 fases ready (reasoning=ready, tools=ready, rag=ready, agent=ready)
+
+## phase1
+
+| pass@1 | format | truncated | mean_tokens | n | errores | >300 s | p50 s | p90 s |
+|---|---|---|---|---|---|---|---|---|
+| 0.575 | 0.925 | 0.075 | 702.200 | 40 | 0 | 0 | 19.400 | 28.000 |
+
+## phase2
+
+| selection | arguments | tool_sequence | end_to_end | amount_fidelity | n | errores | >300 s | p50 s | p90 s |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.950 | 0.850 | 0.900 | 0.725 | 0.810 | 40 | 0 | 0 | 5.900 | 17.700 |
+
+## phase3
+
+| recall@5 | mrr | cited_relevant | citations_exist | false_abstentions | unanswerable_abstained | n | errores | >300 s | p50 s | p90 s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0.740 | 0.581 | 0.480 | 1.000 | 0.200 | 0.875 | 58 | 0 | 0 | 0.950 | 3.400 |
+
+## phase4
+
+| cerebro | success | impossible_ok | chain_complete | mean_steps | mean_tokens | errores | >300 s | p50 s | p90 s |
+|---|---|---|---|---|---|---|---|---|---|
+| base | 0.600 | 0.333 | 0.550 | 3.217 | 16968.739 | 0 | 0 | 13.300 | 25.000 |
+| rlm | 0.450 | 1.000 | 0.750 | 3.000 | 16660.609 | 0 | 0 | 19.500 | 30.300 |
+| thinking | 0.500 | 0.667 | 0.300 | 2.783 | 16103.348 | 0 | 0 | 21.700 | 50.800 |
+
+**Memoria multi-turno:** 0/2 conversaciones recuerdan el turno anterior.
+
+scorecard wall: 2722 s
+exit=0 end 2026-11-24T12:44:44+01:00
