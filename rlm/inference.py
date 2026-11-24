@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,6 +143,12 @@ class ReasoningModel:
         }
         if do_sample:
             kwargs.update({"temperature": temperature, "top_p": 0.95})
+            # Same question, same answer: sampling (T 0.6, as in training) seeded per question.
+            # Unseeded, two scorecards of identical phase-1 code gave pass@1 0.625 and 0.475 on
+            # the same 40 problems. ARCA_REASONING_SEED="" restores unseeded sampling.
+            seed = os.environ.get("ARCA_REASONING_SEED", "0")
+            if seed != "":
+                torch.manual_seed(int(seed) + zlib.crc32(question.encode("utf-8")))
         with torch.no_grad():
             out = self.model.generate(**inputs, **kwargs)
         new_tokens = out[0, inputs["input_ids"].shape[1] :]
