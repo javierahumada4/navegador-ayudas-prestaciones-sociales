@@ -253,3 +253,34 @@ def test_rlm_brain_borrows_the_phase1_model_by_resolved_adapter_path(monkeypatch
     monkeypatch.setitem(sys.modules, "api.app", fake_app)
     spec = BrainSpec("rlm", "Qwen/Qwen3-1.7B", "JES0406/imv-sft-lora/grpo_final", False, 1024)
     assert ModelPool._borrow(spec) == ("T", "M")
+
+
+def test_sessions_carry_previous_turns_into_the_next_run():
+    agent = make_agent(
+        call("final_answer", answer="Le corresponden 733,60 €/mes."),
+        call("final_answer", answer="Sí, la misma cifra."),
+    )
+    agent.run("¿Cuánto IMV para el caso A?", max_steps=3, brain="base", session_id="s1")
+    agent.run("¿Y si lo pide mañana?", max_steps=3, brain="base", session_id="s1")
+    system = agent.generator.seen[-1][0]["content"]
+    assert "Usuario: ¿Cuánto IMV para el caso A?" in system and "733,60" in system
+    # another session starts clean
+    agent.run("otra cosa", max_steps=3, brain="base", session_id="s2")
+    assert "Conversación anterior" not in agent.generator.seen[-1][0]["content"]
+
+
+def test_old_turns_are_summarised_and_sessions_are_bounded(monkeypatch):
+    from agent import react_agent
+    from agent.memory import SessionMemory
+
+    session = SessionMemory(count_tokens=len, token_budget=120, keep_turns=1)
+    for i in range(4):
+        session.add_turn(f"pregunta {i} " + "x" * 30, f"respuesta {i}", lambda msgs: "- resumido")
+    assert session.compressions >= 1 and len(session.turns) == 1
+    assert "resumido" in session.context() and "pregunta 3" in session.context()
+
+    monkeypatch.setattr(react_agent, "MAX_SESSIONS", 2)
+    agent = make_agent(call("final_answer", answer="ok"))
+    for sid in ("a", "b", "c"):
+        agent.run("t", max_steps=2, brain="base", session_id=sid)
+    assert list(agent.sessions) == ["b", "c"]

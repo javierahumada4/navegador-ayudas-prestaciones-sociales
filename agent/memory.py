@@ -91,3 +91,46 @@ def digest(messages: list[dict], max_chars: int = 200) -> str:
         who = m.get("name") or m["role"]
         lines.append(f"- {who}: {text}")
     return "\n".join(lines)
+
+
+@dataclass
+class SessionMemory:
+    """Multi-turn memory across ``POST /agent`` calls that share a ``session_id``.
+
+    Each finished turn is stored as (task, final answer): the tool traffic of a turn stays in that
+    turn, only its conclusion carries over. Before a new turn the session renders as context for
+    the system prompt (summary + the last turns verbatim). When the stored turns exceed
+    ``token_budget`` the oldest ones, all but ``keep_turns``, are summarised by the model (or by a
+    mechanical digest if the summary call fails), so a long conversation keeps a bounded size.
+    """
+
+    count_tokens: Callable[[str], int]
+    token_budget: int = 1500
+    keep_turns: int = 2
+    max_summary_chars: int = 3000
+    turns: list[tuple[str, str]] = field(default_factory=list)
+    summary: str = ""
+    compressions: int = 0
+
+    def context(self) -> str:
+        parts = []
+        if self.summary:
+            parts.append(f"Resumen de turnos anteriores:\n{self.summary}")
+        for task, answer in self.turns:
+            parts.append(f"Usuario: {task}\nAgente: {answer}")
+        return "\n\n".join(parts)
+
+    def add_turn(self, task: str, answer: str, summarize: Callable[[list[dict]], str]) -> None:
+        self.turns.append((task, answer))
+        if self.count_tokens(self.context()) <= self.token_budget or len(self.turns) <= self.keep_turns:
+            return
+        old, self.turns = self.turns[: -self.keep_turns], self.turns[-self.keep_turns :]
+        messages = [m for t, a in old for m in ({"role": "user", "content": t},
+                                                 {"role": "assistant", "content": a})]
+        try:
+            new_summary = summarize(messages).strip()
+        except Exception:  # noqa: BLE001
+            new_summary = ""
+        new_summary = new_summary or digest(messages, max_chars=300)
+        self.summary = f"{self.summary}\n{new_summary}".strip()[-self.max_summary_chars :]
+        self.compressions += 1

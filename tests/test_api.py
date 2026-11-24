@@ -39,3 +39,13 @@ def test_request_validation():
 
 def test_docs_available():
     assert client.get("/docs").status_code == 200
+
+
+def test_agent_session_id_is_validated():
+    from fastapi.testclient import TestClient
+
+    from api.app import app
+
+    client = TestClient(app)
+    bad = client.post("/agent", json={"task": "x", "session_id": "../../etc"})
+    assert bad.status_code == 422

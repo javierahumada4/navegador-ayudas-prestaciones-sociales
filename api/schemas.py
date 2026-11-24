@@ -122,6 +122,10 @@ class AgentRequest(BaseModel):
         default="rlm",
         description="Model driving the loop: base model, your phase-1 RLM, or a thinking model",
     )
+    session_id: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$",
+        description="Optional: reuse it across calls for a multi-turn conversation (in-memory).",
+    )
 
 
 class AgentAction(BaseModel):
