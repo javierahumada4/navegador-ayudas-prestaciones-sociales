@@ -1,0 +1,14 @@
+2026-11-24T09:12:03+01:00
+dgx
+4
+               total        used        free      shared  buff/cache   available
+Mem:            2015         106        1444           0         464        1898
+Swap:              0           0           0
+/dev/md127       28T   17T   11T  62% /home/202200872
+max locked memory           (kbytes, -l) 8192
+max memory size             (kbytes, -m) 33554432
+max user processes                  (-u) 126997
+virtual memory              (kbytes, -v) unlimited
+GPU 0: NVIDIA H200 (UUID: GPU-1b664ed3-f990-7e97-fffc-8f62bf42b4d2)
+  MIG 1g.18gb     Device  0: (UUID: MIG-87b5553d-6135-5cac-904b-67f55ac6fd94)
+/home/202200872/.local/bin/uv
