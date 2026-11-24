@@ -15,11 +15,21 @@ export ARCA_TOOLS_BRAIN=base ARCA_TOOLS_MODEL_ID=Qwen/Qwen3-1.7B ARCA_TOOLS_ENAB
 export ARCA_IMV_REPORTS_DIR="$HOME/arca-runs/scorecard/reports"
 export TQDM_DISABLE=1 HF_HUB_DISABLE_PROGRESS_BARS=1 PYTHONUNBUFFERED=1
 if curl -s "localhost:$PORT/health" >/dev/null; then echo "port $PORT busy: stop the other API"; exit 1; fi
-(cd "$CODE_DIR" && uv sync --extra train --extra rag -q)
+(cd "$CODE_DIR" && uv sync --frozen --extra train --extra rag -q)  # --frozen: never rewrite uv.lock
+# Refuse to measure on a shared GPU: a demo API next to this one made every /agent call OOM.
+FREE_MIB=$(cd "$CODE_DIR" && uv run --no-sync python -c "import torch; f, t = torch.cuda.mem_get_info(); print(int(f / 2**20))" 2>/dev/null)
+echo "GPU free before start: ${FREE_MIB:-?} MiB"
+if [ "${FREE_MIB:-0}" -lt "${SCORECARD_MIN_FREE_MIB:-13000}" ]; then
+  echo "GPU busy (${FREE_MIB:-?} MiB free): stop the other API / job and re-queue"; exit 1
+fi
 start=$(date +%s)
 (cd "$CODE_DIR" && exec setsid uv run --no-sync arca-api) > "$OUT_DIR/api.log" 2>&1 &
 API_PID=$!
-trap 'kill -- -"$API_PID" 2>/dev/null; kill "$API_PID" 2>/dev/null' EXIT
+cleanup() {
+  kill -- -"$API_PID" 2>/dev/null; kill "$API_PID" 2>/dev/null; sleep 3
+  for p in $(lsof -t -i:"$PORT" 2>/dev/null); do kill -9 "$p" 2>/dev/null; done  # never leave it holding the GPU
+}
+trap cleanup EXIT
 echo "waiting for the API ($LABEL, $CODE_DIR) on port $PORT"
 until curl -s "localhost:$PORT/health" >/dev/null; do
   kill -0 "$API_PID" 2>/dev/null || { echo "API died:"; tail -30 "$OUT_DIR/api.log"; exit 1; }

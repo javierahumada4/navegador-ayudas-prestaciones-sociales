@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 ROWS = [
@@ -32,6 +33,21 @@ def fmt(value) -> str:
     return f"{value:.3f}" if isinstance(value, float) else str(value)
 
 
+COUNT_METRICS = {"over_300s", "http_errors", "p50_s", "p90_s", "max_s", "mean_steps", "mean_tokens", "n"}
+
+
+def beyond_noise(metric: str, before, after, n_before, n_after) -> str:
+    """'sí' when a difference of rates exceeds 2 binomial standard errors, '' when it does not."""
+    if metric in COUNT_METRICS or not all(isinstance(v, (int, float)) for v in (before, after)):
+        return ""
+    if not (0 <= before <= 1 and 0 <= after <= 1) or not n_before or not n_after:
+        return ""
+    se = math.sqrt(before * (1 - before) / n_before + after * (1 - after) / n_after)
+    if se == 0:
+        return "sí" if before != after else ""
+    return "sí" if abs(after - before) > 2 * se else "no"
+
+
 def verdict(metric: str, before, after) -> str:
     if before is None or after is None or before == after:
         return ""
@@ -42,21 +58,24 @@ def verdict(metric: str, before, after) -> str:
 def table(before: dict, after: dict) -> str:
     sb, sa = before["summary"], after["summary"]
     lines = [f"# {before.get('label')} → {after.get('label')}", "",
-             "| fase | métrica | antes | después | Δ | |", "|---|---|---:|---:|---:|---|"]
+             "| fase | métrica | antes | después | Δ | | ¿> 2σ? |", "|---|---|---:|---:|---:|---|---|"]
     for phase, metric in ROWS:
         b, a = sb.get(phase, {}).get(metric), sa.get(phase, {}).get(metric)
         delta = (a - b) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None
-        lines.append(f"| {phase} | {metric} | {fmt(b)} | {fmt(a)} | {fmt(delta)} | {verdict(metric, b, a)} |")
+        noise = beyond_noise(metric, b, a, sb.get(phase, {}).get("n"), sa.get(phase, {}).get("n"))
+        lines.append(f"| {phase} | {metric} | {fmt(b)} | {fmt(a)} | {fmt(delta)} | "
+                     f"{verdict(metric, b, a)} | {noise} |")
     for brain in sorted(set(sb.get("phase4", {})) | set(sa.get("phase4", {}))):
         for metric in AGENT_ROWS:
             b = sb.get("phase4", {}).get(brain, {}).get(metric)
             a = sa.get("phase4", {}).get(brain, {}).get(metric)
             delta = (a - b) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None
+            n = 20 if metric in {"success", "chain_complete"} else (3 if metric == "impossible_ok" else None)
             lines.append(f"| phase4 {brain} | {metric} | {fmt(b)} | {fmt(a)} | {fmt(delta)} | "
-                         f"{verdict(metric, b, a)} |")
+                         f"{verdict(metric, b, a)} | {beyond_noise(metric, b, a, n, n)} |")
     mb, ma = sb.get("memory", {}), sa.get("memory", {})
     lines.append(f"| memoria | conversaciones OK | {mb.get('correct', '—')}/{mb.get('n', '—')} | "
-                 f"{ma.get('correct', '—')}/{ma.get('n', '—')} | | |")
+                 f"{ma.get('correct', '—')}/{ma.get('n', '—')} | | | |")
     n = {p: sa.get(p, {}).get("n") for p in ("phase1", "phase2", "phase3")}
     lines += ["", f"n por fase: {n}; agente 23 tareas por cerebro. Una o dos preguntas de "
               "diferencia son ruido con estos tamaños."]

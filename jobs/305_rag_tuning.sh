@@ -6,7 +6,7 @@ set -u
 OUT="$(realpath "$OUT")"
 export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/arca-api"
 export TQDM_DISABLE=1 HF_HUB_DISABLE_PROGRESS_BARS=1
-uv sync --extra train --extra rag -q
+uv sync --frozen --extra train --extra rag -q
 R="$HOME/arca-runs/scorecard/rag-tuning"; mkdir -p "$R"
 for c in recursive:800:100 recursive:1200:150; do
   uv run --no-sync python -m rag.evaluate --reports-dir "$R" lambda --chunking "$c" || echo "FAILED lambda $c"

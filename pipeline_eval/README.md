@@ -24,6 +24,7 @@ requests slower than 300 s (ngrok's limit).
 | 6 | Plain-text agent answers start with the label "Pensamiento:" (thinking brain) | Label stripped | — |
 | 8 | The full API takes **11.4 GB of the 16 GB slice**: `/rag` loads a private copy of the same Qwen3-1.7B that `/tools` holds (baseline scorecard, OOM traces) | The RAG generator takes its weights from the shared model pool | phase3/phase4 http_errors (OOM) |
 | 9 | **First request 341 s**, second 122 s, with the weights already loaded (baseline phase 1): the grader's first call would get ngrok's HTML 504 | `arca-api` warms every phase up in the background at start-up (`ARCA_WARMUP=0` disables) | phase1 over_300s, p90_s |
+| 10 | `/reasoning` samples (T 0.6) **without a seed**: identical phase-1 code scored pass@1 0.625 (job 300) and 0.475 (job 310) on the same 40 problems | Sampling seeded per question (`ARCA_REASONING_SEED`, default 0): same question, same answer | reproducibility (compare's 2σ column) |
 | 7 | Phase-2 tool loop **gives up** after a byte-identical failed output (greedy decoding: natural_calculation 0/6 in v4) | One resample (T 0.7, fixed seed) before giving up | phase2 end_to_end (natural_calculation) |
 
 Not fixable without retraining (documented, not attempted): phase-1 errors on CAPI age bands and
@@ -37,7 +38,11 @@ Run order on the DGX (one session, GPU free): runner on `eval/pipeline-fixes` ex
 
 Phases 1 and 2 are valid. Phases 3 and 4 are **not**: a demo API was started on the same 16 GB
 slice during the run, and every `/agent` call and 15 of the 58 `/rag` calls died with CUDA OOM.
-Job 301 repeats them (the scorecard now retries rows without HTTP 200 on `--resume`).
+Jobs 301 and 310 are invalid too (two runners alive, the demo API still on the GPU, port 8899
+held by a leftover API). Job 302 repeats baseline phases 3-4 and job 311 the whole fixes variant;
+the run script now refuses to start without 13 GB free, kills its API by port when it ends, never
+rewrites `uv.lock` (a dirty checkout broke the runner's rebase), and the scorecard aborts after 3
+CUDA OOM errors in a row instead of filling the table with them.
 
 | phase | result |
 |---|---|

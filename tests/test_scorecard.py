@@ -92,8 +92,16 @@ def test_compare_marks_direction_per_metric():
     after = {"label": "fixes", "summary": {"phase1": {"pass@1": 0.5, "n": 40},
                                            "phase4": {"base": {"success": 0.5}}}}
     text = table(before, after)
-    assert "| phase1 | pass@1 | 0.400 | 0.500 | 0.100 | mejor |" in text
-    assert "| phase4 base | success | 0.300 | 0.500 | 0.200 | mejor |" in text
+    assert "| phase1 | pass@1 | 0.400 | 0.500 | 0.100 | mejor | no |" in text  # 4 of 40: noise
+    assert "| phase4 base | success | 0.300 | 0.500 | 0.200 | mejor | no |" in text
+
+
+def test_beyond_noise():
+    from pipeline_eval.compare import beyond_noise
+
+    assert beyond_noise("pass@1", 0.475, 0.625, 40, 40) == "no"
+    assert beyond_noise("pass@1", 0.2, 0.8, 40, 40) == "sí"
+    assert beyond_noise("p50_s", 10.0, 30.0, 40, 40) == ""
 
 
 def test_resume_retries_rows_that_failed(tmp_path, monkeypatch):

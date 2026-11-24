@@ -308,6 +308,8 @@ def main() -> None:
         out.write_text(json.dumps(card, indent=2, ensure_ascii=False, default=list))
         out.with_suffix(".md").write_text(markdown(card), encoding="utf-8")
 
+    oom_streak = [0]
+
     def section(name: str, items, runner, summarizer, label=lambda x: x["id"]):
         # Resume keeps only successful rows: an HTTP error (OOM, a cut run) is retried.
         rows = card["rows"][name] = [r for r in card["rows"].get(name, []) if r.get("status") == 200]
@@ -316,6 +318,14 @@ def main() -> None:
             if label(item) in done:
                 continue
             row = runner(item)
+            if row.get("status") != 200 and "out of memory" in json.dumps(row.get("body", "")).lower():
+                oom_streak[0] += 1
+                if oom_streak[0] >= 3:
+                    save()
+                    raise SystemExit("3 CUDA OOM errors in a row: the GPU is shared, stop the other "
+                                     "process and re-run with --resume (failed rows are retried)")
+            else:
+                oom_streak[0] = 0
             rows.append(row)
             print(f"{name:>16} {row['id']}: status={row['status']} {row['wall_s']:.0f}s "
                   f"{'OK' if row.get('correct', row.get('recall@5', 1)) else '--'}", flush=True)
