@@ -255,9 +255,14 @@ class ToolLoop:
                 raise
             prompt = self.tokenizer.apply_chat_template(messages, **options)
         encoded = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        sample = getattr(self, "_sample_next", False)
+        sampling = {"do_sample": False}
+        if sample:  # one resample after a byte-identical failed output (see _run_impl)
+            torch.manual_seed(0)
+            sampling = {"do_sample": True, "temperature": 0.7, "top_p": 0.9}
         with torch.inference_mode():
             output = self.model.generate(
-                **encoded, do_sample=False, max_new_tokens=self.max_new_tokens,
+                **encoded, **sampling, max_new_tokens=self.max_new_tokens,
                 pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
             )
         continuation = output[0, encoded["input_ids"].shape[-1]:]
@@ -270,7 +275,7 @@ class ToolLoop:
             "output_token_ids": continuation.tolist(),
             "generation_settings": {
                 "max_new_tokens": self.max_new_tokens,
-                "do_sample": False,
+                **sampling,
             },
         }
         return decoded
@@ -438,6 +443,7 @@ class ToolLoop:
         wants_report = self.use_tools and _report_requested(query)
         reminders = 0
         last_raw, records_before_turn = None, 0
+        resampled = False
 
         for turn in range(1, max_turns + 1):
             if trace is not None:
@@ -462,7 +468,19 @@ class ToolLoop:
                 return self._finish(parsed.text or raw, [], turn, False)
             # Greedy decoding: a byte-identical completion after a turn whose calls all failed
             # means the model ignored the error and will repeat it to max_turns; v4 burned up
-            # to 5 turns (~400 s) per case this way.
+            # to 5 turns (~400 s) per case this way. Before giving up, resample once
+            # (T 0.7, fixed seed): a different completion can read the error and fix the call.
+            failed_again = raw == last_raw and not any(r.ok for r in records[records_before_turn:])
+            if failed_again and not resampled:
+                resampled = True
+                self._sample_next = True
+                try:
+                    raw = self.generate(messages)
+                finally:
+                    self._sample_next = False
+                parsed = parse_tool_calls(raw)
+                if trace is not None:
+                    trace.event("model_output_resampled", turn=turn, raw_text=raw)
             if raw == last_raw and not any(r.ok for r in records[records_before_turn:]):
                 return self._finish(
                     parsed.text or "No he podido generar una llamada válida con estos datos.",
