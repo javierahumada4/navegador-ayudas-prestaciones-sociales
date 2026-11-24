@@ -6,7 +6,8 @@
 #     bash smoke/serve_ngrok.sh
 #
 # Lee de .env: NGROK_AUTHTOKEN (obligatorio), ARCA_RLM_ADAPTER, HF_TOKEN y opcionalmente
-# NGROK_ARGS (p. ej. --url=<vuestro-dominio>.ngrok-free.app para una URL fija).
+# NGROK_ARGS (p. ej. --url=<vuestro-dominio>.ngrok-free.app para una URL fija) y ARCA_API_EXTRAS
+# (por defecto "--extra train --extra rag").
 # Ctrl+C cierra el túnel y la API.
 
 set -euo pipefail
@@ -37,7 +38,9 @@ if curl -s "localhost:$ARCA_API_PORT/health" >/dev/null; then
 fi
 
 mkdir -p runs
-uv run --extra train arca-api > runs/api.log 2>&1 &
+# Extras de uv: train (fases 1-2) y rag (fase 3: rank-bm25, sentence-transformers).
+read -r -a EXTRAS <<< "${ARCA_API_EXTRAS:---extra train --extra rag}"
+uv run "${EXTRAS[@]}" arca-api > runs/api.log 2>&1 &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null' EXIT
 
