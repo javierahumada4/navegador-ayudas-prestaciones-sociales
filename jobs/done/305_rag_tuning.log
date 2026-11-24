@@ -1,0 +1,81 @@
+commit 7257adb start 2026-11-24T09:41:35+01:00
+Batches:   0%|          | 0/35 [00:00<?, ?it/s]Batches:   3%|▎         | 1/35 [00:01<00:50,  1.50s/it]Batches:   6%|▌         | 2/35 [00:02<00:41,  1.25s/it]Batches:   9%|▊         | 3/35 [00:03<00:34,  1.08s/it]Batches:  11%|█▏        | 4/35 [00:04<00:34,  1.12s/it]Batches:  14%|█▍        | 5/35 [00:05<00:26,  1.15it/s]Batches:  17%|█▋        | 6/35 [00:06<00:28,  1.02it/s]Batches:  20%|██        | 7/35 [00:07<00:29,  1.05s/it]Batches:  23%|██▎       | 8/35 [00:08<00:26,  1.01it/s]Batches:  26%|██▌       | 9/35 [00:09<00:25,  1.04it/s]Batches:  29%|██▊       | 10/35 [00:10<00:25,  1.00s/it]Batches:  31%|███▏      | 11/35 [00:11<00:24,  1.04s/it]Batches:  34%|███▍      | 12/35 [00:12<00:24,  1.07s/it]Batches:  37%|███▋      | 13/35 [00:13<00:23,  1.05s/it]Batches:  40%|████      | 14/35 [00:14<00:21,  1.04s/it]Batches:  43%|████▎     | 15/35 [00:15<00:19,  1.03it/s]Batches:  46%|████▌     | 16/35 [00:16<00:18,  1.01it/s]Batches:  49%|████▊     | 17/35 [00:17<00:18,  1.01s/it]Batches:  51%|█████▏    | 18/35 [00:18<00:15,  1.07it/s]Batches:  54%|█████▍    | 19/35 [00:19<00:15,  1.04it/s]Batches:  57%|█████▋    | 20/35 [00:20<00:13,  1.11it/s]Batches:  60%|██████    | 21/35 [00:21<00:13,  1.06it/s]Batches:  63%|██████▎   | 22/35 [00:22<00:12,  1.05it/s]Batches:  66%|██████▌   | 23/35 [00:23<00:12,  1.02s/it]Batches:  69%|██████▊   | 24/35 [00:24<00:11,  1.02s/it]Batches:  71%|███████▏  | 25/35 [00:24<00:09,  1.07it/s]Batches:  74%|███████▍  | 26/35 [00:25<00:08,  1.05it/s]Batches:  77%|███████▋  | 27/35 [00:26<00:07,  1.10it/s]Batches:  80%|████████  | 28/35 [00:27<00:06,  1.09it/s]Batches:  83%|████████▎ | 29/35 [00:27<00:04,  1.39it/s]Batches:  86%|████████▌ | 30/35 [00:28<00:03,  1.30it/s]Batches:  89%|████████▊ | 31/35 [00:29<00:02,  1.37it/s]Batches:  91%|█████████▏| 32/35 [00:30<00:02,  1.28it/s]Batches:  94%|█████████▍| 33/35 [00:31<00:01,  1.25it/s]Batches:  97%|█████████▋| 34/35 [00:31<00:00,  1.35it/s]Batches: 100%|██████████| 35/35 [00:32<00:00,  1.33it/s]Batches: 100%|██████████| 35/35 [00:32<00:00,  1.07it/s]
+chunking recursive:800:100; λ = weight of BM25 (λ=0 is dense alone, λ=1 is BM25 alone)
+
+| λ | R@1 | R@3 | R@5 | R@10 | MRR |
+|---|---|---|---|---|---|
+| 0.000 | 0.310 | 0.580 | 0.680 | 0.740 | 0.469 |
+| 0.100 | 0.310 | 0.580 | 0.680 | 0.740 | 0.478 |
+| 0.200 | 0.310 | 0.620 | 0.680 | 0.740 | 0.484 |
+| 0.300 | 0.250 | 0.640 | 0.700 | 0.780 | 0.465 |
+| 0.400 | 0.310 | 0.660 | 0.720 | 0.780 | 0.495 |
+| 0.500 | 0.310 | 0.580 | 0.720 | 0.800 | 0.470 |
+| 0.600 | 0.230 | 0.490 | 0.640 | 0.800 | 0.406 |
+| 0.700 | 0.240 | 0.430 | 0.610 | 0.780 | 0.396 |
+| 0.800 | 0.200 | 0.430 | 0.530 | 0.720 | 0.363 |
+| 0.900 | 0.180 | 0.390 | 0.530 | 0.600 | 0.336 |
+| 1.000 | 0.200 | 0.350 | 0.510 | 0.600 | 0.327 |
+
+best λ by MRR: 0.4; 5-fold cross-validated MRR with λ chosen on 4 folds: 0.477 (vs 0.495 in-sample)
+
+numbers written to /home/202200872/arca-runs/scorecard/rag-tuning/phase3_lambda_recursive_800_100.json
+Batches:   0%|          | 0/23 [00:00<?, ?it/s]Batches:   4%|▍         | 1/23 [00:01<00:43,  1.96s/it]Batches:   9%|▊         | 2/23 [00:03<00:38,  1.85s/it]Batches:  13%|█▎        | 3/23 [00:05<00:31,  1.60s/it]Batches:  17%|█▋        | 4/23 [00:06<00:26,  1.37s/it]Batches:  22%|██▏       | 5/23 [00:07<00:24,  1.35s/it]Batches:  26%|██▌       | 6/23 [00:08<00:23,  1.38s/it]Batches:  30%|███       | 7/23 [00:10<00:21,  1.35s/it]Batches:  35%|███▍      | 8/23 [00:11<00:18,  1.24s/it]Batches:  39%|███▉      | 9/23 [00:12<00:17,  1.25s/it]Batches:  43%|████▎     | 10/23 [00:13<00:15,  1.18s/it]Batches:  48%|████▊     | 11/23 [00:14<00:14,  1.22s/it]Batches:  52%|█████▏    | 12/23 [00:15<00:11,  1.01s/it]Batches:  57%|█████▋    | 13/23 [00:16<00:09,  1.02it/s]Batches:  61%|██████    | 14/23 [00:17<00:08,  1.04it/s]Batches:  65%|██████▌   | 15/23 [00:17<00:07,  1.07it/s]Batches:  70%|██████▉   | 16/23 [00:18<00:06,  1.07it/s]Batches:  74%|███████▍  | 17/23 [00:19<00:05,  1.10it/s]Batches:  78%|███████▊  | 18/23 [00:20<00:04,  1.05it/s]Batches:  83%|████████▎ | 19/23 [00:21<00:03,  1.12it/s]Batches:  87%|████████▋ | 20/23 [00:22<00:02,  1.15it/s]Batches:  91%|█████████▏| 21/23 [00:23<00:01,  1.21it/s]Batches:  96%|█████████▌| 22/23 [00:23<00:00,  1.28it/s]Batches: 100%|██████████| 23/23 [00:24<00:00,  1.42it/s]Batches: 100%|██████████| 23/23 [00:24<00:00,  1.05s/it]
+chunking recursive:1200:150; λ = weight of BM25 (λ=0 is dense alone, λ=1 is BM25 alone)
+
+| λ | R@1 | R@3 | R@5 | R@10 | MRR |
+|---|---|---|---|---|---|
+| 0.000 | 0.350 | 0.620 | 0.660 | 0.740 | 0.504 |
+| 0.100 | 0.350 | 0.620 | 0.680 | 0.760 | 0.508 |
+| 0.200 | 0.330 | 0.660 | 0.700 | 0.760 | 0.499 |
+| 0.300 | 0.310 | 0.680 | 0.700 | 0.780 | 0.500 |
+| 0.400 | 0.350 | 0.630 | 0.700 | 0.800 | 0.512 |
+| 0.500 | 0.310 | 0.570 | 0.680 | 0.800 | 0.478 |
+| 0.600 | 0.310 | 0.550 | 0.620 | 0.740 | 0.477 |
+| 0.700 | 0.280 | 0.530 | 0.610 | 0.740 | 0.445 |
+| 0.800 | 0.280 | 0.450 | 0.610 | 0.670 | 0.417 |
+| 0.900 | 0.260 | 0.450 | 0.570 | 0.650 | 0.400 |
+| 1.000 | 0.240 | 0.410 | 0.550 | 0.630 | 0.376 |
+
+best λ by MRR: 0.4; 5-fold cross-validated MRR with λ chosen on 4 folds: 0.465 (vs 0.512 in-sample)
+
+numbers written to /home/202200872/arca-runs/scorecard/rag-tuning/phase3_lambda_recursive_1200_150.json
+best chunking: recursive:1200:150
+answerable   (n=50): min 0.501  p10 0.594  median 0.710
+unanswerable (n=8): max 0.741  median 0.639
+
+  0.741  ¿Cuántas personas cobran actualmente el ingreso mínimo vital en España?
+  0.695  ¿Cuál es la cuantía de la pensión de jubilación mínima en 2026?
+  0.694  ¿Qué importe tiene el subsidio por desempleo en 2026?
+  0.650  ¿Qué requisitos exige la Renta Valenciana de Inclusión?
+  0.627  ¿Cuál es el sueldo del Ministro de Inclusión, Seguridad Social y Migraciones?
+  0.625  ¿Qué ayudas hay para el alquiler de jóvenes menores de 35 años?
+  0.584  ¿Hasta qué fecha puedo presentar la declaración de la renta de este año?
+  0.530  ¿Cómo se tramita la tarjeta sanitaria de un extranjero recién llegado?
+
+| gate | answerable kept | unanswerable rejected |
+|---|---|---|
+| 0.400 | 1.000 | 0.000 |
+| 0.450 | 1.000 | 0.000 |
+| 0.500 | 1.000 | 0.000 |
+| 0.550 | 0.960 | 0.125 |
+| 0.600 | 0.880 | 0.250 |
+| 0.650 | 0.740 | 0.500 |
+| 0.700 | 0.560 | 0.875 |
+| 0.750 | 0.380 | 1.000 |
+
+numbers written to /home/202200872/arca-runs/scorecard/rag-tuning/phase3_calibrate.json
+{
+  "retrieval": {
+    "chunking": "recursive:1200:150",
+    "lambda": 0.4,
+    "mrr": 0.511524531024531,
+    "recall@5": 0.7,
+    "cv_mrr": 0.46530804283435856
+  },
+  "gate": {
+    "min_score": 0.54,
+    "kept": 0.98,
+    "rejected": 0.125
+  }
+}
+exit=0 end 2026-11-24T09:43:43+01:00

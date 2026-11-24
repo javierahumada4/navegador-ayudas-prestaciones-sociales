@@ -1,0 +1,14 @@
+{
+  "retrieval": {
+    "chunking": "recursive:1200:150",
+    "lambda": 0.4,
+    "mrr": 0.511524531024531,
+    "recall@5": 0.7,
+    "cv_mrr": 0.46530804283435856
+  },
+  "gate": {
+    "min_score": 0.54,
+    "kept": 0.98,
+    "rejected": 0.125
+  }
+}
