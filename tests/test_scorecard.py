@@ -122,3 +122,15 @@ def test_resume_retries_rows_that_failed(tmp_path, monkeypatch):
     sc.main()
     assert called == ["P1-001"]
     assert json.loads(out.read_text())["summary"]["phase1"]["pass@1"] == 1.0
+
+
+def test_rescore_applies_the_current_checks_to_stored_answers():
+    from pipeline_eval.compare import rescore
+
+    row = {"id": "T05", "category": "kb+calc", "status": 200, "correct": False,
+           "required_tools_used": True, "n_steps": 3, "tokens_used": 10, "wall_s": 1.0,
+           "over_ngrok_limit": False, "final_answer": "30 días. El caso es ineligible."}
+    failed = {**row, "id": "T08", "final_answer": "No he podido completar la tarea en 8 pasos."}
+    card = rescore({"summary": {}, "rows": {"phase4_base": [row, failed]}})
+    assert card["rows"]["phase4_base"][0]["correct"] and not card["rows"]["phase4_base"][1]["correct"]
+    assert card["summary"]["phase4"]["base"]["success"] == 0.5

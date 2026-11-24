@@ -11,6 +11,11 @@ Cases are given as normalised JSON in most tasks (what the engine needs; phase 2
 1.7B model fails 0/6 at extracting prose cases) and in prose in three tasks, to measure that
 failure in the agent too. Check types (``agent/evaluate.py``): ``number`` (Spanish or English
 formatting), ``contains``, ``regex``, and ``all`` / ``any`` of several checks.
+
+Checks corrected after the baseline scorecard (2026-11-24), where right answers were scored as
+wrong: a denial written "es ineligible", "seis meses" in words, and IMV and CAPI given separately
+instead of the total. ``pipeline_eval/compare.py`` re-scores stored answers of both variants
+with the current checks, so the correction applies equally to baseline and fixes.
 """
 
 from __future__ import annotations
@@ -22,7 +27,8 @@ from tool_use.domain_tools import calcular_imv
 
 OUT = Path(__file__).with_name("tasks.jsonl")
 ABSTAIN = r"(?i)no puedo|no es posible|no se puede|falta|faltan|necesito|no dispongo|no consta|no aparece|no encuentro|no tengo"
-DENIED = r"(?i)no (?:tiene|tendría|le corresponde|cumple|reúne)|sin derecho|deneg|no es (?:elegible|beneficiari)"
+DENIED = (r"(?i)no (?:tiene|tendría|le corresponde|cumple|reúne)|sin derecho|deneg|"
+          r"no es (?:elegible|beneficiari)|in(?:e|é)l[ie]gible|ineligible|no elegible")
 
 
 def person(pid: str, born: str, since: str) -> dict:
@@ -89,8 +95,14 @@ def number(value: float, tolerance: float = 0.01) -> dict:
 
 
 def total_or_denied(key: str) -> dict:
-    total = amounts(key)["total_monthly_eur"]
+    """The total, or IMV and CAPI given separately (both are a correct answer), or a denial."""
+    result = amounts(key)
+    total = result["total_monthly_eur"]
     if total > 0:
+        if result["capi_monthly_eur"] > 0:
+            parts = {"type": "all", "checks": [number(result["imv_monthly_eur"]),
+                                               number(result["capi_monthly_eur"])]}
+            return {"type": "any", "checks": [number(total), parts]}
         return number(total)
     return {"type": "any", "checks": [number(0), {"type": "regex", "value": DENIED}]}
 
@@ -116,7 +128,7 @@ def tasks() -> list[dict]:
         ("T07", "kb+calc", f"Busca en la base de conocimiento el límite de patrimonio neto de una persona que vive sola en 2026 y calcula este caso: {cjson('F')}. ¿Tiene derecho al IMV?",
          [kb, calc], {"type": "all", "checks": [number(26409.60), total_or_denied("F")]}),
         ("T08", "boe+kb", "Consulta en el BOE el artículo 10 de la Ley 19/2021 y busca en la base de conocimiento cuántos meses debe llevar constituida la unidad de convivencia antes de la solicitud.",
-         [boe, kb], number(6)),
+         [boe, kb], {"type": "any", "checks": [number(6), {"type": "regex", "value": r"(?i)\bseis meses"}]}),
         ("T09", "kb+bdns", "¿Es compatible el IMV con las rentas del trabajo? Búscalo en la base de conocimiento y después busca 2 convocatorias de empleo en la BDNS.",
          [kb, bdns], {"type": "regex", "value": r"(?i)compatib"}),
         ("T10", "calc+kb", f"Calcula con el motor el caso 1: {cjson('A')} y el caso 2: {cjson('B')}. Dime la diferencia entre sus totales mensuales y busca en la base de conocimiento cuánto aumenta la renta garantizada por miembro adicional.",

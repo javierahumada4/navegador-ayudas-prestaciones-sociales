@@ -82,13 +82,42 @@ def table(before: dict, after: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def rescore(card: dict, bench: Path = Path("agent/bench/tasks.jsonl")) -> dict:
+    """Re-apply the current agent-bench checks to the stored answers of every phase-4 row.
+
+    The checks were corrected after the baseline run (right answers scored as wrong); applying
+    the same checks to both variants keeps the comparison fair. Rows from before ``succeeded``
+    was stored infer it from the agent's own failure messages ("No he podido ...").
+    """
+    from agent.evaluate import check_answer
+    from pipeline_eval.scorecard import summarize_phase4
+
+    tasks = {t["id"]: t for t in (json.loads(x) for x in bench.read_text(encoding="utf-8").splitlines() if x.strip())}
+    for name, rows in card.get("rows", {}).items():
+        if not name.startswith("phase4_"):
+            continue
+        for row in rows:
+            task = tasks.get(row["id"])
+            if task is None or row.get("status") != 200:
+                continue
+            answer = row.get("final_answer", "")
+            ok = row.get("succeeded", not answer.startswith("No he podido"))
+            row["correct"] = bool(ok) and check_answer(task, answer)
+        card["summary"].setdefault("phase4", {})[name.removeprefix("phase4_")] = summarize_phase4(rows)
+    return card
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--no-rescore", action="store_true", help="keep the checks of the run")
     args = parser.parse_args()
-    text = table(json.loads(args.before.read_text()), json.loads(args.after.read_text()))
+    before, after = json.loads(args.before.read_text()), json.loads(args.after.read_text())
+    if not args.no_rescore:
+        before, after = rescore(before), rescore(after)
+    text = table(before, after)
     if args.out:
         args.out.write_text(text, encoding="utf-8")
     print(text)

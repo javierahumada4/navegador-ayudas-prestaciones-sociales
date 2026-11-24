@@ -67,3 +67,11 @@ def test_break_tool_makes_the_tool_fail_like_a_dead_service():
     record = registry.call("consultar_ayudas", {"tema": "alquiler", "max_resultados": 3})
     assert not record.ok and "ConnectionError" in record.error
     assert agent_registry().tools["consultar_ayudas"].fn is not registry.tools["consultar_ayudas"].fn
+
+
+def test_checks_corrected_after_the_baseline_accept_right_answers_in_other_words():
+    rows = {r["id"]: r for r in load()}
+    assert check_answer(rows["T05"], "Hay 30 días. El caso es ineligible para el IMV.")
+    assert check_answer(rows["T08"], "Debe estar constituida al menos seis meses antes.")
+    assert check_answer(rows["T03"], "El IMV mensual es 893,84 € y el CAPI mensual es 115,00 €.")
+    assert not check_answer(rows["T03"], "El IMV mensual es 893,84 €.")  # half the answer

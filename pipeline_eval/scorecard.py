@@ -216,6 +216,7 @@ def run_phase4(client: Client, task: dict, brain: str, max_steps: int) -> dict:
                                                      "succeeded": False, "n_steps": 0, "tokens_used": 0}
     return {**res, "id": task["id"], "category": task["category"], "brain": brain,
             **score(task, body), "final_answer": body.get("final_answer", ""),
+            "succeeded": bool(body.get("succeeded")),
             "n_steps": body.get("n_steps", 0), "tokens_used": body.get("tokens_used", 0)}
 
 

@@ -58,7 +58,7 @@ from tool_use.tools import consultar_boe, default_registry
 
 MAX_REPEATS = 3
 MAX_SESSIONS = 100
-KB_PASSAGE_CHARS = 900
+KB_PASSAGE_CHARS = 1600  # whole chunks: the tuned chunking is 1200 characters (was 900)
 TOOL_TIMEOUTS = {  # seconds; the first search loads the embedder and may index the corpus
     "calcular_imv": 10,
     "guardar_informe": 10,

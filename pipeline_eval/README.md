@@ -25,6 +25,7 @@ requests slower than 300 s (ngrok's limit).
 | 8 | The full API takes **11.4 GB of the 16 GB slice**: `/rag` loads a private copy of the same Qwen3-1.7B that `/tools` holds (baseline scorecard, OOM traces) | The RAG generator takes its weights from the shared model pool | phase3/phase4 http_errors (OOM) |
 | 9 | **First request 341 s**, second 122 s, with the weights already loaded (baseline phase 1): the grader's first call would get ngrok's HTML 504 | `arca-api` warms every phase up in the background at start-up (`ARCA_WARMUP=0` disables) | phase1 over_300s, p90_s |
 | 10 | `/reasoning` samples (T 0.6) **without a seed**: identical phase-1 code scored pass@1 0.625 (job 300) and 0.475 (job 310) on the same 40 problems | Sampling seeded per question (`ARCA_REASONING_SEED`, default 0): same question, same answer | reproducibility (compare's 2σ column) |
+| 11 | `search_knowledge_base` **cut every passage to 900 characters**; the tuned chunking is 1200, so the sentence that answers could be cut off | Passages up to 1600 characters (whole chunks) | phase4 success (KB tasks) |
 | 7 | Phase-2 tool loop **gives up** after a byte-identical failed output (greedy decoding: natural_calculation 0/6 in v4) | One resample (T 0.7, fixed seed) before giving up | phase2 end_to_end (natural_calculation) |
 
 Not fixable without retraining (documented, not attempted): phase-1 errors on CAPI age bands and
@@ -34,23 +35,28 @@ of `feat/night-improvements` failed with an OOM).
 Run order on the DGX (one session, GPU free): runner on `eval/pipeline-fixes` executes
 300 (baseline API from a worktree), 305 (RAG tuning), 310 (fixes API) and 320 (`delta.md`).
 
-## Baseline scorecard (job 300, 2026-11-24, `eval/pipeline-baseline`)
+## Baseline scorecard (jobs 300 + 302, 2026-11-24, `eval/pipeline-baseline`)
 
-Phases 1 and 2 are valid. Phases 3 and 4 are **not**: a demo API was started on the same 16 GB
-slice during the run, and every `/agent` call and 15 of the 58 `/rag` calls died with CUDA OOM.
-Jobs 301 and 310 are invalid too (two runners alive, the demo API still on the GPU, port 8899
-held by a leftover API). Job 302 repeats baseline phases 3-4 and job 311 the whole fixes variant;
-the run script now refuses to start without 13 GB free, kills its API by port when it ends, never
-rewrites `uv.lock` (a dirty checkout broke the runner's rebase), and the scorecard aborts after 3
-CUDA OOM errors in a row instead of filling the table with them.
+Phases 1-2 from job 300; phases 3-4 from job 302 (job 300's ran with a demo API on the same 16 GB
+slice and died with CUDA OOM). Job 302 started with 16.3 GB free and had 0 HTTP errors.
 
 | phase | result |
 |---|---|
 | health | 4/4 phases ready |
 | 1 `/reasoning` (40 test problems) | pass@1 **0.625**, format 0.975, truncated 0.025; p50 21 s; **1 request over 300 s** (the first, 341 s) |
 | 2 `/tools` (40 cases) | selection 0.95, arguments 0.85, sequence 0.90, **end to end 0.725**, amounts 0.81; weakest: missing_facts 0.40, natural_calculation 0.50, bdns 0.62 |
-| 3 `/rag` (only the 43 calls without OOM) | Recall@5 0.69, MRR 0.45, relevant chunk cited 0.44, false abstentions 0.14, unanswerable abstained 6/7 |
-| 4 `/agent` | invalid (OOM), job 301 |
+| 3 `/rag` (50 gold + 8 unanswerable) | Recall@5 **0.70**, MRR 0.455, relevant chunk cited 0.42, citations exist 1.00, false abstentions 0.12, unanswerable abstained 7/8 |
+| 4 `/agent` (20 chained + 3 impossible) | success, re-scored with the corrected checks: **base 0.60, rlm 0.45, thinking 0.55**; impossible: base **0/3**, rlm 3/3, thinking 3/3; tool chain complete: base 0.65, rlm 0.75, thinking 0.35; ~3 steps and ~15 800 tokens per task; 0 requests over 300 s |
+| memory | 1/2 two-turn conversations (the failed one remembered the fact but did not compute 23 - 19) |
 
-Phase 1 by family (n is small, 2-8 per family): residence_fail 0/2, patrimony_fail 1/4,
-disability 2/5; individual and director_fail all correct.
+Reading:
+- **Agent checks were too strict.** Right answers were scored as wrong: "es ineligible", "seis
+  meses" in words, IMV and CAPI given separately. Raw success was base 0.45 / rlm 0.40 / thinking
+  0.40. The checks are corrected and `compare.py` re-scores both variants with them.
+- **The base brain never says it cannot.** It answers the three impossible tasks (it explains how
+  to apply instead of saying it cannot apply, and gives the IMV amount when asked about another
+  benefit). The trained (rlm) and the thinking brains abstain on all three. Trained reasoning
+  helps exactly where the course asks for it: saying so instead of inventing.
+- **Real agent failures** in all three brains: T19 says "compatible" where the law says
+  incompatible, T10 computes the second case wrong, T15 omits the asset limit, and the prose tasks
+  T13/T14 fail (extraction, as in phase 2).
