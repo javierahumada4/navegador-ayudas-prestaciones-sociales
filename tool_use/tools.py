@@ -13,8 +13,7 @@ in phase 4 you decide what the agent does with that flag.
 
 from __future__ import annotations
 
-import requests
-
+from tool_use.domain_tools import calcular_imv, consultar_ayudas, guardar_informe
 from tool_use.registry import ToolRegistry, tool
 
 OPEN_METEO_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
@@ -28,6 +27,8 @@ def get_weather(location: str) -> float:
     Args:
         location: City and country, for example 'Madrid, Spain'.
     """
+    import requests
+
     geo = requests.get(OPEN_METEO_GEOCODING, params={"name": location, "count": 1}, timeout=15)
     geo.raise_for_status()
     results = geo.json().get("results") or []
@@ -95,8 +96,9 @@ def calculator(expression: str) -> float:
     return float(evaluate(ast.parse(expression, mode="eval").body))
 
 
+# Preserve the teaching examples above for existing tests, but expose
+# only domain tools to the IMV/CAPI model.
+
 def default_registry() -> ToolRegistry:
-    """The registry the executor and the agent use. Register your tools here."""
-    registry = ToolRegistry().register(get_weather, calculator)
-    # Tu turno: registry.register(my_domain_api, my_domain_compute, my_domain_action)
-    return registry
+    """Register only IMV/CAPI, BDNS and report-writing tools."""
+    return ToolRegistry().register(calcular_imv, consultar_ayudas, guardar_informe)

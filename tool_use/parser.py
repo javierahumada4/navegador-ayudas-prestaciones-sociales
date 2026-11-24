@@ -49,11 +49,19 @@ def parse_tool_calls(output: str) -> ParsedOutput:
 
     calls: list[ToolCall] = []
     for match in TOOL_CALL_PATTERN.finditer(output):
-        body = match.group("body")
+        body = match.group("body").strip()
         try:
-            payload = json.loads(body)
+            # strict=False: raw newlines inside a long string (a report) are not an error.
+            payload, end = json.JSONDecoder(strict=False).raw_decode(body)
+            # Qwen3-1.7B often closes a deeply nested call with one '}' too many; only
+            # surplus closing braces are forgiven, any other trailing text is still an error.
+            if body[end:].strip("} \n\t"):
+                raise json.JSONDecodeError("Extra data", body, end)
         except json.JSONDecodeError as exc:
-            calls.append(ToolCall(name="", error=f"tool_call is not valid JSON: {exc.msg}"))
+            near = body[max(0, exc.pos - 40) : exc.pos + 20]
+            calls.append(ToolCall(
+                name="", error=f"tool_call is not valid JSON: {exc.msg} at char {exc.pos}, near {near!r}"
+            ))
             continue
         name = payload.get("name") if isinstance(payload, dict) else None
         if not isinstance(name, str) or not name:
