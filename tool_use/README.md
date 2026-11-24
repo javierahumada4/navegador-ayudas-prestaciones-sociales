@@ -1,81 +1,383 @@
-# Fase 2 — Acción: el modelo habla con el mundo
+# Fase 2 — Herramientas y evaluación integral IMV/CAPI
 
-**Endpoint que se evalúa:** `POST /tools` · **Clase:** The augmented LLM, bloque de tool use
+**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tool-use-imv-bdns-informes.
+Motor determinista y ruleset IMV 2026 reutilizados de main, sin tocar la fase 1.
 
-## De qué va
+## Tres herramientas reales
 
-Un modelo de lenguaje consume texto y produce texto. No puede consultar el tiempo, ni
-ejecutar código, ni escribir un fichero. Tool use es la forma de dárselo: la aplicación
-describe al modelo qué herramientas existen, el modelo genera una llamada en un formato
-reconocible, la aplicación la detecta, la ejecuta y le devuelve el resultado, y el modelo
-sigue. Cinco pasos, que en clase dibujamos con `get_weather` y que aquí vais a implementar a
-mano, sin frameworks, con herramientas de vuestro dominio.
+| Nombre | Tipo | Trabajo |
+| --- | --- | --- |
+| calcular_imv(case: IMVCase) | Cálculo | Validar caso y calcular IMV/CAPI con JSON por fecha |
+| consultar_ayudas(tema, max_resultados) | HTTP | Consultar convocatorias reales en la API BDNS |
+| guardar_informe(contenido) | Efecto persistente | Escribir en TXT el texto íntegro compuesto por el LLM |
 
-## Lo que tendréis que hacer
+El modelo **redacta libremente** el informe. La herramienta guardar_informe solo
+escribe el fichero con esos bytes; no se utiliza ninguna plantilla de texto.
 
-**1. Tres herramientas reales.** En `tool_use/tools.py`. Una que consulte algo fuera del
-modelo (una API HTTP de verdad, no simulada), una que calcule o ejecute (un intérprete
-acotado, una función numérica, una consulta a una base de datos), y una que actúe con efecto
-observable (escribir un fichero, crear un evento de calendario, enviar algo a un webhook de
-pruebas). `get_weather` y `calculator` os las doy como ejemplo de cómo se escribe una: la
-docstring es la descripción que lee el modelo y los tipos son el esquema. Las que tienen
-efectos se registran con `requires_confirmation=True`; en la fase 4 decidiréis qué hace el
-agente con eso.
+El bucle manual (executor.py) soporta llamadas paralelas o encadenadas y
+reinyecta observaciones de ejecución o errores de Pydantic. Si el usuario ha
+solicitado explícitamente un informe:
 
-**2. Definiciones precisas y argumentos validados.** El registro (`registry.py`) convierte
-la función en JSON Schema y valida con Pydantic lo que el modelo genera antes de ejecutar
-nada. Si la validación falla, el error vuelve al modelo como observación para que se corrija.
-Esto ya está hecho; lo que os pido es que lo uséis bien y que vuestras descripciones sean lo
-bastante precisas para que el modelo acierte los argumentos. Es más difícil de lo que parece.
+1. El modelo debe calcular el IMV/CAPI y recibir la observación.
+2. Se le recuerda que aún debe llamar a guardar_informe cuando intenta terminar
+   antes. Si genera la redacción sin el marcador de tool-call, el orquestador
+   puede enviar **ese texto exacto del modelo** a la herramienta, sin plantilla.
+3. La herramienta solo se ejecuta si el texto cumple una comprobación mínima
+   de importes. Se valida el permiso a partir de la solicitud expresa; **no hay
+   interfaz de confirmación interactiva** en esta fase.
+4. La respuesta confirma el guardado **solo tras un resultado ok de la tool**,
+   usando la ruta real devuelta. Si no se pudo escribir, hay un error explícito:
+   nunca se comunica un éxito inventado.
+5. Los archivos viven en reports/imv/ o ARCA_IMV_REPORTS_DIR, con nombres
+   aleatorios y permisos restrictivos. No se reciben rutas elegidas por el LLM
+   ni se sobrescriben archivos. reports/imv/ está excluido de Git.
 
-**3. El flujo de cinco pasos.** En `tool_use/executor.py`: el prompt de sistema con las
-definiciones (la plantilla es la de las diapositivas), la generación, el parser de
-`<tool_call>` (os lo doy, es infraestructura), la ejecución, la reinyección del resultado
-como mensaje con rol `tool`, y la respuesta final. Tiene que soportar varias llamadas
-encadenadas en distintos turnos (multi-step) y varias llamadas en una misma generación
-(paralelas). Sin `smolagents` ni nada parecido en esta fase: quiero ver el bucle.
+**Garantías y límites:** el motor simula casos normalizados (no resolución
+administrativa). La comprobación previa de importes en el informe es numérica
+y mínima; la auditoría de la precisión del lenguaje se realiza separadamente.
+BDNS no engloba todas las prestaciones, no acredita elegibilidad ni plazos
+abiertos. Endpoint: https://www.infosubvenciones.es/bdnstrans/doc/swagger.
 
-**4. El banco de pruebas.** Unos treinta casos en `tool_use/bench/cases.jsonl` (formato en
-`example_cases.jsonl`): para cada petición, la herramienta esperada y sus argumentos.
-Incluid casos que **no** necesitan herramienta: un modelo que llama a una herramienta para
-todo no las está usando bien. `tool_use/evaluate.py` calcula la precisión de selección y la
-de argumentos. Y comparad el mismo modelo con y sin herramientas, como en el notebook de
-clase.
+Los rulesets se seleccionan por fecha desde rlm/rulesets/imv_*.json. Solo existe
+el de 2026 en main; fechas sin reglas unívocas producen un error.
 
-## Para ir más allá
+## Banco de 40 casos (bench/cases.jsonl)
 
-- La "opción 2" de las diapositivas: **SFT para tool use**. Generad un dataset sintético de
-  llamadas a vuestras herramientas, ajustad el modelo de la fase 1 con él y medid la mejora
-  en el banco de pruebas.
-- Una herramienta **con estado** (SQLite) y tareas donde las acciones tienen consecuencias
-  sobre llamadas posteriores.
-- Una **política de seguridad**: qué herramientas piden confirmación, cómo se pide, qué pasa
-  si el modelo insiste.
+| Categoría | Casos | Objetivo |
+| --- | ---: | --- |
+| structured_calculation | 4 | Conserva casos directos de JSON de la fase inicial |
+| natural_calculation | 6 | Extraer fechas, miembros, relaciones e importes desde prosa |
+| negative_eligibility | 6 | Ingresos, patrimonio, activos, residencia, empresa y edad |
+| missing_facts | 5 | Pedir datos faltantes, no inventar y no guardar un fichero |
+| bdns_natural | 8 | Filtrado HTTP en lenguaje natural, número de resultados |
+| multi_step | 6 | IMV → informe, IMV + BDNS, IMV + BDNS → informe, 2 búsquedas |
+| no_tool | 5 | Responder preguntas conceptuales sin invocar herramientas |
 
-## Cómo se corrige
+Los casos multi_step incluyen expected_tools; las búsquedas repetidas exigen
+dos llamadas correctas. Para los cálculos existe expected_case (el JSON
+normalizado de referencia) aunque la query sea texto natural. No es legítimo
+tratar un caso con información desconocida como si sus valores fueran cero.
 
-Llamaré a `POST /tools` con peticiones parecidas a las de vuestro banco de pruebas y alguna
-que requiera dos herramientas encadenadas, y miraré:
+En el anterior benchmark de 30 casos casi todas las peticiones de cálculo
+copiaban un JSON entero. Por tanto, **los porcentajes de los anteriores
+phase2_base.json / phase2_grpo.json no son comparables** con los nuevos.
 
-- **Implementación (30 %):** el modelo elige la herramienta correcta con los argumentos
-  correctos, el resultado real aparece en `tool_calls` con su latencia, y la respuesta final
-  lo usa. Una petición que no necesita herramienta se responde sin llamar a ninguna.
-- **Completitud (30 %):** tres herramientas de los tres tipos, definiciones desde Pydantic,
-  flujo de cinco pasos con multi-step y paralelo, manejo de errores de validación, banco de
-  treinta casos con métricas, comparación con/sin herramientas.
-- **Interpretación (30 %):** por qué esas herramientas y no otras; qué descripciones
-  funcionaron y cuáles no; en qué casos falla el modelo y por qué; qué cambió al pasar de
-  single-step a multi-step.
-- **Limpieza (10 %):** herramientas con docstrings claras, sin claves en el código, tests
-  para las herramientas que se puedan probar sin red.
+## Evaluación: primera llamada y flujo completo
 
-## Ficheros
+El evaluador del docente (evaluate.py) se conserva sin cambios en sus métricas
+de selección de la primera llamada y exactitud de sus argumentos.
 
-| Fichero | Estado | Qué es |
-|---|---|---|
-| `registry.py` | hecho | `@tool`, definiciones JSON Schema, validación y ejecución con captura de errores |
-| `parser.py` | hecho | Detecta `<think>` y uno o varios `<tool_call>` en la salida del modelo |
-| `tools.py` | ejemplo + tu turno | `get_weather` y `calculator`; las vuestras van aquí |
-| `executor.py` | tu turno | El flujo de cinco pasos; detrás de `/tools` |
-| `evaluate.py` | hecho | Métricas de selección y argumentos sobre el banco de pruebas |
-| `bench/` | vuestro | Casos de prueba (`example_cases.jsonl` muestra el formato) |
+compare.py añade mediante metrics.py, por caso y agregado:
+
+- tool_sequence_success y multi_step_success: éxito de **todas** las herramientas
+  exigidas (también si se repite la misma herramienta).
+- all_tool_arguments_correct: compara argumentos de todas las acciones relevantes
+  con el gold y no solo la primera llamada. La comparación es estricta y puede
+  penalizar representaciones semánticamente equivalentes.
+- amount_fidelity: exige los tres importes IMV/CAPI/total en la respuesta o
+  en el informe escrito, cotejados con una ejecución independiente del motor.
+  Soporta decimales con punto o coma y separadores de miles.
+- report_created_and_verified: comprueba que un TXT existe de verdad dentro
+  del directorio aislado, y que UTF-8, contenido, bytes y SHA-256 coinciden
+  exactamente con el registro de guardar_informe.
+- report_amount_fidelity: importes dentro del archivo efectivamente guardado.
+- failed_reason_coverage y explanation_heuristic_accuracy: cobertura de los
+  motivos de denegación, presencia de IMV/CAPI y aviso de simulación. Son
+  **heurísticas léxicas**, no una certificación jurídica de las explicaciones.
+- conceptual_fact_accuracy: presencia de expresiones correctas para las siglas
+  IMV y CAPI cuando existe etiqueta gold; tampoco detecta negaciones por sí sola.
+- clarification_accuracy: no ejecutar tools y solicitar la información que
+  falta en solicitudes incompletas.
+- unverified_save_claims: número de respuestas que afirman haber guardado algo
+  sin constancia de ejecución satisfactoria.
+- end_to_end_success: conjunto de llamadas correctas, argumentos esperados,
+  verificación del archivo cuando procede, importes y comprobaciones de texto.
+
+Cada métrica agrega su propio denominador (_n) y usa null cuando no aplica.
+En particular, guardar_informe no se exige en casos sin solicitud de fichero.
+El script escribe una fila por caso con la traza completa y el gold usado.
+
+**Importante:** el directorio temporal de informes se elimina al finalizar
+compare.py. Las comprobaciones de existencia se hacen durante la ejecución,
+antes de borrarlo. Para auditar un TXT persistente, ejecutar POST /tools con
+ARCA_IMV_REPORTS_DIR apuntando a un directorio privado.
+
+## Comandos en la DGX
+
+Desde el directorio raíz del proyecto:
+
+```bash
+git fetch origin
+git switch feat/fase2-tool-use-imv-bdns-informes
+git pull --ff-only
+source smoke/dgx_env.sh
+uv sync --extra train
+uv run arca-check-gpu
+uv run pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_tool_registry.py tests/test_tool_parser.py
+```
+
+Smoke rápido (dos casos, sin GPU en los tests pero con inferencia en la comparación):
+
+```bash
+uv run --extra train python -m tool_use.compare --limit 2 \
+  --model Qwen/Qwen3-1.7B --brain base --out reports/phase2_smoke.json
+```
+
+Evaluación completa del base, 40 casos **con** y **sin** herramientas:
+
+```bash
+uv run --extra train python -m tool_use.compare \
+  --model Qwen/Qwen3-1.7B --brain base \
+  --bench tool_use/bench/cases.jsonl --max-turns 5 \
+  --out reports/phase2_base_v2.json
+```
+
+Evaluación del mismo modelo equipado con LoRA de la fase 1:
+
+```bash
+export ARCA_RLM_ADAPTER=/ruta/al/adaptador/grpo
+export ARCA_TOOLS_MODEL_ID=$(uv run python -c \
+  'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json").read_text())["base_model_name_or_path"])')
+uv run --extra train python -m tool_use.compare \
+  --model "$ARCA_TOOLS_MODEL_ID" --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
+  --bench tool_use/bench/cases.jsonl --max-turns 5 \
+  --out reports/phase2_grpo_v2.json
+```
+
+Si el LoRA se entrenó sobre otro modelo base, ejecutar también la evaluación
+base de esa misma arquitectura para comparar justamente.
+
+## Qué analizar en la memoria de la práctica
+
+Interpretar los falsos positivos del antiguo first-call accuracy, comparar
+base frente a GRPO, señalar cinco fallos reales de extracción de argumentos,
+residencia/ingresos, BDNS, nombres IMV/CAPI y redacción de informes. Probar
+los fallos de red. Analizar las diferencias entre llamadas independientes,
+paralelas y encadenadas. Ningún resultado de GPU se ha supuesto ni inventado;
+los JSON v2 deben generarse nuevamente en la DGX.
+
+
+## Evaluación por herramienta (aislamiento fase 2 → reutilización fase 4)
+
+Para separar los errores de **extracción de datos**, **búsqueda HTTP** y
+**redacción/persistencia**, el script `tool_use/stage_eval.py` evalúa **cuatro
+contextos diferentes de conversación**, cada uno con su propio fichero JSONL.
+No sustituye al evaluador docente, ni modifica `POST /tools` o `rlm/`.
+
+| Etapa | Dataset | Casos | Únicas herramientas visibles |
+| --- | --- | ---: | --- |
+| IMV | `bench/imv.jsonl` | 21 | `calcular_imv` |
+| BDNS | `bench/bdns.jsonl` | 10 | `consultar_ayudas` |
+| Informe | `bench/report.jsonl` | 6 | `guardar_informe` |
+| Integración | `bench/integration.jsonl` | 8 | Las tres |
+
+**IMV:** consultas normalizadas y en español natural, denegaciones y
+consultas incompletas. La herramienta recibe un único argumento `case`
+con el esquema Pydantic, sin el contenedor extra `IMVCase`. El evaluador
+compara el caso contra la referencia **después de aplicar los valores
+por defecto del esquema a ambos**, distingue corrección de argumentos,
+resultado del motor, fidelidad de la explicación y solicitud de aclaración.
+Una falta de datos no autoriza a inventarlos; un error Pydantic se devuelve
+como observación que el modelo puede corregir. Los errores se registran en `had_schema_or_parse_error`, y la posterior
+recuperación se mide separadamente en `recovered_after_error`.
+
+**BDNS:** solo se expone `consultar_ayudas`, la herramienta ejecuta
+**HTTP de verdad** y se puntúan por separado selección, argumentos,
+éxito del HTTP y evidencia textual de las fuentes. Se comprueba si
+la respuesta del modelo menciona resultados auténticamente devueltos,
+en vez de conceder una prestación o inventar subvenciones. El resultado
+depende de la disponibilidad de la API y su catálogo en el momento de
+evaluar. Los tests de CPU usan una red simulada, **no** afirman conectar
+realmente con la BDNS.
+
+**Informe:** el usuario pide un archivo, y el modelo recibe dos
+observaciones PREVIAS en la estructura de chat usada por el bucle Qwen:
+
+```text
+role=user: "Redacta y guarda un informe TXT..."
+role=assistant: <tool_call>{"name":"calcular_imv",...}</tool_call>
+role=tool (calcular_imv): {"ok":true,"result":{...cantidades...}}
+role=assistant: <tool_call>{"name":"consultar_ayudas",...}</tool_call>
+role=tool (consultar_ayudas): {"ok":true,"result":{...convocatorias...}}
+role=assistant: ... SOLO puede llamar a guardar_informe ...
+```
+
+La observación IMV procede de ejecutar el motor real contra el caso de referencia,
+**no** de introducir importes calculados por el modelo. La observación BDNS
+usa, por defecto, una **fixture SINTÉTICA rotulada** (convocatoria
+ficticia con código SIMULADA-001, respuesta vacía o error de red).
+Esto permite comprobar que el modelo cita exclusivamente observaciones
+recibidas, incluso ante fallos de BDNS, sin confundir datos ficticios con
+convocatorias oficiales. Si se quiere comprobar el comportamiento con
+la API real, pasar `--report-api live`. En ambos modos, el texto del
+informe lo redacta el modelo: `guardar_informe` solamente lo escribe.
+Se valida archivo, SHA-256, texto exacto, importes y referencias BDNS.
+Las comprobaciones del texto son **heurísticas**, no auditoría jurídica.
+
+**Integración:** se conservan los casos de dos búsquedas independientes,
+cálculo y BDNS en un mismo turno, redacción en el turno siguiente y
+solicitudes sin datos suficientes pero con búsqueda externa posible.
+Se exige que el guardado espere a las observaciones requeridas.
+Se conservan asimismo los 40 casos del evaluador global en
+`bench/cases.jsonl` para la comparación con/sin herramientas del docente.
+
+### Ejecutar en DGX
+
+Desde la raíz del repositorio y en la rama `feat/fase2-tool-use-imv-bdns-informes`:
+
+```bash
+source smoke/dgx_env.sh
+uv sync --extra train
+uv run pytest -q tests/test_phase2_imv_tools.py \
+  tests/test_phase2_workflows.py tests/test_phase2_stages.py \
+  tests/test_phase2_tracing.py tests/test_tool_registry.py tests/test_tool_parser.py
+
+# Prueba rápida de la etapa IMV (2 ejemplos, inferencia real)
+uv run --extra train python -m tool_use.stage_eval \
+  --stage imv --limit 2 --out reports/phase2_imv_smoke.json
+
+# Cada etapa de forma independiente, modelo base
+uv run --extra train python -m tool_use.stage_eval \
+  --stage imv --brain base --out reports/phase2_imv_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage bdns --brain base --out reports/phase2_bdns_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage report --brain base --report-api fixture \
+  --out reports/phase2_report_base.json
+uv run --extra train python -m tool_use.stage_eval \
+  --stage integration --brain base --out reports/phase2_integration_base.json
+```
+
+Alternativa: ejecutar las cuatro etapas en una sola invocación, reutilizando
+los pesos cargados del modelo dentro del proceso:
+
+```bash
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain base --model Qwen/Qwen3-1.7B \
+  --out reports/phase2_stages_base.json
+```
+
+Para el adaptador LoRA de fase 1, el base seleccionado debe coincidir
+exactamente con el identificador de `adapter_config.json`:
+
+```bash
+export ARCA_RLM_ADAPTER="/ruta/real/a/grpo_lora"
+export ARCA_TOOLS_MODEL_ID="$(uv run python -c \
+  'import json,os,pathlib; p=pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json"; print(json.loads(p.read_text())["base_model_name_or_path"])')"
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
+  --model "$ARCA_TOOLS_MODEL_ID" \
+  --out reports/phase2_stages_grpo.json
+```
+
+**Limitaciones:** los resultados de BDNS en vivo pueden variar con la red;
+las fixtures del informe son solo de evaluación. Los JSON de salida
+contienen la traza, las métricas por etapa y sus denominadores;
+los informes se verifican y conservan en el directorio de artefactos. Para comparar el base frente al GRPO científicamente,
+usar el mismo modelo subyacente en ambos experimentos.
+
+
+## Trazas completas y salidas persistentes (automáticas en evaluación)
+
+Los tres ejecutores de evaluación (`stage_eval.py`, `compare.py` y
+`evaluate.py`) guardan por defecto, **sin flags adicionales**, todos los
+turnos y el contenido íntegro generado por el modelo. No se pierden las
+trazas anteriores si una ejecución se interrumpe: cada evento se añade
+inmediatamente a un fichero JSONL independiente por caso.
+
+Si la salida principal es `reports/phase2_stages_base.json`, los artefactos
+se crean en un directorio único:
+
+```text
+reports/
+  phase2_stages_base.json                         # métricas, respuestas, enlace a trazas
+  phase2_artifacts/
+    phase2_stages_base/
+      20261117T190000Z-xxxxxxxx/                 # identificador de ejecución
+        traces/
+          imv-001-P2-001.jsonl                    # TODOS los turnos de ese caso
+          bdns-001-P2-...jsonl
+          report-001-REPORT-01.jsonl
+          integration-001-P2-...jsonl
+        reports/
+          informe-imv-xxxxxxxxxxxxxxxxxxxxxxxx.txt # se CONSERVA el texto escrito
+```
+
+Cada traza JSONL registra en orden:
+
+- `run_start`: solicitud, modelo, esquema y herramientas visibles,
+  y cualquier observación precargada (en la etapa de informe).
+- `model_input`: **todos los mensajes íntegros que ve el modelo**, con
+  roles y contenido (system/user/assistant/tool), antes de generar.
+- `model_output`: respuesta literal devuelta a la aplicación, **prompt
+  renderizado con la plantilla real de Qwen**, salida decodificada sin
+  descartar tokens especiales, ids de tokens generados y parámetros.
+  En tests con generadores simulados, solo se registran los metadatos
+  que realmente proporciona la simulación.
+- `parsed_output`: texto, bloque thinking si existe y llamadas parseadas
+  (incluidos argumentos inválidos).
+- `tool_execution`: ejecución, duración, argumentos, errores de validación,
+  observación completa y registros de la herramienta. Incluye las
+  escrituras de informe por recuperación cuando el modelo omite el
+  marcador de llamada.
+- `orchestration`: reintentos de tareas compuestas antes de terminar.
+- `final_response` o `run_exception`: respuesta confirmada o error real.
+
+El JSON resumen de la evaluación incluye `artifacts_dir` y, en cada caso,
+`trace_path`. La carpeta `reports/` de la ejecución no es temporal: **los
+informes TXT también se conservan** después del cálculo de las métricas.
+
+Ejemplos de inspección en la DGX:
+
+```bash
+# Evaluar, guardar todas las generaciones y conservar los TXT
+uv run --extra train python -m tool_use.stage_eval \
+  --stage all --brain base --out reports/phase2_stages_base.json
+
+# Ver directorio de artefactos concreto de esa ejecución
+ARTIFACTS="$(uv run python -c 'import json; print(json.load(open("reports/phase2_stages_base.json"))["artifacts_dir"])')"
+echo "$ARTIFACTS"
+find "$ARTIFACTS" -type f
+
+# Mostrar la primera traza completa (JSONL) formateada, sin truncarla
+TRACE="$(find "$ARTIFACTS/traces" -type f -name '*.jsonl' | sort | head -1)"
+uv run python -m json.tool --json-lines "$TRACE" | less -R
+
+# Extraer solamente las salidas brutas de todas las generaciones de esa traza
+uv run python - "$TRACE" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    for line in stream:
+        event = json.loads(line)
+        if event["event"] == "model_output":
+            print(f"\n--- TURNO {event['turn']} ---\n{event['raw_text']}")
+PY
+```
+
+En la comparación base/GRPO y el evaluador docente el formato es el
+mismo, con dos subseries `with_tools` y `without_tools` cuando
+corresponde. Repetir una evaluación crea otro directorio, sin sobrescribir
+las trazas previas. Si un proceso termina antes del resumen final,
+los JSONL ya escritos siguen disponibles.
+
+### Registro opcional de llamadas reales a POST /tools
+
+Para sesiones HTTP fuera del benchmark, activar expresamente:
+
+```bash
+export ARCA_TOOLS_TRACE_DIR="reports/phase2_api_traces"
+uv run arca-api
+```
+
+Cada petición crea un JSONL separado con nombre aleatorio. La API
+no acepta una ruta arbitraria de trazas enviada por el usuario; si
+`ARCA_TOOLS_TRACE_DIR` no está definido, las sesiones HTTP **no** se
+registran automáticamente.
+
+**Privacidad:** las trazas son **completas y no anonimizadas**. Pueden
+contener nombres, circunstancias familiares, ingresos, patrimonio y el
+texto de los informes. Evitar subirlas al repositorio o a servicios externos,
+usar solo datos sintéticos en las pruebas y controlar el acceso a los
+archivos. Los ficheros se crean con permisos `0600` y carpetas privadas
+`0700`; `reports/phase2_artifacts/`, `reports/phase2_api_traces/`
+y `reports/imv/` están en `.gitignore`.
