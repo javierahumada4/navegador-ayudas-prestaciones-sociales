@@ -142,8 +142,35 @@ def agent(request: AgentRequest):
         raise
 
 
+def warmup() -> None:
+    """One short call per phase right after start-up, in the background.
+
+    The scorecard of 2026-11-24 measured 341 s for the first /reasoning call and 122 s for the
+    second, with the weights already loaded (first CUDA kernels, allocator growth): over ngrok's
+    300 s, so the grader's first request would get an HTML 504. Paying it here means the first
+    real request is warm. ``ARCA_WARMUP=0`` disables it. Failures are logged, never raised.
+    """
+    calls = [
+        ("reasoning", lambda: backends.reasoning().answer("¿Cuánto es 2 + 2?", None, 32)),
+        ("tools", lambda: backends.tools().run("Di hola.", 1)),
+        ("rag", lambda: backends.rag().answer("¿Qué es el ingreso mínimo vital?", top_k=2, retriever="hybrid")),
+        ("agent", lambda: backends.agent().run("Responde solo: ok.", max_steps=1, brain="base")),
+    ]
+    for name, call in calls:
+        started = time.perf_counter()
+        try:
+            call()
+            log.info("warm-up %s: %.1f s", name, time.perf_counter() - started)
+        except Exception as exc:  # noqa: BLE001 - a phase that is not ready stays as it is
+            log.warning("warm-up %s failed: %s", name, exc)
+
+
 def main() -> None:
     """Entry point for ``uv run arca-api``."""
+    if env("ARCA_WARMUP", "1") != "0":
+        import threading
+
+        threading.Thread(target=warmup, name="arca-warmup", daemon=True).start()
     uvicorn.run("api.app:app", host="0.0.0.0", port=int(env("ARCA_API_PORT", "8000")))
 
 

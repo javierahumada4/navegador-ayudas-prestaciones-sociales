@@ -139,15 +139,15 @@ class Generator:
         self.tokenizer = None
 
     def load(self) -> None:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        """Take the weights from the process-wide pool (``agent/models.py``).
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_id, torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32
-        ).to(device)
-        self.model.eval()
+        Inside the API the generator is the same Qwen3-1.7B that ``/tools`` already holds: a
+        private copy cost 3.4 GB of the 16 GB slice and made the full API run out of memory
+        (scorecard of 2026-11-24). Outside the API the pool loads it once and shares it.
+        """
+        from agent.models import POOL, BrainSpec
+
+        self.tokenizer, self.model = POOL.get(BrainSpec("rag", self.model_id, None, False, 400))
 
     def generate(self, prompt: str, max_new_tokens: int = 400) -> str:
         import torch
