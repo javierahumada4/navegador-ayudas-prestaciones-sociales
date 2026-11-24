@@ -1,0 +1,17 @@
+commit 73a77ae start 2026-11-24T09:43:47+01:00
+export ARCA_RAG_CHUNKING=recursive:1200:150
+export ARCA_RAG_LAMBDA=0.4
+export ARCA_RAG_MIN_SCORE=0.54
+waiting for the API (fixes, /home/202200872/arca-eval-runner) on port 8899
+API up in 37 s
+first /health: 0 s
+          phase1 P1-000: status=200 259s --
+          phase1 P1-001: status=200 97s OK
+          phase1 P1-002: status=200 48s --
+          phase1 P1-003: status=200 17s --
+          phase1 P1-004: status=200 20s --
+          phase1 P1-005: status=200 20s --
+          phase1 P1-006: status=200 19s --
+          phase1 P1-007: status=200 22s --
+          phase1 P1-008: status=200 20s OK
+          phase1 P1-009: status=200 24s --
