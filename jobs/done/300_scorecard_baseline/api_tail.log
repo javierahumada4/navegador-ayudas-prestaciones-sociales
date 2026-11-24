@@ -1,0 +1,200 @@
+             ^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 2802, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 3002, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 4109, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 939, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 482, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 286, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 381, in forward
+    inputs_embeds = self.embed_tokens(input_ids)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/sparse.py", line 189, in forward
+    return F.embedding(
+           ^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/functional.py", line 2567, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 16.00 MiB. GPU 0 has a total capacity of 16.00 GiB of which 960.00 KiB is free. Including non-PyTorch memory, this process has 11.41 GiB memory in use. Process 2782 has 4.56 GiB memory in use. Of the allocated memory 11.05 GiB is allocated by PyTorch, and 65.83 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+INFO:     127.0.0.1:60214 - "POST /agent HTTP/1.1" 500 Internal Server Error
+2026-11-24 09:41:30,737 ERROR arca.api: phase agent failed
+Traceback (most recent call last):
+  File "/home/202200872/arca-runs/scorecard/baseline-code/api/app.py", line 59, in _run
+    return call(backend)
+           ^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/api/app.py", line 134, in <lambda>
+    lambda a: a.run(
+              ^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 266, in run
+    response = self._run(task, max_steps, spec, session.context())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 296, in _run
+    raw, prompt_tokens, completion_tokens = self.generate(memory.render(), spec)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 202, in generate
+    return generate(spec, messages, self.registry.definitions())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/models.py", line 153, in generate
+    output = model.generate(
+             ^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 2802, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 3002, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 4109, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 939, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 482, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 286, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 381, in forward
+    inputs_embeds = self.embed_tokens(input_ids)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/sparse.py", line 189, in forward
+    return F.embedding(
+           ^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/functional.py", line 2567, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 16.00 MiB. GPU 0 has a total capacity of 16.00 GiB of which 960.00 KiB is free. Including non-PyTorch memory, this process has 11.41 GiB memory in use. Process 2782 has 4.56 GiB memory in use. Of the allocated memory 11.05 GiB is allocated by PyTorch, and 65.71 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+INFO:     127.0.0.1:60214 - "POST /agent HTTP/1.1" 500 Internal Server Error
+2026-11-24 09:41:30,758 ERROR arca.api: phase agent failed
+Traceback (most recent call last):
+  File "/home/202200872/arca-runs/scorecard/baseline-code/api/app.py", line 59, in _run
+    return call(backend)
+           ^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/api/app.py", line 134, in <lambda>
+    lambda a: a.run(
+              ^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 266, in run
+    response = self._run(task, max_steps, spec, session.context())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 296, in _run
+    raw, prompt_tokens, completion_tokens = self.generate(memory.render(), spec)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/react_agent.py", line 202, in generate
+    return generate(spec, messages, self.registry.definitions())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/arca-runs/scorecard/baseline-code/agent/models.py", line 153, in generate
+    output = model.generate(
+             ^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 2802, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 3002, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/generation/utils.py", line 4109, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 939, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 482, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 286, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 381, in forward
+    inputs_embeds = self.embed_tokens(input_ids)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/modules/sparse.py", line 189, in forward
+    return F.embedding(
+           ^^^^^^^^^^^^
+  File "/home/202200872/.venvs/arca-api/lib/python3.12/site-packages/torch/nn/functional.py", line 2567, in embedding
+    return torch.embedding(weight, input, padding_idx, scale_grad_by_freq, sparse)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 16.00 MiB. GPU 0 has a total capacity of 16.00 GiB of which 960.00 KiB is free. Including non-PyTorch memory, this process has 11.41 GiB memory in use. Process 2782 has 4.56 GiB memory in use. Of the allocated memory 11.05 GiB is allocated by PyTorch, and 65.60 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)
+INFO:     127.0.0.1:60214 - "POST /agent HTTP/1.1" 500 Internal Server Error
