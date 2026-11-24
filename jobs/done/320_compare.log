@@ -1,0 +1,50 @@
+commit 5e4a425 start 2026-11-24T10:18:06+01:00
+# baseline → fixes
+
+| fase | métrica | antes | después | Δ | |
+|---|---|---:|---:|---:|---|
+| phase1 | pass@1 | 0.625 | 0.475 | -0.150 | peor |
+| phase1 | format | 0.975 | 0.900 | -0.075 | peor |
+| phase1 | truncated | 0.025 | 0.100 | 0.075 | peor |
+| phase1 | over_300s | 1 | 0 | -1 | mejor |
+| phase1 | p50_s | 20.950 | 21.200 | 0.250 | peor |
+| phase2 | selection | 0.950 | 0.950 | 0.000 |  |
+| phase2 | arguments | 0.850 | 0.850 | 0.000 |  |
+| phase2 | tool_sequence | 0.900 | 0.900 | 0.000 |  |
+| phase2 | end_to_end | 0.725 | 0.725 | 0.000 |  |
+| phase2 | amount_fidelity | 0.810 | 0.810 | 0.000 |  |
+| phase2 | over_300s | 0 | 0 | 0 |  |
+| phase2 | p50_s | 6.200 | 6.200 | 0.000 |  |
+| phase3 | recall@5 | 0.700 | 0.040 | -0.660 | peor |
+| phase3 | mrr | 0.455 | 0.040 | -0.415 | peor |
+| phase3 | cited_relevant | 0.420 | 0.020 | -0.400 | peor |
+| phase3 | citations_exist | 1.000 | 1.000 | 0.000 |  |
+| phase3 | false_abstentions | 0.120 | 0.020 | -0.100 | mejor |
+| phase3 | unanswerable_abstained | 0.875 | 0.125 | -0.750 | peor |
+| phase3 | p50_s | 1.400 | 0.000 | -1.400 | mejor |
+| phase4 base | success | — | 0.000 | — |  |
+| phase4 base | impossible_ok | — | 0.000 | — |  |
+| phase4 base | chain_complete | — | 0.000 | — |  |
+| phase4 base | mean_steps | — | 0.000 | — |  |
+| phase4 base | mean_tokens | — | 0.000 | — |  |
+| phase4 base | over_300s | — | 0 | — |  |
+| phase4 base | p50_s | — | 0.000 | — |  |
+| phase4 rlm | success | — | 0.000 | — |  |
+| phase4 rlm | impossible_ok | — | 0.000 | — |  |
+| phase4 rlm | chain_complete | — | 0.000 | — |  |
+| phase4 rlm | mean_steps | — | 0.000 | — |  |
+| phase4 rlm | mean_tokens | — | 0.000 | — |  |
+| phase4 rlm | over_300s | — | 0 | — |  |
+| phase4 rlm | p50_s | — | 0.000 | — |  |
+| phase4 thinking | success | — | 0.000 | — |  |
+| phase4 thinking | impossible_ok | — | 0.000 | — |  |
+| phase4 thinking | chain_complete | — | 0.000 | — |  |
+| phase4 thinking | mean_steps | — | 0.000 | — |  |
+| phase4 thinking | mean_tokens | — | 0.000 | — |  |
+| phase4 thinking | over_300s | — | 0 | — |  |
+| phase4 thinking | p50_s | — | 0.000 | — |  |
+| memoria | conversaciones OK | 0/2 | 0/2 | | |
+
+n por fase: {'phase1': 40, 'phase2': 40, 'phase3': 58}; agente 23 tareas por cerebro. Una o dos preguntas de diferencia son ruido con estos tamaños.
+
+exit=0 end 2026-11-24T10:18:06+01:00
