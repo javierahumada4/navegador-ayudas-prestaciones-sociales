@@ -1,0 +1,41 @@
+commit 26f66d1 start 2026-11-24T11:58:42+01:00
+export ARCA_RAG_CHUNKING=recursive:1200:150
+export ARCA_RAG_LAMBDA=0.4
+export ARCA_RAG_MIN_SCORE=0.54
+GPU free before start: 16274 MiB
+waiting for the API (fixes-v3, /home/202200872/arca-eval-runner) on port 8899
+API up in 14 s
+  2026-11-24 11:59:04,230 INFO arca.api: warm-up reasoning: 19.8 s
+  2026-11-24 11:59:06,817 INFO arca.api: warm-up tools: 2.6 s
+  2026-11-24 11:59:08,040 INFO arca.api: warm-up rag: 1.2 s
+  2026-11-24 11:59:13,099 INFO arca.api: warm-up agent: 5.1 s
+warm-up wait: 20 s
+first /health: 1 s
+          phase1 P1-000: status=200 29s --
+          phase1 P1-001: status=200 19s OK
+          phase1 P1-002: status=200 20s OK
+          phase1 P1-003: status=200 14s OK
+          phase1 P1-004: status=200 19s --
+          phase1 P1-005: status=200 28s --
+          phase1 P1-006: status=200 18s --
+          phase1 P1-007: status=200 28s --
+          phase1 P1-008: status=200 18s OK
+          phase1 P1-009: status=200 20s OK
+          phase1 P1-010: status=200 24s OK
+          phase1 P1-011: status=200 21s OK
+          phase1 P1-012: status=200 23s OK
+          phase1 P1-013: status=200 14s OK
+          phase1 P1-014: status=200 20s OK
+          phase1 P1-015: status=200 18s OK
+          phase1 P1-016: status=200 22s --
+          phase1 P1-017: status=200 14s OK
+          phase1 P1-018: status=200 25s --
+          phase1 P1-019: status=200 28s --
+          phase1 P1-020: status=200 15s --
+          phase1 P1-021: status=200 16s OK
+          phase1 P1-022: status=200 19s --
+          phase1 P1-023: status=200 24s --
+          phase1 P1-024: status=200 24s --
+          phase1 P1-025: status=200 12s --
+          phase1 P1-026: status=200 7s OK
+          phase1 P1-027: status=200 22s OK
