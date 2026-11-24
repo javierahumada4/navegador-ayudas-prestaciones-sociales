@@ -105,6 +105,24 @@ dorado de fase 3 (evidencia literal del corpus).
 6. Con el presupuesto de memoria a 1500 tokens el éxito baja poco y los tokens totales suben (las
    llamadas de resumen cuestan).
 
+## 4b. Primera prueba en GPU (2026-11-24, API en la DGX, una sola tarea)
+
+Tarea: «Busca en la base de conocimiento la edad mínima para ser titular del IMV y dime cuántos días
+hay para comunicar un cambio a la Seguridad Social», cerebro `base`, `max_steps = 6`.
+
+- 2 pasos: `search_knowledge_base` (primer fragmento `ss-imv-0007`, titulares) y `final_answer`.
+  Respuesta correcta: 23 años y 30 días naturales. El bucle, la base de conocimiento como
+  herramienta y el pool de modelos funcionan con la API de verdad.
+- **Una sola búsqueda para dos preguntas.** No sabemos si los 30 días salieron de los fragmentos
+  recuperados o de la memoria del modelo: aquí acertó, pero es justo el tipo de respuesta que el
+  banco tiene que vigilar.
+- **Sin cita** del id del fragmento, aunque el prompt la pide.
+- **8 606 tokens** en 2 pasos: casi todo es el prompt de sistema más los esquemas JSON de las seis
+  herramientas, que se repiten en cada llamada. Es el coste fijo por paso del agente JSON.
+- La consulta del recuperador denso para la misma pregunta devuelve el RDL 20/2020 **derogado** en
+  tercera posición (0,582), por detrás de la Seguridad Social (0,737) y por delante de la ley
+  vigente (0,57): el distractor que diseñó el gold de fase 3 aparece en uso real.
+
 ## 5. Resultados — pendiente (job `200_agent_bench`)
 
 Banco completo, `max_steps = 8`, decodificación voraz, DGX MIG 1g.18gb.
