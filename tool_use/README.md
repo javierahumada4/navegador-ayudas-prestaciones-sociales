@@ -1,6 +1,6 @@
 # Fase 2 — Herramientas y evaluación integral IMV/CAPI
 
-**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tool-use-imv-bdns-informes.
+**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tres-herramientas.
 Motor determinista y ruleset IMV 2026 reutilizados de main, sin tocar la fase 1.
 
 ## Tres herramientas reales
@@ -108,7 +108,7 @@ Desde el directorio raíz del proyecto:
 
 ```bash
 git fetch origin
-git switch feat/fase2-tool-use-imv-bdns-informes
+git switch feat/fase2-tres-herramientas
 git pull --ff-only
 source smoke/dgx_env.sh
 uv sync --extra train
@@ -223,7 +223,7 @@ Se conservan asimismo los 40 casos del evaluador global en
 
 ### Ejecutar en DGX
 
-Desde la raíz del repositorio y en la rama `feat/fase2-tool-use-imv-bdns-informes`:
+Desde la raíz del repositorio y en la rama `feat/fase2-tres-herramientas`:
 
 ```bash
 source smoke/dgx_env.sh

@@ -3,7 +3,7 @@ name: IMV phase 2 tool-use checks
 on:
   push:
     branches:
-      - 'feat/fase2-tool-use-imv-bdns-informes'
+      - 'feat/fase2-tres-herramientas'
   pull_request:
     paths:
       - 'tool_use/**'
