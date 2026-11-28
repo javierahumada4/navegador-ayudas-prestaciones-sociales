@@ -75,6 +75,23 @@ def test_calculator_uses_engine_and_ruleset():
     )
 
 
+def test_calculator_keeps_one_copy_of_an_identical_duplicate_person():
+    once = default_registry().call("calcular_imv", {"case": example_case()})
+    case = example_case()
+    case["persons"].append(dict(case["persons"][0]))
+    twice = default_registry().call("calcular_imv", {"case": case})
+    assert twice.ok, twice.error
+    assert twice.result == once.result
+
+
+def test_calculator_rejects_same_id_with_different_facts():
+    case = example_case()
+    other = dict(case["persons"][0], date_of_birth="1990-05-05")
+    case["persons"].append(other)
+    record = default_registry().call("calcular_imv", {"case": case})
+    assert not record.ok and "duplicate person ids" in record.error
+
+
 def test_calculator_rejects_invalid_or_missing_facts():
     case = example_case()
     del case["economic"]["net_worth_eur"]

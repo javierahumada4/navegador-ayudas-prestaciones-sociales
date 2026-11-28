@@ -265,3 +265,36 @@ con las métricas corregidas.
   en [`results/fase2/sin_definicion/`](results/fase2/sin_definicion/).
 - **Una diferencia de uno o dos casos entre configuraciones no es concluyente** con una sola
   ejecución.
+
+---
+
+### 2026-11-28 · Fase 2 · Prueba de la API: personas repetidas
+
+**Qué queríamos saber.** Si `/reasoning` y `/tools` funcionan a través de la API con el
+modelo real, en la DGX.
+
+**Qué hicimos.** Arrancamos la API y lanzamos a mano:
+
+- un caso de la propuesta a `/reasoning`;
+- a `/tools`: una búsqueda en la BDNS, una pregunta conceptual y dos cálculos de una persona
+  que vive sola, uno de ellos con petición de informe.
+
+**Qué pasó.**
+
+- **`/health` marca las fases 1 y 2 como `ready`.**
+- **`/reasoning`** responde con formato válido y veredicto del verificador. Para este caso
+  da un importe incorrecto, lo que encaja con su pass@1 de 0,49.
+- **La búsqueda y la definición** funcionan.
+- **Los dos cálculos fallan igual:** el modelo escribe a la persona dos veces en `persons`, la
+  validación rechaza el caso por `duplicate person ids` y el modelo pide al usuario que lo
+  corrija. Es el mismo fallo que P2-005 del banco.
+- **El orquestador no guardó el informe** porque no había cálculo válido, y lo dijo.
+
+**Qué concluimos.**
+
+- **Es un error sistemático del modelo en el caso más básico del dominio.** Lo corregimos en
+  el contrato: si una persona aparece repetida con datos idénticos, `IMVCase` se queda con una
+  copia. El mismo id con datos distintos sigue siendo un error.
+- **Repetida con el cambio, la llamada original de P2-005 da 383,60 €, el importe correcto.**
+- **Falta repetir `tool_use.compare`** para actualizar las tablas, que son anteriores a este
+  cambio.

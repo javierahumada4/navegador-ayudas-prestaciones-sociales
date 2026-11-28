@@ -99,6 +99,14 @@ class IMVCase(Facts):
 
     @model_validator(mode="after")
     def consistent(self):
+        # The same person written twice with identical facts carries no ambiguity: keep one.
+        # Qwen3-1.7B does this for people living alone. Same id with different facts is
+        # still an error, because then it is unclear which facts are true.
+        unique: list[Person] = []
+        for person in self.persons:
+            if person not in unique:
+                unique.append(person)
+        self.persons = unique
         ids = [p.id for p in self.persons]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate person ids")

@@ -35,7 +35,11 @@ Están en [`domain_tools.py`](domain_tools.py) y se registran en
 - no admite campos desconocidos y los booleanos son estrictos;
 - los porcentajes, grados y cantidades tienen límites;
 - comprueba la coherencia del caso: ids únicos, que el solicitante esté en el domicilio y
-  fechas no posteriores a la solicitud.
+  fechas no posteriores a la solicitud;
+- si una persona aparece dos veces con exactamente los mismos datos, se queda una sola
+  copia. Qwen3-1.7B lo hace con casi todas las personas que viven solas. En cambio, el
+  mismo id con datos distintos sigue siendo un error, porque no se sabe cuáles son los
+  ciertos.
 
 Si el modelo se equivoca, el error de validación vuelve como observación y puede corregirse.
 
@@ -256,7 +260,7 @@ Quedan 10 fallos, todos atribuibles al modelo:
 
 | Caso | Categoría | Qué hace |
 |---|---|---|
-| P2-005 | Lenguaje natural | Pone a la única persona del caso dos veces en `persons`. La validación lo rechaza (`duplicate person ids`), pero el modelo no corrige la llamada: le pide al usuario que corrija el id. La validación funciona; falla la recuperación |
+| P2-005 | Lenguaje natural | Pone a la única persona del caso dos veces en `persons`. La validación lo rechaza (`duplicate person ids`) y el modelo no corrige la llamada: le pide al usuario que corrija el id. Al probar la API vimos que pasa con casi todas las personas que viven solas, así que `calcular_imv` ahora se queda con una copia cuando los datos son idénticos. Repetida con ese cambio, esta misma llamada da el importe correcto (383,60 €). La tabla es anterior al cambio |
 | P2-008 | Lenguaje natural | Importes correctos, pero se inventa una fecha de independencia que el usuario no dio |
 | P2-009 | Lenguaje natural | Da el IMV y el total, pero en lugar de «CAPI 0,00 €» escribe «el CAPI no se aplica» |
 | P2-010 | Lenguaje natural | Da bien los tres importes (IMV 0, CAPI 57,50), pero no explica por qué no hay IMV |
