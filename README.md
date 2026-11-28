@@ -39,8 +39,8 @@ fichero y explicación correctos.
 
 | Cerebro | Con herramientas | Sin herramientas |
 |---|---:|---:|
-| Qwen3-1.7B base | **0,775** | 0,150 |
-| Qwen3-1.7B + LoRA GRPO | 0,700 | 0,125 |
+| Qwen3-1.7B base | **0,750** | 0,150 |
+| Qwen3-1.7B + LoRA GRPO | 0,650 | 0,125 |
 
 El análisis de cada resultado, con sus fallos, está en el README de cada fase. El registro
 fechado de lo que hemos probado está en [`EXPERIMENTS.md`](EXPERIMENTS.md).

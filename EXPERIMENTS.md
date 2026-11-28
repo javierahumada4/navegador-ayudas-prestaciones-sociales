@@ -170,8 +170,8 @@ mismo verificador. Base, SFT y GRPO sobre `test` y los tres conjuntos fuera de d
 - decodificación greedy y la BDNS en vivo.
 
 **Qué pasó**
-([`phase2_base.json`](results/fase2/phase2_base.json),
-[`phase2_grpo.json`](results/fase2/phase2_grpo.json)):
+([`phase2_base.json`](results/fase2/sin_definicion/phase2_base.json),
+[`phase2_grpo.json`](results/fase2/sin_definicion/phase2_grpo.json)):
 
 | Configuración | Éxito de principio a fin |
 |---|---:|
@@ -207,7 +207,7 @@ las salidas guardadas sin volver a ejecutar el modelo. Con las métricas anterio
 exactamente las cuatro tablas originales.
 
 **Qué pasó**
-([`phase2_rescored.json`](results/fase2/phase2_rescored.json)):
+([`phase2_rescored.json`](results/fase2/sin_definicion/phase2_rescored.json)):
 
 - **Éxito de principio a fin:** el base pasa de 0,675 a 0,775 y el GRPO de 0,625 a 0,700.
 - **Sin herramientas no cambia nada.**
@@ -231,10 +231,37 @@ en los dos casos conceptuales del banco: «Ingreso Mensual de Vida», «Cálculo
 la Vida y la Independencia».
 
 **Qué hicimos.** Añadimos al prompt de sistema de `tool_use/executor.py` una definición de
-una línea de cada prestación.
+una línea de cada prestación. Repetimos `tool_use.compare` en la DGX con los dos cerebros,
+con las métricas corregidas.
 
-**Qué pasó.** Pendiente: hay que repetir `tool_use.compare` en GPU. Las cifras publicadas son
-anteriores a este cambio.
+**Qué pasó**
+([`phase2_base.json`](results/fase2/phase2_base.json),
+[`phase2_grpo.json`](results/fase2/phase2_grpo.json)):
 
-**Qué concluimos.** Esperamos que P2-036 y P2-037 pasen sin que cambie el resto. Si algún
-caso empeora, el prompt habrá crecido demasiado para un modelo de 1,7B.
+| | Sin definición | Con definición |
+|---|---:|---:|
+| Base, éxito de principio a fin | 0,775 | 0,750 |
+| Base, hechos conceptuales | 0 / 2 | 2 / 2 |
+| GRPO, éxito de principio a fin | 0,700 | 0,650 |
+| GRPO, hechos conceptuales | 0 / 2 | 2 / 2 |
+
+- **P2-036 y P2-037 pasan en los dos modelos.** El IMV se define bien.
+- **En el base mejora además P2-014,** que ahora sí llama al motor.
+- **Empeoran P2-009, P2-010, P2-024 y P2-034:**
+  - no da el CAPI como 0,00 €;
+  - no explica por qué no hay IMV;
+  - deja una llamada sin cerrar;
+  - intenta guardar el informe antes de buscar en la BDNS.
+- **En GRPO mejoran 4 casos y empeoran 6.**
+- **Sin herramientas no cambia nada.**
+
+**Qué concluimos.**
+
+- **La definición arregla el error que buscábamos,** que era sistemático.
+- **Los casos que empeoran no son errores nuevos.** Repiten tipos de fallo que ya aparecían
+  en otros casos: con decodificación greedy, cualquier cambio de prompt redistribuye los
+  casos dudosos de un modelo de 1,7B.
+- **Mantenemos el cambio y publicamos esta ejecución como la principal.** La anterior queda
+  en [`results/fase2/sin_definicion/`](results/fase2/sin_definicion/).
+- **Una diferencia de uno o dos casos entre configuraciones no es concluyente** con una sola
+  ejecución.
