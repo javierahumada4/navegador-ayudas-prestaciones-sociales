@@ -208,3 +208,11 @@ def test_incomplete_call_and_duplicate_are_observations():
     call = tool_block("calcular_imv", {"case": example_case()})
     result = scripted_loop(call, call, "Fin").run("Calcula")
     assert result.tool_calls[0].ok and not result.tool_calls[1].ok
+
+
+def test_system_prompt_defines_imv_and_capi():
+    from tool_use.executor import build_system_prompt
+
+    prompt = build_system_prompt(default_registry())
+    assert "Ingreso Mínimo Vital" in prompt
+    assert "Complemento de Ayuda para la Infancia" in prompt

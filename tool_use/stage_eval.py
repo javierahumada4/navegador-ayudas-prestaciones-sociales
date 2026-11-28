@@ -24,7 +24,7 @@ from tool_use.evaluate import load_bench, normalise
 from tool_use.executor import ToolLoop
 from tool_use.imv_schema import IMVCase
 from tool_use.metrics import (
-    _file_status, expected_engine_result, explanation_checks, folded,
+    _file_status, asks_for_clarification, expected_engine_result, explanation_checks, folded,
     money_fields_present, score_workflow,
 )
 from tool_use.registry import ToolRegistry
@@ -125,8 +125,7 @@ def _gold_case_args_ok(expected: dict[str, Any], executed: list[dict]) -> bool:
 
 def _clarified(answer: str, keywords: list[str]) -> bool:
     text = folded(answer)
-    if not any(word in text for word in ("necesito", "indica", "faltan", "falta", "dime", "facilita",
-                                          "no puedo calcular", "no se puede", "datos", "proporciona")):
+    if not (asks_for_clarification(answer) or "no puedo calcular" in text or "no se puede" in text):
         return False
     return all(folded(item) in text for item in keywords)
 

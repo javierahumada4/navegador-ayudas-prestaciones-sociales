@@ -96,8 +96,8 @@ def calculator(expression: str) -> float:
     return float(evaluate(ast.parse(expression, mode="eval").body))
 
 
-# Preserve the teaching examples above for existing tests, but expose
-# only domain tools to the IMV/CAPI model.
+# get_weather and calculator stay as the template's examples (tests and the phase-4 example
+# tasks use them); the IMV/CAPI model only sees the three domain tools.
 
 def default_registry() -> ToolRegistry:
     """Register only IMV/CAPI, BDNS and report-writing tools."""

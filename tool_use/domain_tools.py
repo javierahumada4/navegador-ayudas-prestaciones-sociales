@@ -15,7 +15,7 @@ from pydantic import Field
 
 from rlm.imv_engine import evaluate_imv_case
 from tool_use.imv_schema import IMVCase
-from tool_use.registry import ToolRegistry, tool
+from tool_use.registry import tool
 
 BDNS_ENDPOINT = "https://www.infosubvenciones.es/bdnstrans/api/convocatorias/busqueda"
 RULESET_DIR = Path(__file__).resolve().parents[1] / "rlm" / "rulesets"
@@ -161,8 +161,3 @@ def guardar_informe(contenido: str = Field(min_length=80, max_length=20000)) -> 
             "sha256": hashlib.sha256(contenido.encode("utf-8")).hexdigest(),
         }
     raise RuntimeError("Unable to allocate a unique report path")
-
-
-def default_registry() -> ToolRegistry:
-    """Only expose the three tools of the IMV/CAPI domain."""
-    return ToolRegistry().register(calcular_imv, consultar_ayudas, guardar_informe)

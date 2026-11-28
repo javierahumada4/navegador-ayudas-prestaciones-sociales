@@ -18,6 +18,9 @@ from tool_use.tools import default_registry
 from tool_use.tracing import TraceRecorder
 
 SYSTEM_PROMPT = """Eres un asistente de simulación IMV/CAPI y búsqueda de ayudas públicas.
+IMV es el Ingreso Mínimo Vital, la prestación no contributiva de la Seguridad Social
+regulada por la Ley 19/2021. CAPI es el Complemento de Ayuda para la Infancia, un importe
+mensual adicional por cada menor de la unidad de convivencia según su edad.
 Utiliza SOLO las herramientas disponibles en las definiciones JSON Schema.
 Si falta un dato obligatorio, NO llames a calcular_imv: contesta con una pregunta al
 usuario que nombre cada dato que falta. Nunca inventes fechas, residencia, convivencia,
@@ -459,8 +462,8 @@ class ToolLoop:
             if not self.use_tools:
                 return self._finish(parsed.text or raw, [], turn, False)
             # Greedy decoding: a byte-identical completion after a turn whose calls all failed
-            # means the model ignored the error and will repeat it to max_turns; v4 burned up
-            # to 5 turns (~400 s) per case this way.
+            # means the model ignored the error and would repeat it until max_turns
+            # (up to 5 turns, ~400 s per case).
             if raw == last_raw and not any(r.ok for r in records[records_before_turn:]):
                 return self._finish(
                     parsed.text or "No he podido generar una llamada válida con estos datos.",

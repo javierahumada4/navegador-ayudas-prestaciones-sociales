@@ -36,6 +36,22 @@ FAILURE_WORDS = {
 }
 
 
+# A clarification asks the user for something. Substring markers on accent-folded text,
+# plus a question mark and the request forms of "proporcionar" ("proporcioname" asks,
+# "proporcionado" does not).
+CLARIFICATION_MARKERS = (
+    "?", "necesito", "falta", "indica", "facilita", "podrias", "puedes", "dime", "datos",
+)
+CLARIFICATION_VERB = re.compile(r"\bproporcion(?:a|ar|e|es|ame|anos)\b")
+
+
+def asks_for_clarification(text: str) -> bool:
+    normal = folded(text)
+    return any(marker in normal for marker in CLARIFICATION_MARKERS) or bool(
+        CLARIFICATION_VERB.search(normal)
+    )
+
+
 def folded(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text.casefold())
     return "".join(ch for ch in normalized if not unicodedata.combining(ch))
@@ -119,9 +135,13 @@ def explanation_checks(text: str, gold: dict[str, Any]) -> tuple[bool, float]:
 
 def score_workflow(
     case: dict[str, Any], answer: str, tool_calls: list[dict[str, Any]],
-    *, report_root: Path | None = None,
+    *, report_root: Path | None = None, report_status: tuple[bool, str] | None = None,
 ) -> dict[str, Any]:
-    """Score a single complete trace, including confirmations and file integrity."""
+    """Score a single complete trace, including confirmations and file integrity.
+
+    ``report_status`` replaces the on-disk check with an already verified
+    ``(file_exists, text)``; ``tool_use.rescore`` uses it when the files are gone.
+    """
     required = case.get("expected_tools")
     if required is None:
         required = [case["expected_tool"]] if case.get("needs_tool", True) else []
@@ -184,7 +204,9 @@ def score_workflow(
     report_record = next(
         (c for c in tool_calls if c.get("ok") and c["name"] == "guardar_informe"), None
     )
-    file_exists, report_text = _file_status(report_record, report_root)
+    file_exists, report_text = (
+        report_status if report_status is not None else _file_status(report_record, report_root)
+    )
     expects_report = "guardar_informe" in required
 
     gold = expected_engine_result(case)
@@ -213,9 +235,7 @@ def score_workflow(
         )
     if case.get("expected_behavior") == "ask_clarification":
         normal = folded(answer)
-        has_request = any(
-            word in normal for word in ("necesito", "falta", "indica", "facilita", "podrias", "dime", "datos")
-        )
+        has_request = asks_for_clarification(answer)
         mentions_all = all(
             folded(keyword) in normal for keyword in case.get("expected_clarifications", [])
         )
