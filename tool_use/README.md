@@ -147,15 +147,28 @@ uv run --extra train python -m tool_use.compare \
 Si el LoRA se entrenó sobre otro modelo base, ejecutar también la evaluación
 base de esa misma arquitectura para comparar justamente.
 
-## Qué analizar en la memoria de la práctica
+## Resultados (v7, banco de 40 casos)
 
-Interpretar los falsos positivos del antiguo first-call accuracy, comparar
-base frente a GRPO, señalar cinco fallos reales de extracción de argumentos,
-residencia/ingresos, BDNS, nombres IMV/CAPI y redacción de informes. Probar
-los fallos de red. Analizar las diferencias entre llamadas independientes,
-paralelas y encadenadas. Ningún resultado de GPU se ha supuesto ni inventado;
-los JSON v2 deben generarse nuevamente en la DGX.
+Están en [`results/fase2/`](../results/fase2/README.md), con los JSON completos y el
+análisis caso a caso.
 
+| Cerebro | Selección | Argumentos | Varios pasos | Importes | Éxito de principio a fin |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen3-1.7B base, con herramientas | 0,950 | 0,850 | 0,833 | 0,857 | **0,675** |
+| Qwen3-1.7B base, sin herramientas | 0,250 | 0,250 | 0,000 | 0,190 | 0,150 |
+| Qwen3-1.7B + LoRA GRPO, con herramientas | 0,950 | 0,850 | 0,500 | 0,714 | 0,625 |
+| Qwen3-1.7B + LoRA GRPO, sin herramientas | 0,250 | 0,250 | 0,000 | 0,095 | 0,125 |
+
+De los 13 fallos del modelo base, 8 son del modelo:
+- se salta el motor en una denegación;
+- no se recupera de un error de validación;
+- se inventa un umbral legal en un informe;
+- alucina qué significan IMV y CAPI.
+
+Otros 4 son falsos negativos de la métrica: comparación exacta de `tema` y lista cerrada de
+verbos de petición. El caso que queda tiene en la referencia un dato que no está en la
+consulta. El LoRA de la fase 1 acierta la herramienta igual que el modelo base, pero arrastra
+el formato `<answer>` de su entrenamiento y completa menos flujos de varios pasos.
 
 ## Evaluación por herramienta (aislamiento fase 2 → reutilización fase 4)
 
