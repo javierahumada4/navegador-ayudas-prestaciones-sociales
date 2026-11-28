@@ -16,7 +16,7 @@ if [ -f .env ]; then
 fi
 
 : "${NGROK_AUTHTOKEN:?Falta NGROK_AUTHTOKEN en .env (https://dashboard.ngrok.com/get-started/your-authtoken)}"
-export ARCA_RLM_ADAPTER="${ARCA_RLM_ADAPTER:-JES0406/imv-sft-lora}"
+export ARCA_RLM_ADAPTER="${ARCA_RLM_ADAPTER:-JES0406/imv-sft-lora/grpo_final}"
 export ARCA_API_PORT="${ARCA_API_PORT:-8000}"
 # El venv con torch cu128 de la fase 1; el .venv por defecto puede estar mezclado con vLLM.
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$HOME/.venvs/arca-train}"

@@ -1,63 +1,69 @@
-# `api/` — La API de evaluación
+# `api/` — La API
 
-Cada fase termina en un endpoint, y la corrección se hace llamándolos. Por eso los contratos
-de entrada y salida están fijados en `api/schemas.py`: el script de corrección envía los
-cuerpos que se definen ahí y valida las respuestas contra esos modelos. Podéis añadir campos
-opcionales a las respuestas (más metadatos siempre son bienvenidos), pero no renombréis ni
-quitéis los que existen.
+Una FastAPI con un endpoint por fase. Los contratos de entrada y salida están en
+[`schemas.py`](schemas.py), y [`backends.py`](backends.py) carga cada fase la primera vez que
+se llama y la reutiliza en las siguientes.
 
 ```bash
-uv run arca-api            # http://localhost:8000/docs
+uv run arca-api          # http://localhost:8000/docs
 docker compose up api
 ```
 
-| Método y ruta | Fase | Entrada | Salida |
+| Método y ruta | Fase | Estado | Detrás |
 |---|---|---|---|
-| `GET /health` | — | — | Estado de cada fase: `ready`, `pending` o `error`, con detalle |
-| `POST /reasoning` | 1 | `question`, `expected_answer?`, `max_new_tokens?` | `thinking`, `answer`, `raw`, `has_valid_format`, `verifier?`, `tokens_generated`, `model` |
-| `POST /tools` | 2 | `query`, `max_turns?` | `answer`, `tool_calls[]` (nombre, argumentos, resultado, ok, error, latencia), `turns`, `model` |
-| `POST /rag` | 3 | `question`, `top_k?`, `retriever?` (`dense`, `bm25`, `hybrid`) | `answer`, `chunks[]` (id, fuente, puntuación, texto), `citations[]`, `retriever`, `model` |
-| `POST /agent` | 4 | `task`, `max_steps?`, `brain?` (`base`, `rlm`, `thinking`) | `final_answer`, `steps[]` (pensamiento, acción, observación), `n_steps`, `succeeded`, `model`, `tokens_used` |
+| `GET /health` | — | Listo | Estado de cada fase, equipo y dominio |
+| `POST /reasoning` | 1 | Listo | `rlm.inference.ReasoningModel`: Qwen3-1.7B con el LoRA GRPO final |
+| `POST /tools` | 2 | Listo | `tool_use.executor.ToolLoop` con `calcular_imv`, `consultar_ayudas` y `guardar_informe` |
+| `POST /rag` | 3 | Pendiente (`501`) | — |
+| `POST /agent` | 4 | Pendiente (`501`) | — |
 
-Una fase que todavía no está implementada responde `501` con el nombre de la fase y un
-mensaje. Así la API siempre arranca y podéis entregar por partes.
+`/reasoning` recibe `question` y, opcionalmente, `expected_answer` y `max_new_tokens`. Devuelve:
 
-## Cómo se conecta cada fase
+- `thinking` y `answer`, por separado;
+- `has_valid_format`;
+- el veredicto del verificador IMV, si la petición trae `expected_answer`;
+- `tokens_generated`;
+- `truncated`, si la generación llegó al máximo de tokens. El máximo por defecto es 1024, el
+  mismo presupuesto con el que se entrenó.
 
-`api/backends.py` carga cada implementación de forma perezosa y la reutiliza. No hace falta
-tocarlo: basta con implementar los puntos de entrada que espera.
+`/tools` recibe `query` y `max_turns`. Devuelve la respuesta, cada llamada (nombre,
+argumentos, resultado, error y latencia) y el número de turnos.
 
-| Fase | Punto de entrada | Configuración |
+## Configuración
+
+Todo se configura en `.env`. Hay una plantilla en [`.env.example`](../.env.example).
+
+| Variable | Valor | Para qué |
 |---|---|---|
-| 1 | `rlm.inference.ReasoningModel` | `ARCA_RLM_ADAPTER`, `ARCA_RLM_BASE_MODEL`, `ARCA_RLM_VERIFIER` |
-| 2 | `tool_use.executor.ToolLoop` | herramientas registradas en `tool_use.tools.default_registry` |
-| 3 | `rag.generate.RagPipeline` | corpus en `rag/corpus/`, índice en `rag/index/` |
-| 4 | `agent.react_agent.ReActAgent` | `ARCA_THINKING_MODEL` y las de la fase 1 |
+| `ARCA_RLM_ADAPTER` | `JES0406/imv-sft-lora/grpo_final` o una carpeta local | LoRA de `/reasoning`. Si está vacía, la fase 1 queda pendiente |
+| `ARCA_RLM_VERIFIER` | `imv` (por defecto) | Verificador de `/reasoning` |
+| `ARCA_TOOLS_BRAIN` | `base` (por defecto) o `rlm` | Cerebro de `/tools`. `base` es el que mejor resultado da |
+| `ARCA_IMV_REPORTS_DIR` | `reports/imv` (por defecto) | Dónde escribe `guardar_informe` |
+| `ARCA_TOOLS_TRACE_DIR` | vacía | Si se define, guarda una traza completa de cada petición a `/tools` |
+| `ARCA_TEAM`, `ARCA_DOMAIN` | — | Aparecen en `/health` |
+| `HF_TOKEN`, `HF_HOME` | — | Descarga de modelos de Hugging Face |
 
-Rellenad también `ARCA_TEAM` y `ARCA_DOMAIN` en `.env`: salen en `/health` y me ayudan a
-saber a quién estoy corrigiendo.
+## Exponerla para la corrección
 
-## Para la entrega
+Las dos formas usan [ngrok](https://ngrok.com/) y leen `NGROK_AUTHTOKEN` de `.env`. Con
+`NGROK_ARGS=--url=<dominio>.ngrok-free.app` la URL no cambia entre arranques.
 
-La API tiene que levantar con `docker compose up api` en una máquina limpia, con los modelos
-cargándose al arrancar o en la primera petición. Lo normal es entrenar en la DGX, descargar el
-adaptador (pesa poco) y servir la API desde vuestro portátil o una máquina en la nube; dentro
-de la DGX no hay Docker ni puertos públicos. Para la corrección la expondréis con
-[ngrok](https://ngrok.com/) (`ngrok http 8000`) y me pasaréis la URL. Antes de pasármela,
-probad vosotros mismos los cuatro endpoints desde `/docs` y comprobad que `/health` los
-marca como `ready`.
+- **Con Docker:**
 
-Dos formas de exponerla (ambas leen `NGROK_AUTHTOKEN` de `.env`):
+  ```bash
+  docker compose up api ngrok
+  ```
 
-- Con Docker: `docker compose up api ngrok`. La URL pública sale en http://localhost:4040.
-- En la DGX (sin Docker; ngrok solo necesita conexión saliente):
-  `source smoke/dgx_env.sh && bash smoke/serve_ngrok.sh`.
+  La URL pública aparece en http://localhost:4040.
+- **En la DGX,** que no tiene Docker ni puertos públicos, pero ngrok solo necesita conexión
+  saliente:
 
-`ARCA_RLM_ADAPTER` acepta la carpeta local del adaptador GRPO final
-(por ejemplo `runs/phase1-rebuild/weights/grpo_lora`) o un repositorio
-de Hugging Face publicado después del entrenamiento, que se descarga al arrancar.
-Deja la variable vacía mientras no exista un adaptador final verificado.
-La API por defecto no exige runtime NVIDIA; en CPU la inferencia puede ser lenta.
+  ```bash
+  source smoke/dgx_env.sh && bash smoke/serve_ngrok.sh
+  ```
 
-Los tests de `tests/test_api.py` comprueban que la API arranca con todo pendiente y que la
-validación de entrada funciona. Añadid tests con vuestras implementaciones cuando las tengáis.
+Antes de pasar la URL hay que comprobar en `/health` que las fases 1 y 2 aparecen como
+`ready`.
+
+Los tests de [`tests/test_api.py`](../tests/test_api.py) comprueban que la API arranca sin
+modelos y que valida las entradas.

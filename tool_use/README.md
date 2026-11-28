@@ -1,396 +1,313 @@
-# Fase 2 — Herramientas y evaluación integral IMV/CAPI
+# Fase 2 — Herramientas
 
-**Endpoint docente:** POST /tools. **Rama:** feat/fase2-tres-herramientas.
-Motor determinista y ruleset IMV 2026 reutilizados de main, sin tocar la fase 1.
+El modelo de lenguaje no calcula prestaciones ni consulta bases de datos: genera llamadas a
+herramientas. La aplicación las detecta, las valida, las ejecuta y le devuelve el resultado.
+Es el bucle de cinco pasos, escrito a mano y sin frameworks de agentes:
 
-## Tres herramientas reales
+```
+prompt → generación → parseo de <tool_call> → ejecución validada → observación → …
+```
 
-| Nombre | Tipo | Trabajo |
-| --- | --- | --- |
-| calcular_imv(case: IMVCase) | Cálculo | Validar caso y calcular IMV/CAPI con JSON por fecha |
-| consultar_ayudas(tema, max_resultados) | HTTP | Consultar convocatorias reales en la API BDNS |
-| guardar_informe(contenido) | Efecto persistente | Escribir en TXT el texto íntegro compuesto por el LLM |
+Endpoint: `POST /tools`. Las salidas completas de la evaluación están en
+[`results/fase2/`](../results/fase2/).
 
-El modelo **redacta libremente** el informe. La herramienta guardar_informe solo
-escribe el fichero con esos bytes; no se utiliza ninguna plantilla de texto.
+## Las tres herramientas
 
-El bucle manual (executor.py) soporta llamadas paralelas o encadenadas y
-reinyecta observaciones de ejecución o errores de Pydantic. Si el usuario ha
-solicitado explícitamente un informe:
+Están en [`domain_tools.py`](domain_tools.py) y se registran en
+`tools.default_registry()`.
 
-1. El modelo debe calcular el IMV/CAPI y recibir la observación.
-2. Se le recuerda que aún debe llamar a guardar_informe cuando intenta terminar
-   antes. Si genera la redacción sin el marcador de tool-call, el orquestador
-   puede enviar **ese texto exacto del modelo** a la herramienta, sin plantilla.
-3. La herramienta solo se ejecuta si el texto cumple una comprobación mínima
-   de importes. Se valida el permiso a partir de la solicitud expresa; **no hay
-   interfaz de confirmación interactiva** en esta fase.
-4. La respuesta confirma el guardado **solo tras un resultado ok de la tool**,
-   usando la ruta real devuelta. Si no se pudo escribir, hay un error explícito:
-   nunca se comunica un éxito inventado.
-5. Los archivos viven en reports/imv/ o ARCA_IMV_REPORTS_DIR, con nombres
-   aleatorios y permisos restrictivos. No se reciben rutas elegidas por el LLM
-   ni se sobrescriben archivos. reports/imv/ está excluido de Git.
+| Herramienta | Tipo | Qué hace |
+|---|---|---|
+| `calcular_imv(case)` | Cálculo | Valida el caso con Pydantic y ejecuta el motor de la fase 1 con el ruleset que corresponde a la fecha de solicitud. Devuelve IMV, CAPI, total, renta garantizada, miembros de la unidad y requisitos incumplidos |
+| `consultar_ayudas(tema, max_resultados)` | API HTTP externa | Busca convocatorias reales en la API pública de la [BDNS](https://www.infosubvenciones.es/bdnstrans/doc/swagger). Devuelve código, título, fecha, administración, organismo y enlace de cada una, con un aviso: encontrar una convocatoria no implica que esté abierta ni que el usuario cumpla los requisitos |
+| `guardar_informe(contenido)` | Acción | Escribe en un `.txt` el informe que ha redactado el modelo. Devuelve ruta, bytes y SHA-256 |
 
-**Garantías y límites:** el motor simula casos normalizados (no resolución
-administrativa). La comprobación previa de importes en el informe es numérica
-y mínima; la auditoría de la precisión del lenguaje se realiza separadamente.
-BDNS no engloba todas las prestaciones, no acredita elegibilidad ni plazos
-abiertos. Endpoint: https://www.infosubvenciones.es/bdnstrans/doc/swagger.
+**Por qué estas tres:**
 
-Los rulesets se seleccionan por fecha desde rlm/rulesets/imv_*.json. Solo existe
-el de 2026 en main; fechas sin reglas unívocas producen un error.
+- **El cálculo no puede quedar en manos del modelo.** En la fase 1, ni el mejor modelo pasa
+  de 0,49.
+- **La BDNS cubre lo que el motor no sabe:** qué otras ayudas públicas hay para el caso
+  (alquiler, discapacidad, familia numerosa…).
+- **El informe es el entregable que se lleva el usuario.**
 
-## Banco de 40 casos (bench/cases.jsonl)
+**El contrato de `calcular_imv`** está en [`imv_schema.py`](imv_schema.py):
 
-| Categoría | Casos | Objetivo |
-| --- | ---: | --- |
-| structured_calculation | 4 | Conserva casos directos de JSON de la fase inicial |
-| natural_calculation | 6 | Extraer fechas, miembros, relaciones e importes desde prosa |
-| negative_eligibility | 6 | Ingresos, patrimonio, activos, residencia, empresa y edad |
-| missing_facts | 5 | Pedir datos faltantes, no inventar y no guardar un fichero |
-| bdns_natural | 8 | Filtrado HTTP en lenguaje natural, número de resultados |
-| multi_step | 6 | IMV → informe, IMV + BDNS, IMV + BDNS → informe, 2 búsquedas |
-| no_tool | 5 | Responder preguntas conceptuales sin invocar herramientas |
+- no admite campos desconocidos y los booleanos son estrictos;
+- los porcentajes, grados y cantidades tienen límites;
+- comprueba la coherencia del caso: ids únicos, que el solicitante esté en el domicilio y
+  fechas no posteriores a la solicitud.
 
-Los casos multi_step incluyen expected_tools; las búsquedas repetidas exigen
-dos llamadas correctas. Para los cálculos existe expected_case (el JSON
-normalizado de referencia) aunque la query sea texto natural. No es legítimo
-tratar un caso con información desconocida como si sus valores fueran cero.
+Si el modelo se equivoca, el error de validación vuelve como observación y puede corregirse.
 
-En el anterior benchmark de 30 casos casi todas las peticiones de cálculo
-copiaban un JSON entero. Por tanto, **los porcentajes de los anteriores
-phase2_base.json / phase2_grpo.json no son comparables** con los nuevos.
+**Garantías de `guardar_informe`:**
 
-## Evaluación: primera llamada y flujo completo
+- el modelo no elige la ruta: el nombre del fichero es aleatorio, dentro de `reports/imv/` o
+  de `ARCA_IMV_REPORTS_DIR`;
+- nunca sobrescribe un fichero y lo crea con permisos 600;
+- la carpeta está excluida de Git, porque los informes contienen datos personales.
 
-El evaluador del docente (evaluate.py) se conserva sin cambios en sus métricas
-de selección de la primera llamada y exactitud de sus argumentos.
+## El bucle
 
-compare.py añade mediante metrics.py, por caso y agregado:
+[`executor.py`](executor.py) implementa `ToolLoop`. Los esquemas de las herramientas entran
+por la plantilla de chat de Qwen3 (`tools=`), y el parser ([`parser.py`](parser.py))
+reconoce varias llamadas en una misma generación.
 
-- tool_sequence_success y multi_step_success: éxito de **todas** las herramientas
-  exigidas (también si se repite la misma herramienta).
-- all_tool_arguments_correct: compara argumentos de todas las acciones relevantes
-  con el gold y no solo la primera llamada. La comparación es estricta y puede
-  penalizar representaciones semánticamente equivalentes.
-- amount_fidelity: exige los tres importes IMV/CAPI/total en la respuesta o
-  en el informe escrito, cotejados con una ejecución independiente del motor.
-  Soporta decimales con punto o coma y separadores de miles.
-- report_created_and_verified: comprueba que un TXT existe de verdad dentro
-  del directorio aislado, y que UTF-8, contenido, bytes y SHA-256 coinciden
-  exactamente con el registro de guardar_informe.
-- report_amount_fidelity: importes dentro del archivo efectivamente guardado.
-- failed_reason_coverage y explanation_heuristic_accuracy: cobertura de los
-  motivos de denegación, presencia de IMV/CAPI y aviso de simulación. Son
-  **heurísticas léxicas**, no una certificación jurídica de las explicaciones.
-- conceptual_fact_accuracy: presencia de expresiones correctas para las siglas
-  IMV y CAPI cuando existe etiqueta gold; tampoco detecta negaciones por sí sola.
-- clarification_accuracy: no ejecutar tools y solicitar la información que
-  falta en solicitudes incompletas.
-- unverified_save_claims: número de respuestas que afirman haber guardado algo
-  sin constancia de ejecución satisfactoria.
-- end_to_end_success: conjunto de llamadas correctas, argumentos esperados,
-  verificación del archivo cuando procede, importes y comprobaciones de texto.
+Varias llamadas en un mismo turno se ejecutan como independientes, en paralelo. Las que
+dependen de un resultado anterior se encadenan en turnos sucesivos, como calcular y después
+guardar el informe.
 
-Cada métrica agrega su propio denominador (_n) y usa null cuando no aplica.
-En particular, guardar_informe no se exige en casos sin solicitud de fichero.
-El script escribe una fila por caso con la traza completa y el gold usado.
+**El prompt de sistema:**
 
-**Importante:** el directorio temporal de informes se elimina al finalizar
-compare.py. Las comprobaciones de existencia se hacen durante la ejecución,
-antes de borrarlo. Para auditar un TXT persistente, ejecutar POST /tools con
-ARCA_IMV_REPORTS_DIR apuntando a un directorio privado.
+- define IMV y CAPI;
+- prohíbe inventar datos: si falta uno obligatorio, el modelo debe preguntar;
+- exige dar siempre los tres importes del motor y aclarar que es una simulación;
+- incluye un ejemplo completo de llamada a `calcular_imv`.
 
-## Comandos en la DGX
+**El parser tolera dos errores habituales de Qwen3-1.7B:** saltos de línea dentro de una
+cadena (frecuentes en informes largos) y una llave de cierre de más al final de una llamada
+anidada. Cualquier otro texto sobrante es un error, y el mensaje indica la posición.
 
-Desde el directorio raíz del proyecto:
+**Las comprobaciones del orquestador no dependen del modelo:**
+
+- **Solo se guarda un informe si el usuario lo pidió expresamente,** el texto contiene los
+  importes de IMV, CAPI y total que dio el motor y, si se pidió una búsqueda, la BDNS ya ha
+  respondido.
+- **Si el modelo redacta el informe pero olvida la etiqueta `<tool_call>`,** el orquestador
+  envía ese mismo texto a `guardar_informe`, tras las mismas comprobaciones y sin plantillas.
+- **«Guardado» solo se dice con la ruta real que devolvió la herramienta.** Si el modelo
+  afirma haber guardado algo que no existe, su respuesta se sustituye por una aclaración.
+- **Si el modelo repite exactamente una salida que ya falló,** el bucle termina en lugar de
+  agotar los turnos.
+
+**Cerebro.** `ARCA_TOOLS_BRAIN=base` usa Qwen3-1.7B, que es el valor por defecto.
+`ARCA_TOOLS_BRAIN=rlm` usa el LoRA de la fase 1 fusionado con el modelo, indicado en
+`ARCA_TOOLS_ADAPTER` o `ARCA_RLM_ADAPTER`.
+
+## El banco de pruebas
+
+[`bench/cases.jsonl`](bench/cases.jsonl) tiene 40 casos. Cada uno indica la herramienta y los
+argumentos esperados; en los casos de varios pasos, la secuencia completa.
+
+| Categoría | Casos | Qué se comprueba |
+|---|---:|---|
+| Cálculo estructurado | 4 | Caso ya en JSON |
+| Cálculo en lenguaje natural | 6 | Extraer fechas, miembros, relaciones e importes de un texto |
+| Denegaciones | 6 | Ingresos, patrimonio, activos, residencia, sociedad y edad |
+| Faltan datos | 5 | Preguntar por lo que falta, sin llamar a nada |
+| Búsqueda BDNS | 8 | Tema y número de resultados a partir de la petición |
+| Varios pasos | 6 | Cálculo → informe, cálculo + BDNS, cálculo + BDNS → informe, dos búsquedas |
+| Sin herramienta | 5 | Preguntas conceptuales |
+
+Además hay un banco por herramienta: [`imv.jsonl`](bench/imv.jsonl),
+[`bdns.jsonl`](bench/bdns.jsonl), [`report.jsonl`](bench/report.jsonl) e
+[`integration.jsonl`](bench/integration.jsonl). Los usa [`stage_eval.py`](stage_eval.py)
+para evaluar cada herramienta por separado, con el mismo contexto que tendrá en la fase 4.
+
+En la etapa de informe, las observaciones de la BDNS son ficticias y van marcadas como tales:
+con resultados, vacías o con error de red. Así se mide la redacción sin depender de la red.
+
+## Las métricas
+
+[`evaluate.py`](evaluate.py) mide la primera llamada:
+
+- **Selección:** la herramienta correcta, o ninguna cuando no hace falta.
+- **Argumentos:** coinciden con los esperados tras normalizarlos. Para los campos de texto
+  libre de búsqueda (`tema`), lo que cuenta es el conjunto de palabras con contenido: da
+  igual mayúsculas, acentos, orden, preposiciones o un «subvenciones» redundante.
+  «rehabilitación de vivienda» equivale a «rehabilitación vivienda», pero no a «vivienda».
+
+[`metrics.py`](metrics.py) puntúa el flujo completo:
+
+| Métrica | Qué comprueba |
+|---|---|
+| Secuencia | Se ejecutaron con éxito todas las herramientas necesarias, en orden válido, y ninguna sobrante |
+| Argumentos de todas las llamadas | Todas las llamadas llevan los argumentos esperados |
+| Importes | Los tres importes de la respuesta o del informe coinciden con un cálculo independiente del motor |
+| Informe verificado | El fichero existe y su tamaño, SHA-256 y texto coinciden con la llamada |
+| Explicación | Heurística, no revisión jurídica: nombra IMV y CAPI, aclara que es una simulación, cubre cada requisito incumplido y no aprueba a quien no tiene derecho |
+| Aclaración | No llama a nada, pide datos (con una pregunta o un verbo de petición) y nombra los que faltan |
+| Hechos conceptuales | La definición contiene el nombre correcto de la prestación |
+| Afirmaciones de guardado sin verificar | Cuántas veces dice haber guardado algo que no existe |
+| **Éxito de principio a fin** | Todas las anteriores que apliquen al caso |
+
+## Resultados
+
+[`compare.py`](compare.py) ejecuta el banco con y sin herramientas: el mismo modelo, que sin
+ellas solo puede responder con texto.
+
+**Configuración:** decodificación greedy, hasta 5 turnos y 1280 tokens por generación. La
+BDNS se consulta en vivo.
+
+**Ficheros:**
+[`phase2_base.json`](../results/fase2/phase2_base.json) y
+[`phase2_grpo.json`](../results/fase2/phase2_grpo.json) guardan, para cada caso, la consulta,
+las llamadas con sus argumentos, la observación real, la respuesta y la puntuación. Las
+trazas por turno se quedaron en la máquina de evaluación.
+
+| Métrica (casos) | Base con herr. | Base sin herr. | GRPO con herr. | GRPO sin herr. |
+|---|---:|---:|---:|---:|
+| Selección de herramienta (40) | **0,950** | 0,250 | **0,950** | 0,250 |
+| Argumentos de la primera llamada (40) | **0,900** | 0,250 | **0,900** | 0,250 |
+| Secuencia correcta (40) | **0,925** | 0,250 | 0,875 | 0,250 |
+| Argumentos de todas las llamadas (30) | **0,867** | 0,000 | 0,800 | 0,000 |
+| Varios pasos (6) | **0,833** | 0,000 | 0,500 | 0,000 |
+| Importes exactos (21) | **0,857** | 0,190 | 0,714 | 0,095 |
+| Informe verificado en disco (4) | **0,750** | 0,000 | 0,500 | 0,000 |
+| Explicación (21) | **0,762** | 0,286 | 0,714 | 0,286 |
+| Aclaración cuando faltan datos (5) | **0,800** | 0,600 | 0,600 | 0,400 |
+| Hechos conceptuales (2) | 0,000 | 0,000 | 0,000 | 0,000 |
+| **Éxito de principio a fin (40)** | **0,775** | 0,150 | 0,700 | 0,125 |
+| Tiempo medio por caso | 9,1 s | 6,0 s | 7,0 s | 5,0 s |
+
+**Por categoría** (éxito de principio a fin, en número de casos):
+
+| Categoría | Casos | Base con | Base sin | GRPO con | GRPO sin |
+|---|---:|---:|---:|---:|---:|
+| Cálculo estructurado | 4 | 4 | 0 | 4 | 0 |
+| Cálculo en lenguaje natural | 6 | 4 | 0 | 3 | 0 |
+| Denegaciones | 6 | 4 | 0 | 4 | 0 |
+| Faltan datos | 5 | 4 | 3 | 3 | 2 |
+| Búsqueda BDNS | 8 | 8 | 0 | 8 | 0 |
+| Varios pasos | 6 | 4 | 0 | 3 | 0 |
+| Sin herramienta | 5 | 3 | 3 | 3 | 3 |
+
+**Lo que dicen los números:**
+
+- **Las herramientas multiplican por cinco el éxito** (de 0,150 a 0,775 con el modelo base).
+  Sin ellas no se puede completar ningún cálculo, búsqueda ni informe. El 0,25 de selección
+  sin herramientas son los 10 casos que no las necesitan.
+- **Sin el motor, el modelo inventa cuantías.** Solo acierta los tres importes en 4 de 21
+  cálculos, y los cuatro son denegaciones donde basta con decir 0,00 €.
+- **El modelo casi siempre elige bien la herramienta (38 de 40).** Los errores están en lo que
+  viene después: completar el caso, recuperarse de un error y redactar.
+- **Nunca afirma haber guardado un informe que no existe,** según el detector de la métrica.
+
+## Revisión de las métricas
+
+Al revisar los fallos caso a caso encontramos tres problemas del evaluador, no del modelo:
+
+1. **Los argumentos de búsqueda se comparaban como cadenas exactas.** Pedir «rehabilitación
+   de vivienda» en lugar de «rehabilitación vivienda» contaba como error, aunque la BDNS
+   devolvía las mismas convocatorias. Ahora se compara el conjunto de palabras con contenido.
+2. **La aclaración solo se reconocía con una lista cerrada de verbos.** «¿Puedes proporcionar
+   el importe de la pensión y los activos?» o «¿Cuál es la edad exacta de los menores?» no
+   contaban como pregunta. Ahora también valen el signo de interrogación, «puedes» y las
+   formas de petición de «proporcionar». «Proporcionado» no cuenta: en un caso real, el
+   modelo decía «no has proporcionado información» y no preguntaba nada.
+3. **La referencia del caso P2-008 tenía un dato que la consulta no da**
+   (`independent_from_parents_since: 2010-01-01`). Lo hemos quitado de `cases.jsonl` y de
+   `imv.jsonl`.
+
+[`rescore.py`](rescore.py) recalcula las métricas sobre las salidas guardadas, sin volver a
+ejecutar el modelo. Para comprobar que es fiable, lo ejecutamos primero con las métricas
+anteriores: reproduce exactamente las cuatro tablas originales. Con las métricas nuevas
+cambian estos casos:
+
+| Métrica | Base con herr. | GRPO con herr. | Casos que cambian |
+|---|---|---|---|
+| Argumentos de la primera llamada | 0,850 → 0,900 | 0,850 → 0,900 | P2-025, P2-027 |
+| Argumentos de todas las llamadas | 0,800 → 0,867 | 0,733 → 0,800 | P2-025, P2-027 |
+| Aclaración | 0,400 → 0,800 | 0,400 → 0,600 | Base: P2-019, P2-021. GRPO: P2-021 |
+| **Éxito de principio a fin** | **0,675 → 0,775** | **0,625 → 0,700** | |
+
+Sin herramientas no cambia nada. P2-008 sigue fallando con la referencia corregida, porque el
+modelo se inventa la fecha de independencia. Comparativa completa en
+[`phase2_rescored.json`](../results/fase2/phase2_rescored.json).
+
+## Los fallos del modelo base
+
+Con las métricas corregidas quedan 9 fallos, todos atribuibles al modelo:
+
+| Caso | Categoría | Qué hace |
+|---|---|---|
+| P2-005 | Lenguaje natural | Pone a la única persona del caso dos veces en `persons`. La validación lo rechaza (`duplicate person ids`), pero el modelo no corrige la llamada: le pide al usuario que corrija el id. La validación funciona; falla la recuperación |
+| P2-008 | Lenguaje natural | Importes correctos, pero se inventa una fecha de independencia que el usuario no dio |
+| P2-014 | Denegación | Ve `legal_residence_in_spain: false` y deniega por su cuenta, **sin llamar al motor**. Acierta la conclusión, pero no da importes y se salta el oráculo |
+| P2-015 | Denegación | Llama al motor y da los importes, pero explica la denegación con el código interno `ACTIVE_COMPANY_DIRECTOR` en lugar de decir que administra una sociedad |
+| P2-018 | Faltan datos | No calcula, bien; pero en vez de preguntar por ingresos y convivencia, que es lo que faltaba, lista todos los campos del esquema («ID de la solicitante», «custodia exclusiva»…) |
+| P2-031 | Varios pasos | Recibe un caso JSON completo y la orden de guardar un informe, y no emite ninguna llamada. El orquestador no guarda nada y lo dice |
+| P2-032 | Varios pasos | Calcula y guarda el informe con los importes exactos, pero **se inventa un umbral legal**: «superior al límite de 20,000 € requerido para el IMV». Tampoco avisa de que es una simulación |
+| P2-036 | Sin herramienta | Define el IMV como «Ingreso Mensual de Vida», de un inexistente programa para mayores de 65 años |
+| P2-037 | Sin herramienta | Define el CAPI como «Cálculo de Apoyos para la Vida y la Independencia» |
+
+**Lo que tienen en común:**
+
+- **Si no hay herramienta, alucina** (P2-036, P2-037, P2-032).
+- **A veces se salta la herramienta cuando cree saber la respuesta** (P2-014, P2-031).
+- **Ante un error de validación pide ayuda en lugar de corregirse** (P2-005).
+
+P2-036 y P2-037 son el motivo de que el prompt de sistema defina ahora IMV y CAPI. Esa línea
+se añadió después de la evaluación publicada: los números de esta página son anteriores y
+falta repetir `compare.py` para medir su efecto.
+
+## Base frente al LoRA de la fase 1
+
+El LoRA de GRPO acierta la herramienta igual que el modelo base, pero completa menos flujos:
+varios pasos de 0,83 a 0,50 e importes de 0,86 a 0,71. Falla P2-009, P2-013, P2-017, P2-033 y
+P2-034, que el modelo base resuelve. En todos se reconoce el entrenamiento de la fase 1:
+
+- **Responde en formato de la fase 1.** En P2-033 la respuesta final es
+  `{"imv": 865.07, "capi": 57.5, "total": 922.57}`, y se salta la búsqueda en la BDNS que se
+  le pedía.
+- **Da un solo número.** En P2-009 da solo el IMV (316,93 €), sin los importes de CAPI y
+  total.
+- **Repite la instrucción en lugar de cumplirla.** En P2-017 contesta «Pregunta al usuario
+  por la fecha de obtención de residencia y el patrimonio.».
+- **No espera a la BDNS.** En P2-034 intenta guardar el informe dos veces sin haber buscado.
+  El orquestador lo rechaza las dos veces y no se guarda nada.
+
+GRPO optimizó cálculos sueltos con respuesta en `<answer>`, sin herramientas, y esa
+especialización estorba en un bucle de herramientas. Por eso `/tools` usa el modelo base.
+
+## Limitaciones
+
+- **Muestras pequeñas:** 4 informes, 5 aclaraciones, 6 casos de varios pasos y 2 preguntas
+  conceptuales. Un caso mueve esas métricas entre 0,17 y 0,25.
+- **La explicación se mide con heurísticas,** no con revisión jurídica. P2-032 muestra que un
+  informe puede tener los importes bien y afirmar algo falso.
+- **La BDNS es un servicio en vivo.** Repetir la evaluación puede dar otras convocatorias y,
+  si la red falla, otro resultado.
+- **Una sola ejecución con decodificación greedy,** sin intervalos de confianza.
+- **Detección de guardados falsos incompleta.** La expresión regular busca «se ha generado …
+  informe», pero no el orden «informe … se ha generado». En P2-013, el LoRA dice «El informe
+  se ha generado» sin haberlo guardado, y no lo detecta ni el orquestador ni la métrica.
+
+## Cómo ejecutarlo
+
+Desde la raíz del repositorio. Las evaluaciones necesitan GPU y `uv sync --extra train`.
 
 ```bash
-git fetch origin
-git switch feat/fase2-tres-herramientas
-git pull --ff-only
-source smoke/dgx_env.sh
-uv sync --extra train
-uv run arca-check-gpu
-uv run pytest -q tests/test_phase2_imv_tools.py tests/test_phase2_workflows.py tests/test_tool_registry.py tests/test_tool_parser.py
+# Con y sin herramientas, sobre el banco de 40 casos
+uv run --extra train python -m tool_use.compare --brain base --out reports/phase2_base.json
+uv run --extra train python -m tool_use.compare --brain rlm \
+    --adapter JES0406/imv-sft-lora/grpo_final --out reports/phase2_grpo.json
+
+# Cada herramienta por separado (--stage imv | bdns | report | integration | all)
+uv run --extra train python -m tool_use.stage_eval --stage all --out reports/phase2_stages.json
+
+# Recalcular las métricas de unas salidas ya guardadas (sin GPU)
+uv run python -m tool_use.rescore results/fase2/phase2_base.json \
+    results/fase2/phase2_grpo.json --out results/fase2/phase2_rescored.json
+
+# Tests sin GPU ni red
+uv run pytest tests/test_phase2_*.py tests/test_tool_*.py
 ```
 
-Smoke rápido (dos casos, sin GPU en los tests pero con inferencia en la comparación):
+**Trazas completas.** Cada evaluación guarda en `reports/phase2_artifacts/` un JSONL por caso
+con el prompt, la salida en bruto, el parseo, las llamadas, las observaciones y la respuesta.
+Cada evento se escribe en disco al momento. Para registrar también las peticiones reales a
+`/tools`, se define `ARCA_TOOLS_TRACE_DIR`.
 
-```bash
-uv run --extra train python -m tool_use.compare --limit 2 \
-  --model Qwen/Qwen3-1.7B --brain base --out reports/phase2_smoke.json
-```
+Ninguna de las dos carpetas se sube a Git: contienen los datos personales de los casos.
 
-Evaluación completa del base, 40 casos **con** y **sin** herramientas:
+## Ficheros
 
-```bash
-uv run --extra train python -m tool_use.compare \
-  --model Qwen/Qwen3-1.7B --brain base \
-  --bench tool_use/bench/cases.jsonl --max-turns 5 \
-  --out reports/phase2_base_v2.json
-```
-
-Evaluación del mismo modelo equipado con LoRA de la fase 1:
-
-```bash
-export ARCA_RLM_ADAPTER=/ruta/al/adaptador/grpo
-export ARCA_TOOLS_MODEL_ID=$(uv run python -c \
-  'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json").read_text())["base_model_name_or_path"])')
-uv run --extra train python -m tool_use.compare \
-  --model "$ARCA_TOOLS_MODEL_ID" --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
-  --bench tool_use/bench/cases.jsonl --max-turns 5 \
-  --out reports/phase2_grpo_v2.json
-```
-
-Si el LoRA se entrenó sobre otro modelo base, ejecutar también la evaluación
-base de esa misma arquitectura para comparar justamente.
-
-## Resultados (v7, banco de 40 casos)
-
-Están en [`results/fase2/`](../results/fase2/README.md), con los JSON completos y el
-análisis caso a caso.
-
-| Cerebro | Selección | Argumentos | Varios pasos | Importes | Éxito de principio a fin |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Qwen3-1.7B base, con herramientas | 0,950 | 0,850 | 0,833 | 0,857 | **0,675** |
-| Qwen3-1.7B base, sin herramientas | 0,250 | 0,250 | 0,000 | 0,190 | 0,150 |
-| Qwen3-1.7B + LoRA GRPO, con herramientas | 0,950 | 0,850 | 0,500 | 0,714 | 0,625 |
-| Qwen3-1.7B + LoRA GRPO, sin herramientas | 0,250 | 0,250 | 0,000 | 0,095 | 0,125 |
-
-De los 13 fallos del modelo base, 8 son del modelo:
-- se salta el motor en una denegación;
-- no se recupera de un error de validación;
-- se inventa un umbral legal en un informe;
-- alucina qué significan IMV y CAPI.
-
-Otros 4 son falsos negativos de la métrica: comparación exacta de `tema` y lista cerrada de
-verbos de petición. El caso que queda tiene en la referencia un dato que no está en la
-consulta. El LoRA de la fase 1 acierta la herramienta igual que el modelo base, pero arrastra
-el formato `<answer>` de su entrenamiento y completa menos flujos de varios pasos.
-
-## Evaluación por herramienta (aislamiento fase 2 → reutilización fase 4)
-
-Para separar los errores de **extracción de datos**, **búsqueda HTTP** y
-**redacción/persistencia**, el script `tool_use/stage_eval.py` evalúa **cuatro
-contextos diferentes de conversación**, cada uno con su propio fichero JSONL.
-No sustituye al evaluador docente, ni modifica `POST /tools` o `rlm/`.
-
-| Etapa | Dataset | Casos | Únicas herramientas visibles |
-| --- | --- | ---: | --- |
-| IMV | `bench/imv.jsonl` | 21 | `calcular_imv` |
-| BDNS | `bench/bdns.jsonl` | 10 | `consultar_ayudas` |
-| Informe | `bench/report.jsonl` | 6 | `guardar_informe` |
-| Integración | `bench/integration.jsonl` | 8 | Las tres |
-
-**IMV:** consultas normalizadas y en español natural, denegaciones y
-consultas incompletas. La herramienta recibe un único argumento `case`
-con el esquema Pydantic, sin el contenedor extra `IMVCase`. El evaluador
-compara el caso contra la referencia **después de aplicar los valores
-por defecto del esquema a ambos**, distingue corrección de argumentos,
-resultado del motor, fidelidad de la explicación y solicitud de aclaración.
-Una falta de datos no autoriza a inventarlos; un error Pydantic se devuelve
-como observación que el modelo puede corregir. Los errores se registran en `had_schema_or_parse_error`, y la posterior
-recuperación se mide separadamente en `recovered_after_error`.
-
-**BDNS:** solo se expone `consultar_ayudas`, la herramienta ejecuta
-**HTTP de verdad** y se puntúan por separado selección, argumentos,
-éxito del HTTP y evidencia textual de las fuentes. Se comprueba si
-la respuesta del modelo menciona resultados auténticamente devueltos,
-en vez de conceder una prestación o inventar subvenciones. El resultado
-depende de la disponibilidad de la API y su catálogo en el momento de
-evaluar. Los tests de CPU usan una red simulada, **no** afirman conectar
-realmente con la BDNS.
-
-**Informe:** el usuario pide un archivo, y el modelo recibe dos
-observaciones PREVIAS en la estructura de chat usada por el bucle Qwen:
-
-```text
-role=user: "Redacta y guarda un informe TXT..."
-role=assistant: <tool_call>{"name":"calcular_imv",...}</tool_call>
-role=tool (calcular_imv): {"ok":true,"result":{...cantidades...}}
-role=assistant: <tool_call>{"name":"consultar_ayudas",...}</tool_call>
-role=tool (consultar_ayudas): {"ok":true,"result":{...convocatorias...}}
-role=assistant: ... SOLO puede llamar a guardar_informe ...
-```
-
-La observación IMV procede de ejecutar el motor real contra el caso de referencia,
-**no** de introducir importes calculados por el modelo. La observación BDNS
-usa, por defecto, una **fixture SINTÉTICA rotulada** (convocatoria
-ficticia con código SIMULADA-001, respuesta vacía o error de red).
-Esto permite comprobar que el modelo cita exclusivamente observaciones
-recibidas, incluso ante fallos de BDNS, sin confundir datos ficticios con
-convocatorias oficiales. Si se quiere comprobar el comportamiento con
-la API real, pasar `--report-api live`. En ambos modos, el texto del
-informe lo redacta el modelo: `guardar_informe` solamente lo escribe.
-Se valida archivo, SHA-256, texto exacto, importes y referencias BDNS.
-Las comprobaciones del texto son **heurísticas**, no auditoría jurídica.
-
-**Integración:** se conservan los casos de dos búsquedas independientes,
-cálculo y BDNS en un mismo turno, redacción en el turno siguiente y
-solicitudes sin datos suficientes pero con búsqueda externa posible.
-Se exige que el guardado espere a las observaciones requeridas.
-Se conservan asimismo los 40 casos del evaluador global en
-`bench/cases.jsonl` para la comparación con/sin herramientas del docente.
-
-### Ejecutar en DGX
-
-Desde la raíz del repositorio y en la rama `feat/fase2-tres-herramientas`:
-
-```bash
-source smoke/dgx_env.sh
-uv sync --extra train
-uv run pytest -q tests/test_phase2_imv_tools.py \
-  tests/test_phase2_workflows.py tests/test_phase2_stages.py \
-  tests/test_phase2_tracing.py tests/test_tool_registry.py tests/test_tool_parser.py
-
-# Prueba rápida de la etapa IMV (2 ejemplos, inferencia real)
-uv run --extra train python -m tool_use.stage_eval \
-  --stage imv --limit 2 --out reports/phase2_imv_smoke.json
-
-# Cada etapa de forma independiente, modelo base
-uv run --extra train python -m tool_use.stage_eval \
-  --stage imv --brain base --out reports/phase2_imv_base.json
-uv run --extra train python -m tool_use.stage_eval \
-  --stage bdns --brain base --out reports/phase2_bdns_base.json
-uv run --extra train python -m tool_use.stage_eval \
-  --stage report --brain base --report-api fixture \
-  --out reports/phase2_report_base.json
-uv run --extra train python -m tool_use.stage_eval \
-  --stage integration --brain base --out reports/phase2_integration_base.json
-```
-
-Alternativa: ejecutar las cuatro etapas en una sola invocación, reutilizando
-los pesos cargados del modelo dentro del proceso:
-
-```bash
-uv run --extra train python -m tool_use.stage_eval \
-  --stage all --brain base --model Qwen/Qwen3-1.7B \
-  --out reports/phase2_stages_base.json
-```
-
-Para el adaptador LoRA de fase 1, el base seleccionado debe coincidir
-exactamente con el identificador de `adapter_config.json`:
-
-```bash
-export ARCA_RLM_ADAPTER="/ruta/real/a/grpo_lora"
-export ARCA_TOOLS_MODEL_ID="$(uv run python -c \
-  'import json,os,pathlib; p=pathlib.Path(os.environ["ARCA_RLM_ADAPTER"])/"adapter_config.json"; print(json.loads(p.read_text())["base_model_name_or_path"])')"
-uv run --extra train python -m tool_use.stage_eval \
-  --stage all --brain rlm --adapter "$ARCA_RLM_ADAPTER" \
-  --model "$ARCA_TOOLS_MODEL_ID" \
-  --out reports/phase2_stages_grpo.json
-```
-
-**Limitaciones:** los resultados de BDNS en vivo pueden variar con la red;
-las fixtures del informe son solo de evaluación. Los JSON de salida
-contienen la traza, las métricas por etapa y sus denominadores;
-los informes se verifican y conservan en el directorio de artefactos. Para comparar el base frente al GRPO científicamente,
-usar el mismo modelo subyacente en ambos experimentos.
-
-
-## Trazas completas y salidas persistentes (automáticas en evaluación)
-
-Los tres ejecutores de evaluación (`stage_eval.py`, `compare.py` y
-`evaluate.py`) guardan por defecto, **sin flags adicionales**, todos los
-turnos y el contenido íntegro generado por el modelo. No se pierden las
-trazas anteriores si una ejecución se interrumpe: cada evento se añade
-inmediatamente a un fichero JSONL independiente por caso.
-
-Si la salida principal es `reports/phase2_stages_base.json`, los artefactos
-se crean en un directorio único:
-
-```text
-reports/
-  phase2_stages_base.json                         # métricas, respuestas, enlace a trazas
-  phase2_artifacts/
-    phase2_stages_base/
-      20261117T190000Z-xxxxxxxx/                 # identificador de ejecución
-        traces/
-          imv-001-P2-001.jsonl                    # TODOS los turnos de ese caso
-          bdns-001-P2-...jsonl
-          report-001-REPORT-01.jsonl
-          integration-001-P2-...jsonl
-        reports/
-          informe-imv-xxxxxxxxxxxxxxxxxxxxxxxx.txt # se CONSERVA el texto escrito
-```
-
-Cada traza JSONL registra en orden:
-
-- `run_start`: solicitud, modelo, esquema y herramientas visibles,
-  y cualquier observación precargada (en la etapa de informe).
-- `model_input`: **todos los mensajes íntegros que ve el modelo**, con
-  roles y contenido (system/user/assistant/tool), antes de generar.
-- `model_output`: respuesta literal devuelta a la aplicación, **prompt
-  renderizado con la plantilla real de Qwen**, salida decodificada sin
-  descartar tokens especiales, ids de tokens generados y parámetros.
-  En tests con generadores simulados, solo se registran los metadatos
-  que realmente proporciona la simulación.
-- `parsed_output`: texto, bloque thinking si existe y llamadas parseadas
-  (incluidos argumentos inválidos).
-- `tool_execution`: ejecución, duración, argumentos, errores de validación,
-  observación completa y registros de la herramienta. Incluye las
-  escrituras de informe por recuperación cuando el modelo omite el
-  marcador de llamada.
-- `orchestration`: reintentos de tareas compuestas antes de terminar.
-- `final_response` o `run_exception`: respuesta confirmada o error real.
-
-El JSON resumen de la evaluación incluye `artifacts_dir` y, en cada caso,
-`trace_path`. La carpeta `reports/` de la ejecución no es temporal: **los
-informes TXT también se conservan** después del cálculo de las métricas.
-
-Ejemplos de inspección en la DGX:
-
-```bash
-# Evaluar, guardar todas las generaciones y conservar los TXT
-uv run --extra train python -m tool_use.stage_eval \
-  --stage all --brain base --out reports/phase2_stages_base.json
-
-# Ver directorio de artefactos concreto de esa ejecución
-ARTIFACTS="$(uv run python -c 'import json; print(json.load(open("reports/phase2_stages_base.json"))["artifacts_dir"])')"
-echo "$ARTIFACTS"
-find "$ARTIFACTS" -type f
-
-# Mostrar la primera traza completa (JSONL) formateada, sin truncarla
-TRACE="$(find "$ARTIFACTS/traces" -type f -name '*.jsonl' | sort | head -1)"
-uv run python -m json.tool --json-lines "$TRACE" | less -R
-
-# Extraer solamente las salidas brutas de todas las generaciones de esa traza
-uv run python - "$TRACE" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as stream:
-    for line in stream:
-        event = json.loads(line)
-        if event["event"] == "model_output":
-            print(f"\n--- TURNO {event['turn']} ---\n{event['raw_text']}")
-PY
-```
-
-En la comparación base/GRPO y el evaluador docente el formato es el
-mismo, con dos subseries `with_tools` y `without_tools` cuando
-corresponde. Repetir una evaluación crea otro directorio, sin sobrescribir
-las trazas previas. Si un proceso termina antes del resumen final,
-los JSONL ya escritos siguen disponibles.
-
-### Registro opcional de llamadas reales a POST /tools
-
-Para sesiones HTTP fuera del benchmark, activar expresamente:
-
-```bash
-export ARCA_TOOLS_TRACE_DIR="reports/phase2_api_traces"
-uv run arca-api
-```
-
-Cada petición crea un JSONL separado con nombre aleatorio. La API
-no acepta una ruta arbitraria de trazas enviada por el usuario; si
-`ARCA_TOOLS_TRACE_DIR` no está definido, las sesiones HTTP **no** se
-registran automáticamente.
-
-**Privacidad:** las trazas son **completas y no anonimizadas**. Pueden
-contener nombres, circunstancias familiares, ingresos, patrimonio y el
-texto de los informes. Evitar subirlas al repositorio o a servicios externos,
-usar solo datos sintéticos en las pruebas y controlar el acceso a los
-archivos. Los ficheros se crean con permisos `0600` y carpetas privadas
-`0700`; `reports/phase2_artifacts/`, `reports/phase2_api_traces/`
-y `reports/imv/` están en `.gitignore`.
+| Fichero | Qué hace |
+|---|---|
+| `domain_tools.py`, `imv_schema.py` | Las tres herramientas y el contrato Pydantic del caso |
+| `tools.py`, `registry.py` | Registro de herramientas. `get_weather` y `calculator` son los ejemplos de la plantilla, que usan los tests y las tareas de ejemplo de la fase 4 |
+| `parser.py`, `executor.py` | Parseo de `<tool_call>` y bucle de cinco pasos con sus comprobaciones |
+| `evaluate.py`, `metrics.py` | Métricas de primera llamada y de flujo completo |
+| `compare.py`, `stage_eval.py`, `rescore.py` | Evaluación con y sin herramientas, por herramienta y recálculo de métricas |
+| `tracing.py` | Trazas por caso |
+| `bench/` | Bancos de pruebas |
