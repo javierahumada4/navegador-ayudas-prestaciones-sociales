@@ -12,7 +12,8 @@ using them well. Two metrics are computed:
 
 * tool selection accuracy: the first call names the expected tool (or there is no call when
   ``needs_tool`` is false);
-* argument accuracy: among correct selections, the arguments match after normalisation.
+* argument accuracy: among correct selections, the arguments match after normalisation
+  (case and spacing; for free-text search fields such as ``tema``, the set of content words).
 
 Run::
 
@@ -24,8 +25,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import unicodedata
 from pathlib import Path
 from typing import Any
+
+from tool_use.tracing import case_trace_path, create_artifact_run
 
 
 def load_bench(path: str | Path) -> list[dict[str, Any]]:
@@ -36,14 +40,35 @@ def load_bench(path: str | Path) -> list[dict[str, Any]]:
     ]
 
 
-def normalise(value: Any) -> Any:
+# Free-text search arguments: what matters is the set of content words sent to the API,
+# not accents, word order, prepositions or a redundant "subvenciones" in a grant search.
+SEARCH_TEXT_FIELDS = {"tema"}
+SEARCH_FILLER_WORDS = {
+    "a", "al", "con", "de", "del", "el", "en", "la", "las", "los", "para", "por", "sobre",
+    "un", "una", "y", "ayuda", "ayudas", "convocatoria", "convocatorias",
+    "subvencion", "subvenciones",
+}
+
+
+def search_terms(text: str) -> str:
+    """Content words of a search query, accent- and case-folded, in a canonical order."""
+    folded = "".join(
+        ch for ch in unicodedata.normalize("NFKD", text.casefold())
+        if not unicodedata.combining(ch)
+    )
+    return " ".join(sorted(set(folded.split()) - SEARCH_FILLER_WORDS))
+
+
+def normalise(value: Any, key: str | None = None) -> Any:
     """Make argument comparison tolerant to case, spacing and numeric formatting."""
     if isinstance(value, str):
+        if key in SEARCH_TEXT_FIELDS:
+            return search_terms(value)
         return " ".join(value.lower().split())
     if isinstance(value, float) and value.is_integer():
         return int(value)
     if isinstance(value, dict):
-        return {k: normalise(v) for k, v in value.items()}
+        return {k: normalise(v, k) for k, v in value.items()}
     return value
 
 
@@ -78,23 +103,36 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=3)
     args = parser.parse_args()
 
-    from tool_use.executor import run_tool_loop
+    from tool_use.executor import build_tool_loop
 
     cases = load_bench(args.bench)
+    artifact_run = create_artifact_run(args.out)
+    loop = build_tool_loop()
     rows = []
-    for case in cases:
-        response = run_tool_loop(case["query"], max_turns=args.max_turns)
-        calls = [c.model_dump() for c in response.tool_calls]
-        rows.append(
-            {**case, "tool_calls": calls, "answer": response.answer, **score_case(case, calls)}
+    for index, case in enumerate(cases, 1):
+        trace_path = case_trace_path(
+            artifact_run, "teacher", index, case.get("id", f"case-{index}"),
         )
+        response = loop.run(
+            case["query"], max_turns=args.max_turns, trace_path=trace_path,
+        )
+        calls = [c.model_dump() for c in response.tool_calls]
+        rows.append({
+            **case, "tool_calls": calls, "answer": response.answer,
+            "trace_path": str(trace_path),
+            **score_case(case, calls),
+        })
         print(f"{'✓' if rows[-1]['selection_ok'] else '✗'} {case['query'][:70]}")
 
     summary = summarise(rows)
     print(json.dumps(summary, indent=2))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"summary": summary, "rows": rows}, indent=2, ensure_ascii=False))
+    out.write_text(json.dumps({
+        "summary": summary, "rows": rows,
+        "artifacts_dir": str(artifact_run),
+    }, indent=2, ensure_ascii=False))
+    print(f"Trazas completas: {artifact_run}", flush=True)
 
 
 if __name__ == "__main__":

@@ -1,111 +1,635 @@
-"""The tool-use workflow: the five steps from class, implemented by hand, with no framework.
+"""Hand-written five-step tool use: prompt -> generate -> parse -> execute -> observe.
 
-    1. Get the user message together with the system prompt that carries the tool definitions.
-    2. The model generates: text, or one or more <tool_call> blocks.
-    3. The application executes the calls (``ToolRegistry.call``) and never trusts the
-       arguments blindly: they are validated first.
-    4. Each result goes back into the conversation as a message with role ``tool``.
-    5. The model is prompted again; if it answers without calling tools, we are done.
-
-Steps 2-4 repeat until the model answers or ``max_turns`` is reached (multi-step tool use).
-Several <tool_call> blocks in one generation are executed in the same turn (parallel calls).
-
-``run_tool_loop`` is what ``POST /tools`` calls. Until you implement it, the endpoint
-answers 501.
+No agent framework. Qwen3 base and phase-1 LoRA share generation settings.
 """
-
-from __future__ import annotations
+import json
+import os
+import re
+import secrets
+from datetime import datetime, timezone
+from contextlib import nullcontext
+from dataclasses import asdict
+from pathlib import Path
 
 from api.schemas import ToolCallRecord, ToolsResponse
+from tool_use.parser import format_tool_result, parse_tool_calls
 from tool_use.registry import ToolRegistry
 from tool_use.tools import default_registry
+from tool_use.tracing import TraceRecorder
 
-SYSTEM_PROMPT_TEMPLATE = """You are an AI assistant designed to help users.
-You will be given a task to solve. To help you, you have access to a set of tools.
-Each tool is a function and has a description explaining what it does and the inputs it
-expects:
----
-{tools_description}
----
-You should decide if you want to call a tool. If so, your call must be formatted as follows:
-<tool_call>
-{{"name": "tool name", "arguments": {{"argument": "value"}}}}
-</tool_call>
-You may emit several <tool_call> blocks in one message if the calls are independent.
-After the tool calls are executed, you will receive their results and can continue.
-When you have everything you need, answer the user directly without calling tools."""
+SYSTEM_PROMPT = """Eres un asistente de simulación IMV/CAPI y búsqueda de ayudas públicas.
+IMV es el Ingreso Mínimo Vital, la prestación no contributiva de la Seguridad Social
+regulada por la Ley 19/2021. CAPI es el Complemento de Ayuda para la Infancia, un importe
+mensual adicional por cada menor de la unidad de convivencia según su edad.
+Utiliza SOLO las herramientas disponibles en las definiciones JSON Schema.
+Si falta un dato obligatorio, NO llames a calcular_imv: contesta con una pregunta al
+usuario que nombre cada dato que falta. Nunca inventes fechas, residencia, convivencia,
+ingresos ni patrimonio. El IMV/CAPI se calcula con el
+motor determinista, no con estimaciones del modelo. Una subvención en BDNS
+NO equivale a concesión, compatibilidad o plazo abierto.
+Las llamadas deben escribirse exactamente como:
+<tool_call>{"name":"nombre","arguments":{"campo":"valor"}}</tool_call>
+Puedes emitir varias llamadas independientes en una generación. No hagas
+llamadas dependientes hasta recibir las observaciones. Corrige errores de
+validación usando el mensaje de la herramienta. Responde en español y
+distingue simulaciones de resoluciones oficiales. Tras un cálculo, da SIEMPRE los
+tres importes del motor (IMV, CAPI y total, en €/mes), también cuando son 0,00 €, y aclara
+que es una simulación orientativa, no una resolución oficial."""
 
+CALCULATION_PROMPT = """Esta etapa SOLO dispone de calcular_imv.
+El argumento es un ÚNICO objeto llamado case, directamente con los campos
+application_date, applicant_id, persons, domicile, economic y, cuando
+corresponda, relationships y applicant_history. No crees un nivel IMVCase,
+ni pongas los campos de case en la raíz de arguments.
+La fecha es YYYY-MM-DD; income es countable_income_annual_eur en euros/año,
+y el patrimonio y activos deben introducirse separadamente.
+Para persona única comprueba independencia parental.
+Todos los indicadores obligatorios deben proceder de la petición.
+Si falta alguno, NO invoques calcular_imv; pide los hechos necesarios.
+Una validación Pydantic fallida es un error de argumentos, no una
+denegación del IMV: corrige el JSON si hay suficientes datos o pregunta.
+En una simulación válida, reproduce exactamente el resultado del motor."""
+
+BDNS_PROMPT = """Esta etapa SOLO dispone de consultar_ayudas.
+Identifica la temática/tema solicitado y el límite max_resultados (1 a 20).
+Consulta la BDNS por HTTP real y usa solo los títulos y entidades
+efectivamente devueltos. Si falla la red, informa del fallo.
+No presentes convocatorias como prestaciones ya concedidas."""
+
+REPORT_PROMPT = """Esta etapa SOLO dispone de guardar_informe.
+Los mensajes anteriores con rol tool contienen las observaciones YA
+EJECUTADAS del cálculo IMV/CAPI y de la búsqueda BDNS. NO vuelvas a
+calcular ni a consultar. Redacta tú mismo un informe natural en español,
+SIN PLANTILLAS; incluye importes IMV, CAPI y TOTAL exactamente como
+figuran en calcular_imv, y explica su condición orientativa y los motivos.
+Incluye convocatorias BDNS únicamente si aparecen en las observaciones;
+si no hubo resultados o la API falló, indícalo. No inventes títulos,
+requisitos, fechas de cierre ni compatibilidad.
+Luego llama a guardar_informe con {"contenido": "TODO EL TEXTO REDACTADO"}.
+Nunca afirmes que se guardó sin una observación de éxito."""
+
+INTEGRATION_PROMPT = """Si el usuario pide cálculo y búsquedas BDNS, puedes llamar
+a calcular_imv y consultar_ayudas en la MISMA generación cuando sus
+argumentos ya estén disponibles. Si faltan datos del cálculo, pregunta
+por ellos; la búsqueda BDNS independiente puede realizarse.
+Si además pide archivo, espera las observaciones de cálculo y BDNS
+antes de redactar el informe y llamar a guardar_informe.
+El informe lo redacta el modelo sin plantillas, usando solamente
+observaciones verificadas; nunca inventes cifras ni ayudas.
+Confirma el guardado únicamente cuando la herramienta lo confirme."""
+
+
+CASE_EXAMPLE = """Cada persona se nombra con un ROL seguido de su ID: el id es la palabra que va
+DESPUÉS del rol, nunca el rol («la solicitante ana» -> "ana"; «su hijo leo» -> "leo";
+«titular adult» -> "adult"). Nunca inventes números. Incluye a TODAS las personas en persons
+y en domicile.co_resident_ids. Omite los campos opcionales que la consulta no menciona.
+Ejemplo. Consulta: «Solicitud 2026-05-04. La solicitante ana nació el 1975-05-10 y reside
+legal y efectivamente desde 2015-03-01; vive desde 2016-09-20 con su hijo leo, nacido el
+2016-09-20, residente desde su nacimiento; custodia exclusiva. Independiente desde 2000-01-01.
+Ingresos 3000 €/año, patrimonio 0 €, activos 0 €.» Llamada:
+<tool_call>{"name":"calcular_imv","arguments":{"case":{"application_date":"2026-05-04","applicant_id":"ana","persons":[{"id":"ana","date_of_birth":"1975-05-10","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2015-03-01"},{"id":"leo","date_of_birth":"2016-09-20","legal_residence_in_spain":true,"effective_residence_in_spain":true,"continuous_legal_effective_residence_since":"2016-09-20"}],"domicile":{"co_resident_ids":["ana","leo"],"same_domicile_since":"2016-09-20"},"relationships":[{"person_a":"ana","person_b":"leo","type":"parent_child","custody":"exclusive"}],"applicant_history":{"independent_from_parents_since":"2000-01-01"},"economic":{"countable_income_annual_eur":3000,"net_worth_eur":0,"non_corporate_assets_eur":0}}}}</tool_call>"""
 
 def build_system_prompt(registry: ToolRegistry) -> str:
-    """Step 1: the system prompt with the tool definitions."""
-    return SYSTEM_PROMPT_TEMPLATE.format(tools_description=registry.render_for_prompt())
+    available = set(registry.tools)
+    if available == {"calcular_imv"}:
+        guidance = CALCULATION_PROMPT + "\n" + CASE_EXAMPLE
+    elif available == {"consultar_ayudas"}:
+        guidance = BDNS_PROMPT
+    elif available == {"guardar_informe"}:
+        guidance = REPORT_PROMPT
+    else:
+        guidance = INTEGRATION_PROMPT
+    if "calcular_imv" in available and available != {"calcular_imv"}:
+        guidance += "\n" + CASE_EXAMPLE
+    # The chat template already injects the JSON Schemas through tools=; pasting them here
+    # too doubled the system block (~18.5k chars) for a 1.7B model.
+    return SYSTEM_PROMPT + "\n\n" + guidance
+
+
+def _report_requested(query: str) -> bool:
+    """Recognize an affirmative request to create a report file, not just discuss one."""
+    if re.search(
+        r"(?i)\b(?:no|sin)\s+(?:quiero\s+)?(?:un\s+)?"
+        r"(?:informe|archivo|fichero|documento|txt)\b", query
+    ):
+        return False
+    if re.search(
+        r"(?i)\b(?:no|sin)\s+(?:quiero\s+)?(?:guardar|generar|crear)\b", query
+    ):
+        return False
+    if re.search(
+        r"(?i)^\s*¿?\s*(?:como|cómo|que|qué)\s+(?:se\s+)?"
+        r"(?:guardar|generar|crear|hacer)\s+(?:un\s+)?"
+        r"(?:informe|archivo|fichero|documento|txt)\b", query
+    ):
+        return False
+    action = re.search(
+        r"(?i)\b(?:guarda|guardar|guárdame|genera|generar|genérame|"
+        r"crea|crear|descarga|descargar|exporta|exportar|escribe|escribir|"
+        r"redacta|redactar|prepara|preparar|hazme|quiero|necesito)\b", query
+    )
+    document = re.search(r"(?i)\b(?:informe|archivo|fichero|txt|documento)\b", query)
+    return bool(action and document)
+
+
+def _api_requested(query: str) -> bool:
+    """Recognize a request for grant discovery before report composition."""
+    return bool(re.search(
+        r"(?i)\b(?:bdns|convocatorias|subvenciones|"
+        r"busca(?:r)?\s+ayudas|consulta(?:r)?\s+ayudas)\b", query
+    ))
+
+
+def _money_is_mentioned(content: str, value: float) -> bool:
+    """Accept decimal commas/dots, one decimal place and thousands separators."""
+    from decimal import Decimal, InvalidOperation
+
+    expected = Decimal(str(value)).quantize(Decimal("0.01"))
+    pattern = r"(?<![\w])\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?(?![\w])"
+    for match in re.finditer(pattern, content):
+        raw = match.group()
+        try:
+            if "," in raw and "." in raw:
+                decimal_separator = "," if raw.rfind(",") > raw.rfind(".") else "."
+                thousands = "." if decimal_separator == "," else ","
+                raw = raw.replace(thousands, "").replace(decimal_separator, ".")
+            elif raw.count(",") > 1 or raw.count(".") > 1:
+                sep = "," if "," in raw else "."
+                parts = raw.split(sep)
+                raw = "".join(parts[:-1]) + ("." + parts[-1] if len(parts[-1]) <= 2 else parts[-1])
+            elif "," in raw:
+                raw = raw.replace(",", ".")
+            elif "." in raw and len(raw.rsplit(".", 1)[1]) == 3:
+                raw = raw.replace(".", "")
+            number = Decimal(raw).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            continue
+        if number == expected:
+            return True
+    return False
+
+
+def _report_matches_calculation(content: str, records: list[ToolCallRecord]) -> bool:
+    """Minimum numeric guard, independent of the model's reporting style."""
+    successful = [
+        record.result for record in records
+        if record.ok and record.name == "calcular_imv" and isinstance(record.result, dict)
+    ]
+    if not successful:
+        return False
+    latest = successful[-1]
+    return all(
+        _money_is_mentioned(content, latest[key])
+        for key in ("imv_monthly_eur", "capi_monthly_eur", "total_monthly_eur")
+    )
 
 
 class ToolLoop:
-    """Holds the model and the registry and runs the five-step workflow."""
-
-    def __init__(self, registry: ToolRegistry | None = None, model_id: str | None = None):
-        self.registry = registry or default_registry()
-        self.model_id = model_id or "Qwen/Qwen3-1.7B"
+    def __init__(
+        self, registry: ToolRegistry | None = None, model_id: str | None = None,
+        *, brain: str | None = None, adapter_path: str | None = None,
+        use_tools: bool = True, max_new_tokens: int = 1280,
+    ):
+        self.registry = registry if registry is not None else default_registry()
+        self.brain = (brain or os.getenv("ARCA_TOOLS_BRAIN", "base")).lower()
+        if self.brain not in {"base", "rlm"}:
+            raise ValueError("ARCA_TOOLS_BRAIN must be base or rlm")
+        self.model_id = model_id or os.getenv("ARCA_TOOLS_MODEL_ID", "Qwen/Qwen3-1.7B")
+        self.adapter_path = adapter_path or os.getenv("ARCA_TOOLS_ADAPTER") or os.getenv("ARCA_RLM_ADAPTER")
+        self.use_tools = use_tools
+        self.max_new_tokens = max_new_tokens
         self.model = None
         self.tokenizer = None
+        if self.brain == "rlm" and not self.adapter_path:
+            raise ValueError("ARCA_TOOLS_BRAIN=rlm needs ARCA_TOOLS_ADAPTER or ARCA_RLM_ADAPTER")
 
-    def load(self) -> None:
-        """Tu turno: load tokenizer and model (bf16 on GPU).
+    @property
+    def model_label(self):
+        return self.model_id if self.brain == "base" else f"{self.model_id}+LoRA"
 
-        Tip: Qwen's chat template accepts ``tools=registry.definitions()`` directly in
-        ``apply_chat_template``. Using it instead of pasting JSON into the system prompt is
-        allowed, but then explain in your README what the template actually renders.
-        """
-        raise NotImplementedError
+    def load(self):
+        """Lazy model initialization avoids loading GPU weights during /health."""
+        if self.model is not None:
+            return
+        import torch
+
+        torch.backends.cuda.enable_cudnn_sdp(False)  # crashed on padded batches on the MIG slice
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        adapter = None
+        if self.brain == "rlm":
+            from rlm.inference import _resolve_adapter
+            adapter = _resolve_adapter(self.adapter_path)
+            from pathlib import Path
+            config = json.loads((Path(adapter) / "adapter_config.json").read_text(encoding="utf-8"))
+            trained_base = config.get("base_model_name_or_path")
+            if trained_base and trained_base != self.model_id:
+                raise ValueError("LoRA base model differs from ARCA_TOOLS_MODEL_ID")
+        cuda = torch.cuda.is_available()
+        dtype = torch.bfloat16 if cuda and torch.cuda.is_bf16_supported() else (
+            torch.float16 if cuda else torch.float32
+        )
+        tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_id, dtype=dtype, device_map="auto" if cuda else "cpu"
+        )
+        if adapter:
+            from peft import PeftModel
+            # Merged LoRA: ~75 instead of ~40 tok/s measured on the MIG slice.
+            model = PeftModel.from_pretrained(model, adapter).merge_and_unload()
+        self.tokenizer, self.model = tokenizer, model.eval()
 
     def generate(self, messages: list[dict]) -> str:
-        """Tu turno: step 2, one generation from the conversation so far."""
-        raise NotImplementedError
+        """One model completion; injected in unit tests to avoid GPU requirements."""
+        self.load()
+        import torch
 
-    def run(self, query: str, max_turns: int = 5) -> ToolsResponse:
-        """Tu turno: the loop.
+        options = {"tokenize": False, "add_generation_prompt": True}
+        if self.use_tools:
+            options["tools"] = self.registry.definitions()
+        try:
+            prompt = self.tokenizer.apply_chat_template(
+                messages, enable_thinking=False, **options
+            )
+        except TypeError as exc:
+            if "enable_thinking" not in str(exc):
+                raise
+            prompt = self.tokenizer.apply_chat_template(messages, **options)
+        encoded = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        with torch.inference_mode():
+            output = self.model.generate(
+                **encoded, do_sample=False, max_new_tokens=self.max_new_tokens,
+                pad_token_id=self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+            )
+        continuation = output[0, encoded["input_ids"].shape[-1]:]
+        decoded = self.tokenizer.decode(continuation, skip_special_tokens=True)
+        self._last_generation_metadata = {
+            "rendered_chat_template": prompt,
+            "decoded_with_special_tokens": self.tokenizer.decode(
+                continuation, skip_special_tokens=False
+            ),
+            "output_token_ids": continuation.tolist(),
+            "generation_settings": {
+                "max_new_tokens": self.max_new_tokens,
+                "do_sample": False,
+            },
+        }
+        return decoded
 
-        Sketch::
+    def _save_report(self, content: str, records: list[ToolCallRecord], query: str) -> ToolCallRecord:
+        """Invoke the file tool only with model-authored, numerically checked prose."""
+        if not _report_requested(query):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="User has not explicitly requested writing an IMV report."
+            )
+        if _api_requested(query) and not any(
+            r.name == "consultar_ayudas" for r in records
+        ):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="Wait for the BDNS tool observation before writing a combined report."
+            )
+        if not _report_matches_calculation(content, records):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={"contenido": content}, ok=False,
+                error="Report must contain the IMV, CAPI and total amounts from the engine."
+            )
+        if any(r.ok and r.name == "guardar_informe" for r in records):
+            return ToolCallRecord(
+                name="guardar_informe", arguments={}, ok=False,
+                error="A report has already been saved for this request."
+            )
+        return self.registry.call("guardar_informe", {"contenido": content})
 
-            messages = [system, user]
-            records: list[ToolCallRecord] = []
-            for turn in range(max_turns):
-                raw = self.generate(messages)
-                parsed = parse_tool_calls(raw)
-                if not parsed.has_tool_calls:
-                    return ToolsResponse(answer=parsed.text, tool_calls=records, turns=turn + 1)
-                messages.append({"role": "assistant", "content": raw})
-                for call in parsed.tool_calls:
-                    record = self.registry.call(call.name, call.arguments)   # step 3
-                    records.append(record)
-                    payload = record.result if record.ok else record.error
-                    content = format_tool_result(record.name, payload)
-                    messages.append({"role": "tool", "name": record.name, "content": content})
-            # out of turns: return what you have, flag it
+    def _finish(self, answer: str, records: list[ToolCallRecord], turns: int,
+                report_requested: bool, *, reason: str = "") -> ToolsResponse:
+        saved = [
+            record for record in records if record.ok and record.name == "guardar_informe"
+        ]
+        if report_requested:
+            if saved:
+                # The file path and success are taken ONLY from actual tool execution.
+                path = saved[-1].result.get("archivo")
+                answer = (
+                    f"Informe guardado correctamente en: {path}. "
+                    "Los importes proceden del motor determinista."
+                )
+            else:
+                cause = reason or next(
+                    (r.error for r in reversed(records)
+                     if r.name in {"guardar_informe", "calcular_imv"} and not r.ok),
+                    None,
+                )
+                if not cause:
+                    cause = "el modelo no completó la escritura del archivo"
+                original = answer.strip()
+                answer = f"No se ha guardado ningún informe. Motivo: {cause}."
+                # Preserve an informational request for missing facts but never
+                # reproduce an unverified assertion that a file was saved.
+                if not any(r.ok and r.name == "calcular_imv" for r in records):
+                    if original and not re.search(
+                        r"(?i)\b(?:he|hemos|se ha|está|ya está)\s+"
+                        r"(?:guardado|creado|generado)\b", original
+                    ):
+                        answer += " " + original
+        else:
+            # If the user did not authorize saving, the model cannot assert it did.
+            if not saved and re.search(
+                r"(?i)\b(?:he|hemos|se ha|está)\s+"
+                r"(?:guardado|creado|generado)\b.{0,35}\b(?:archivo|fichero|informe)\b",
+                answer
+            ):
+                answer = (
+                    "No se ha creado ningún archivo. "
+                    "La consulta solo ha producido una respuesta de texto."
+                )
+        return ToolsResponse(
+            answer=answer, tool_calls=records, turns=turns, model=self.model_label
+        )
 
-        Decide what to do with parse errors (``call.error``) and with tools that have
-        ``requires_confirmation``. Both are observations the model should see.
+    def run(
+        self, query: str, max_turns: int = 5, *,
+        prior_observations: list[ToolCallRecord] | None = None,
+        trace_path: str | Path | None = None,
+    ) -> ToolsResponse:
+        """Run the loop and optionally persist every model/tool interaction.
+
+        A trace is written incrementally as JSONL so interruptions do not
+        destroy completed turns. Tracing is enabled by all benchmark runners;
+        the public API never supplies a trace path.
         """
-        raise NotImplementedError
+        if trace_path is None and os.getenv("ARCA_TOOLS_TRACE_DIR"):
+            # Optional server-side tracing of POST /tools. Never accept a
+            # client-supplied path via the public request schema.
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            trace_path = (
+                Path(os.environ["ARCA_TOOLS_TRACE_DIR"])
+                / f"tools-{stamp}-{secrets.token_hex(8)}.jsonl"
+            )
+        writer = TraceRecorder(trace_path) if trace_path is not None else nullcontext(None)
+        with writer as trace:
+            if trace is not None:
+                trace.event(
+                    "run_start", query=query, max_turns=max_turns,
+                    model=self.model_label, brain=self.brain, use_tools=self.use_tools,
+                    available_tools=list(self.registry.tools),
+                    tool_definitions=self.registry.definitions() if self.use_tools else [],
+                    prior_observations=[
+                        record.model_dump(mode="json")
+                        for record in (prior_observations or [])
+                    ],
+                )
+            try:
+                result = self._run_impl(
+                    query, max_turns=max_turns,
+                    prior_observations=prior_observations, trace=trace,
+                )
+            except Exception as exc:
+                if trace is not None:
+                    trace.event(
+                        "run_exception", error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
+                raise
+            if trace is not None:
+                trace.event("final_response", response=result.model_dump(mode="json"))
+            return result
+
+    def _run_impl(
+        self, query: str, max_turns: int = 5, *,
+        prior_observations: list[ToolCallRecord] | None = None,
+        trace: TraceRecorder | None = None,
+    ) -> ToolsResponse:
+        """Perform normal tool use, optionally continuing from trusted tool observations.
+
+        prior_observations is for trusted orchestrators / offline stage tests only.
+        Never expose it as a user-supplied API argument. It contains actual
+        completed tool records that the model is meant to have already seen.
+        Tool calls from this invocation alone are returned in tool_calls.
+        """
+        if max_turns < 1:
+            raise ValueError("max_turns must be positive")
+        messages = [
+            {"role": "system", "content": build_system_prompt(self.registry)
+             if self.use_tools else "Responde en español sin herramientas ni acceso externo."},
+            {"role": "user", "content": query},
+        ]
+        if prior_observations and not self.use_tools:
+            raise ValueError("Cannot seed observations without tool access")
+        history = list(prior_observations or [])
+        # Reconstruct the *same* assistant-call/tool-observation chat sequence
+        # produced by run(): never insert golden results as user prose.
+        for item in history:
+            call = json.dumps(
+                {"name": item.name, "arguments": item.arguments},
+                ensure_ascii=False, default=str,
+            )
+            messages.append({"role": "assistant", "content": f"<tool_call>{call}</tool_call>"})
+            observation = {"ok": item.ok}
+            observation.update(
+                {"result": item.result} if item.ok else {"error": item.error}
+            )
+            messages.append({
+                "role": "tool", "name": item.name,
+                "content": format_tool_result(item.name, observation),
+            })
+        records: list[ToolCallRecord] = []
+        seen: set[str] = set()
+        wants_report = self.use_tools and _report_requested(query)
+        reminders = 0
+        last_raw, records_before_turn = None, 0
+
+        for turn in range(1, max_turns + 1):
+            if trace is not None:
+                trace.event("model_input", turn=turn, messages=messages)
+            # Test stubs replace generate(); do not leak capture from a prior turn.
+            self._last_generation_metadata = {}
+            raw = self.generate(messages)
+            if trace is not None:
+                trace.event(
+                    "model_output", turn=turn, raw_text=raw,
+                    **self._last_generation_metadata,
+                )
+            parsed = parse_tool_calls(raw)
+            if trace is not None:
+                trace.event(
+                    "parsed_output", turn=turn, thinking=parsed.thinking,
+                    text=parsed.text, tool_calls=[
+                        asdict(call) for call in parsed.tool_calls
+                    ],
+                )
+            if not self.use_tools:
+                return self._finish(parsed.text or raw, [], turn, False)
+            # Greedy decoding: a byte-identical completion after a turn whose calls all failed
+            # means the model ignored the error and would repeat it until max_turns
+            # (up to 5 turns, ~400 s per case).
+            if raw == last_raw and not any(r.ok for r in records[records_before_turn:]):
+                return self._finish(
+                    parsed.text or "No he podido generar una llamada válida con estos datos.",
+                    records, turn, wants_report, reason="el modelo repitió la misma salida",
+                )
+            last_raw, records_before_turn = raw, len(records)
+
+            malformed_block = "<tool_call>" in raw and "</tool_call>" not in raw
+            if not parsed.tool_calls and not malformed_block:
+                if wants_report and not any(
+                    r.ok and r.name == "guardar_informe" for r in records
+                ):
+                    if not any(r.ok and r.name == "calcular_imv" for r in history):
+                        return self._finish(parsed.text, records, turn, True,
+                                            reason="falta un cálculo IMV válido para redactarlo")
+
+                    # First request a real tool call: keep generation and tool use separate.
+                    if reminders == 0 and turn < max_turns:
+                        reminders += 1
+                        messages.append({"role": "assistant", "content": raw})
+                        if trace is not None:
+                            trace.event(
+                                "orchestration", turn=turn,
+                                decision="retry_incomplete_report",
+                                model_text=parsed.text,
+                            )
+                        messages.append({
+                            "role": "system",
+                            "content": (
+                                "La petición NO está completa: el usuario solicitó guardar "
+                                "un informe TXT y guardar_informe todavía NO se ha ejecutado. "
+                                "Con los resultados de calcular_imv disponibles, escribe tú "
+                                "el informe en prosa española con importes IMV, CAPI y total, "
+                                "y haz AHORA una llamada a guardar_informe(contenido=texto). "
+                                "NO afirmes que está guardado sin observación."
+                            ),
+                        })
+                        continue
+
+                    # Recovery: the model has composed its own text but omitted the
+                    # tool-call markup. The application passes that exact text to
+                    # the file tool after deterministic checks; no template is used.
+                    if parsed.text:
+                        record = self._save_report(parsed.text, history, query)
+                        records.append(record)
+                        history.append(record)
+                        if trace is not None:
+                            trace.event(
+                                "tool_execution", turn=turn,
+                                source="model_text_fallback",
+                                record=record.model_dump(mode="json"),
+                            )
+                        if record.ok:
+                            return self._finish("", records, turn, True)
+                    return self._finish("", records, turn, True,
+                                        reason="el modelo no generó un informe válido para guardar")
+
+                return self._finish(parsed.text or
+                                    "No he podido completar la consulta con estos datos.",
+                                    records, turn, wants_report)
+
+            messages.append({"role": "assistant", "content": raw})
+            if malformed_block and not parsed.tool_calls:
+                record = ToolCallRecord(
+                    name="tool_parser", arguments={}, ok=False,
+                    error="Incomplete tool_call block",
+                )
+                records.append(record)
+                messages.append({
+                    "role": "tool", "name": "tool_parser",
+                    "content": "Error: bloque <tool_call> incompleto. Reintenta.",
+                })
+                if trace is not None:
+                    trace.event(
+                        "tool_execution", turn=turn, source="parser_recovery",
+                        record=record.model_dump(mode="json"),
+                        observation_message=messages[-1],
+                    )
+                continue
+
+            # Calls emitted in the same completion are independent. A report cannot
+            # use results which the model has not observed in a previous turn.
+            calculated_before_turn = any(
+                r.ok and r.name == "calcular_imv" for r in history
+            )
+            for call in parsed.tool_calls:
+                if call.error:
+                    record = ToolCallRecord(
+                        name=call.name or "tool_parser", arguments=call.arguments,
+                        ok=False, error=f"Malformed tool call: {call.error}",
+                    )
+                elif call.name == "guardar_informe":
+                    if not calculated_before_turn:
+                        record = ToolCallRecord(
+                            name=call.name, arguments=call.arguments, ok=False,
+                            error="Calculate IMV and observe its result in an earlier turn first."
+                        )
+                    else:
+                        record = self._save_report(
+                            str(call.arguments.get("contenido", "")), history, query
+                        )
+                elif (
+                    call.name in self.registry.tools
+                    and self.registry.tools[call.name].requires_confirmation
+                ):
+                    record = ToolCallRecord(
+                        name=call.name, arguments=call.arguments, ok=False,
+                        error="Tool requires explicit confirmation."
+                    )
+                else:
+                    signature = json.dumps(
+                        [call.name, call.arguments], sort_keys=True,
+                        default=str, ensure_ascii=False,
+                    )
+                    if signature in seen:
+                        record = ToolCallRecord(
+                            name=call.name, arguments=call.arguments, ok=False,
+                            error="Repeated identical call.",
+                        )
+                    else:
+                        seen.add(signature)
+                        record = self.registry.call(call.name, call.arguments)
+                records.append(record)
+                history.append(record)
+                observation = {"ok": record.ok}
+                observation.update(
+                    {"result": record.result} if record.ok else {"error": record.error}
+                )
+                messages.append({
+                    "role": "tool", "name": record.name,
+                    "content": format_tool_result(record.name, observation),
+                })
+                if trace is not None:
+                    trace.event(
+                        "tool_execution", turn=turn, source="model_tool_call",
+                        record=record.model_dump(mode="json"),
+                        observation_message=messages[-1],
+                    )
+
+            if wants_report and any(
+                r.ok and r.name == "guardar_informe" for r in records
+            ):
+                # No extra model turn required to establish file creation.
+                return self._finish("", records, turn, True)
+
+        return self._finish(
+            "", records, max_turns, wants_report,
+            reason="se alcanzó el límite de turnos sin generar el fichero"
+        )
 
 
 _loop: ToolLoop | None = None
 
 
 def build_tool_loop() -> ToolLoop:
-    """Create and load the loop once; the API keeps the instance."""
     global _loop
     if _loop is None:
-        loop = ToolLoop()
-        loop.load()  # raises NotImplementedError until phase 2 is done
-        _loop = loop
+        from importlib.util import find_spec
+        if find_spec("torch") is None or find_spec("transformers") is None:
+            raise NotImplementedError("Phase 2 needs torch/transformers: uv sync --extra train")
+        _loop = ToolLoop()
     return _loop
 
 
 def run_tool_loop(query: str, max_turns: int = 5) -> ToolsResponse:
-    """Convenience entry point for scripts and the evaluation."""
-    return build_tool_loop().run(query, max_turns=max_turns)
+    return build_tool_loop().run(query, max_turns)
 
 
-__all__ = ["ToolCallRecord", "ToolLoop", "build_system_prompt", "build_tool_loop", "run_tool_loop"]
+__all__ = ["ToolLoop", "ToolCallRecord", "build_tool_loop", "run_tool_loop", "build_system_prompt"]
